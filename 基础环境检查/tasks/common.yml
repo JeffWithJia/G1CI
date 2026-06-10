@@ -200,6 +200,56 @@
     g1_check_results: "{{ g1_check_results + [{'name': item.item, 'status': ('OK' if item.stat.exists | default(false) else 'WARN'), 'detail': item.item}] }}"
   loop: "{{ camera_link_stats.results }}"
 
+- name: Check ROS2 camera topic heartbeats
+  ansible.builtin.command: "timeout 5 ros2 topic hz {{ item.topic }}"
+  loop: "{{ camera_topics }}"
+  register: camera_topic_hz_checks
+  changed_when: false
+  failed_when: false
+
+- name: Initialize ROS2 camera topic heartbeat results
+  ansible.builtin.set_fact:
+    g1_camera_topic_results: []
+
+- name: Record ROS2 camera topic heartbeat status
+  ansible.builtin.set_fact:
+    g1_camera_topic_results: "{{ g1_camera_topic_results + [camera_topic_result] }}"
+    g1_check_results: "{{ g1_check_results + [camera_topic_check_result] }}"
+  vars:
+    camera_topic_rate_matches: "{{ item.stdout | default('') | regex_findall('average rate:\\s*([0-9]+(?:\\.[0-9]+)?)') }}"
+    camera_topic_rate_hz: "{{ (camera_topic_rate_matches | first | default('0', true)) | float }}"
+    camera_topic_ok: "{{ (item.rc | default(1) == 0) and (camera_topic_rate_hz | float > camera_topic_min_rate_hz | default(0.0) | float) }}"
+    camera_topic_reason: "{{ item.item.label }}无数据"
+    camera_topic_suggestion: "检查{{ item.item.label }} Type-C 连接或重启 cos_teleop.service"
+    camera_topic_detail: >-
+      {{
+        'average rate: ' ~ camera_topic_rate_hz ~ ' Hz'
+        if camera_topic_ok | bool
+        else 'timeout 5 ros2 topic hz ' ~ item.item.topic ~ ' did not receive messages'
+      }}
+    camera_topic_result: >-
+      {{
+        {
+          'topic': item.item.topic,
+          'label': item.item.label,
+          'status': ('OK' if camera_topic_ok | bool else 'WARN'),
+          'rate_hz': camera_topic_rate_hz | float
+        }
+        | combine({} if camera_topic_ok | bool else {
+          'reason': camera_topic_reason,
+          'suggestion': camera_topic_suggestion
+        })
+      }}
+    camera_topic_check_result:
+      name: "{{ item.item.topic }}"
+      status: "{{ 'OK' if camera_topic_ok | bool else 'WARN' }}"
+      detail: "{{ camera_topic_detail }}"
+      stdout: "{{ item.stdout | default('') }}"
+      stderr: "{{ item.stderr | default('') }}"
+      reason: "{{ '' if camera_topic_ok | bool else camera_topic_reason }}"
+      suggestion: "{{ '' if camera_topic_ok | bool else camera_topic_suggestion }}"
+  loop: "{{ camera_topic_hz_checks.results | default([]) }}"
+
 - name: Check cos_teleop camera journal
   ansible.builtin.shell: |
     set +e

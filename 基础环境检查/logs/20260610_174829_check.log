@@ -1,0 +1,14 @@
+$ /usr/bin/ansible-playbook -k -K -T 15 -i '/home/jeff/coscene/code/codex/基础环境检查/inventory.ini' -e '{"ansible_ssh_common_args": "-o PreferredAuthentications=password -o PubkeyAuthentication=no -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -o ConnectionAttempts=1"}' '/home/jeff/coscene/code/codex/基础环境检查/check_base_env.yml' --limit g1_robot_060
+cwd=/home/jeff/coscene/code/codex/基础环境检查
+
+SSH password: 
+[operator_console] detected SSH password prompt, password sent
+
+BECOME password[defaults to SSH password]: 
+[operator_console] detected BECOME password prompt, sudo password sent
+
+[0;31mERROR! Unable to retrieve file contents[0m
+[0;31mCould not find or access '/home/jeff/coscene/code/codex/基础环境检查/tasks/install_dex1.yml' on the Ansible Controller.[0m
+[0;31mIf you are using a module and expect the file to exist on the remote, see the remote_src option[0m
+
+returncode=1

@@ -54,6 +54,14 @@
       - /dev/cam_head
       - /dev/cam_wrist_left
       - /dev/cam_wrist_right
+    camera_topics:
+      - topic: /cam_head/compressed_image
+        label: 头部相机
+      - topic: /cam_wrist_left/compressed_image
+        label: 左腕相机
+      - topic: /cam_wrist_right/compressed_image
+        label: 右腕相机
+    camera_topic_min_rate_hz: 0.0
 
     remote_binary: "{{ project_dir }}/remote"
     remote_source_dir: "{{ project_dir }}/remote_start"

@@ -89,6 +89,16 @@
       <section class="panel">
         <div class="section-head">
           <div>
+            <h2>摄像头状态</h2>
+            <p>显示三路 ROS2 摄像头 topic 心跳状态。</p>
+          </div>
+        </div>
+        <div id="cameraStatusBoard" class="camera-status-board"></div>
+      </section>
+
+      <section class="panel">
+        <div class="section-head">
+          <div>
             <h2>问题原因与处理建议</h2>
             <p>只显示需要处理的警告和失败项。</p>
           </div>
@@ -349,6 +359,15 @@
       document.getElementById("jobText").textContent = `${title}${detail ? "：" + detail : ""}`;
     }
 
+    function bannerDetailForIssue(issue) {
+      if (!issue) return "";
+      const reason = issue.reason || "";
+      if ((issue.name_raw || "").startsWith("/cam_")) {
+        return `${reason}，建议检查 Type-C 连接或重启 cos_teleop.service`;
+      }
+      return reason;
+    }
+
     function bannerKindFromJob(job) {
       if (job.phase === "partial") return "partial";
       if (!job.running && Number(job.returncode) === 0) return "success";
@@ -392,9 +411,11 @@
         setTaskBanner("fail", "执行失败", fallbackMessage || "请查看下方报告。");
         return;
       }
-      const firstProblem = data.robots
+      const allProblems = data.robots
         .flatMap((robot) => (robot.issues || []).map((issue) => ({ robot, issue })))
-        .find((item) => ["WARN", "FAIL", "UNREACHABLE"].includes(item.issue.status));
+        .filter((item) => ["WARN", "FAIL", "UNREACHABLE"].includes(item.issue.status));
+      const firstProblem = allProblems[0];
+      const firstCameraProblem = allProblems.find((item) => item.issue.status === "WARN" && (item.issue.name_raw || "").startsWith("/cam_"));
       if (data.counts.fail > 0) {
         const hasUnreachable = data.robots.some((robot) => robot.status === "UNREACHABLE" || (robot.summary || "").includes("无法连接"));
         if (hasUnreachable) {
@@ -405,7 +426,7 @@
           setTaskBanner("fail", "执行失败", "存在失败项，请查看问题原因与处理建议。");
         }
       } else if (data.counts.warn > 0) {
-        setTaskBanner("partial", "执行完成但存在警告", firstProblem?.issue?.reason || "存在警告项，请查看问题原因与处理建议。");
+        setTaskBanner("partial", "执行完成但存在警告", bannerDetailForIssue((firstCameraProblem || firstProblem)?.issue) || "存在警告项，请查看问题原因与处理建议。");
       } else if (data.counts.total > 0) {
         const names = data.robots.map((robot) => robot.inventory_hostname).filter(Boolean);
         const label = names.length === 1 ? names[0] : "所有机器人";
@@ -529,6 +550,42 @@
       `).join("");
     }
 
+    function cameraRateText(value) {
+      const rate = Number(value || 0);
+      return rate > 0 ? `${rate.toFixed(1)} Hz` : "0 Hz";
+    }
+
+    function renderCameraStatus(robots) {
+      const board = document.getElementById("cameraStatusBoard");
+      const rows = robots
+        .filter((robot) => Array.isArray(robot.camera_topics) && robot.camera_topics.length)
+        .map((robot) => `
+          <article class="camera-robot">
+            <div class="camera-robot-head">
+              <b>${escapeHtml(robotLabel(robot))}</b>
+              <small>${escapeHtml(robot.inventory_hostname || "")}</small>
+            </div>
+            <div class="camera-topic-grid">
+              ${robot.camera_topics.map((item) => `
+                <div class="camera-topic-row ${statusClass(item.status)}">
+                  <div>
+                    <b>${escapeHtml(item.label || item.topic)}</b>
+                    <small>${escapeHtml(item.topic || "")}</small>
+                  </div>
+                  <span class="badge ${statusClass(item.status)}">${escapeHtml(item.status || "-")}</span>
+                  <strong>${escapeHtml(cameraRateText(item.rate_hz))}</strong>
+                  ${item.status === "WARN" || item.status === "FAIL" ? `
+                    <p>${escapeHtml(item.reason || "摄像头无数据")}</p>
+                    <p>${escapeHtml(item.suggestion || "检查 Type-C 连接或重启 cos_teleop.service")}</p>
+                  ` : ""}
+                </div>
+              `).join("")}
+            </div>
+          </article>
+        `);
+      board.innerHTML = rows.length ? rows.join("") : `<div class="empty">暂无摄像头 topic 心跳结果。</div>`;
+    }
+
     function renderDeveloperLogs(robots) {
       const logs = document.getElementById("developerLogs");
       if (!robots.length) {
@@ -567,6 +624,7 @@
       document.getElementById("reportSource").textContent = `最新报告：${data.source}`;
       document.getElementById("reportTime").textContent = `更新时间：${data.updated_at}`;
       renderIssueBoard(data.robots || []);
+      renderCameraStatus(data.robots || []);
       renderCheckCards(data.robots || []);
       renderDeveloperLogs(data.robots || []);
     }

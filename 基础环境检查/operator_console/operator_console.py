@@ -467,6 +467,15 @@ def has_cos_teleop_camera_warning(item: dict[str, Any]) -> bool:
     return is_cos_teleop_item(item) and bool(COS_TELEOP_CAMERA_WARNING_RE.search(text_payload(item)))
 
 
+def camera_label_from_topic(topic: str) -> str:
+    mapping = {
+        "/cam_head/compressed_image": "头部相机",
+        "/cam_wrist_left/compressed_image": "左腕相机",
+        "/cam_wrist_right/compressed_image": "右腕相机",
+    }
+    return mapping.get(topic, topic)
+
+
 def normalize_issue_item(item: dict[str, Any]) -> dict[str, Any]:
     normalized = dict(item)
     if has_cos_teleop_camera_warning(normalized):
@@ -502,6 +511,15 @@ def dedupe_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if issue_weight(item) > issue_weight(by_key[key]):
             by_key[key] = item
     return [by_key[key] for key in order]
+
+
+def issue_sort_key(item: dict[str, Any]) -> int:
+    name = str(item.get("name", ""))
+    if name.startswith("/cam_"):
+        return 0
+    if name == "cos_teleop camera log" or "cos_teleop" in name:
+        return 1
+    return 2
 
 
 def aggregate_status(report: dict[str, Any], issues: list[dict[str, Any]], checks: list[dict[str, Any]]) -> str:
@@ -647,6 +665,27 @@ def collect_issues(report: dict[str, Any]) -> list[dict[str, Any]]:
         normalized = normalize_issue_item(item)
         if str(normalized.get("status", "")).upper() in ("WARN", "FAIL", "UNREACHABLE"):
             issues.append(normalized)
+    for item in report.get("camera_topics", []) if isinstance(report.get("camera_topics"), list) else []:
+        if not isinstance(item, dict):
+            continue
+        status = str(item.get("status", "")).upper()
+        if status not in ("WARN", "FAIL"):
+            continue
+        topic = str(item.get("topic", "") or "")
+        label = str(item.get("label", "") or camera_label_from_topic(topic))
+        rate_hz = item.get("rate_hz", 0)
+        issues.append(
+            {
+                "name": topic,
+                "status": status,
+                "reason": item.get("reason") or f"{label}图像无数据或频率异常。",
+                "suggestion": item.get("suggestion")
+                or f"请检查{label} Type-C 连接、相机供电、udev 映射，并尝试重启 cos_teleop.service。",
+                "detail": item.get("detail") or f"{topic} rate_hz={rate_hz}",
+                "stdout": item.get("stdout", ""),
+                "stderr": item.get("stderr", ""),
+            }
+        )
     service_health = report.get("service_health")
     service_health_items = service_health.values() if isinstance(service_health, dict) else service_health if isinstance(service_health, list) else []
     for item in service_health_items:
@@ -771,7 +810,7 @@ def collect_issues(report: dict[str, Any]) -> list[dict[str, Any]]:
                 "stderr": report.get("stderr", "") or report.get("latest_output", ""),
             },
         )
-    return dedupe_items(issues)
+    return sorted(dedupe_items(issues), key=issue_sort_key)
 
 
 def raw_outputs(report: dict[str, Any]) -> list[dict[str, str]]:
@@ -871,6 +910,19 @@ def normalize_report(report: dict[str, Any]) -> dict[str, Any]:
             }
             for item in checks
         ],
+        "camera_topics": [
+            {
+                "topic": str(item.get("topic", "")),
+                "label": str(item.get("label", "") or camera_label_from_topic(str(item.get("topic", "") or ""))),
+                "status": str(item.get("status", "")).upper(),
+                "status_cn": translate_status(item.get("status", "")),
+                "rate_hz": item.get("rate_hz", 0),
+                "reason": translate_phrase(item.get("reason", "")),
+                "suggestion": translate_phrase(item.get("suggestion", "")),
+            }
+            for item in report.get("camera_topics", [])
+            if isinstance(item, dict)
+        ],
         "raw_outputs": raw_outputs(report),
     }
 
@@ -902,6 +954,26 @@ def latest_report_payload() -> dict[str, Any]:
     return {"counts": counts, "robots": robots, "source": source, "updated_at": updated_at}
 
 
+def camera_warning_message(issues: list[dict[str, Any]]) -> str:
+    labels: list[str] = []
+    seen: set[str] = set()
+    for issue in issues:
+        topic = str(issue.get("name_raw", "") or "")
+        if not topic.startswith("/cam_") or issue.get("status") != "WARN":
+            continue
+        label = camera_label_from_topic(topic)
+        if label not in seen:
+            labels.append(label)
+            seen.add(label)
+    if not labels:
+        return ""
+    label_text = "、".join(labels)
+    if len(labels) == 1:
+        suffix = "Type-C 连接" if labels[0] in ("左腕相机", "右腕相机") else "连接"
+        return f"{label_text}图像无数据或频率异常，建议检查{label_text}{suffix}或重启 cos_teleop.service。"
+    return f"{label_text}图像无数据或频率异常，建议检查对应相机连接或重启 cos_teleop.service。"
+
+
 def latest_action_outcome() -> tuple[int, str, str]:
     if not LATEST_SUMMARY_PATH.exists():
         return 1, "执行失败：未生成报告。", "fail"
@@ -914,7 +986,19 @@ def latest_action_outcome() -> tuple[int, str, str]:
     if problem_robots:
         first = problem_robots[0]
         first_issue = first["issues"][0] if first.get("issues") else {}
+        camera_warnings = [
+            issue
+            for robot in problem_robots
+            if robot["status"] == "WARN"
+            for issue in robot.get("issues", [])
+            if str(issue.get("name_raw", "")).startswith("/cam_") and issue.get("status") == "WARN"
+        ]
+        camera_message = camera_warning_message(camera_warnings)
+        if first["status"] == "WARN" and camera_warnings:
+            first_issue = camera_warnings[0]
         reason = first_issue.get("reason") or first.get("summary") or "请查看下方问题报告。"
+        if first["status"] == "WARN" and camera_message:
+            reason = camera_message
         if first["status"] in ("FAIL", "UNREACHABLE"):
             return 1, f"执行失败：{reason}", "fail"
         return 0, f"执行完成但存在警告：{reason}", "partial"
@@ -1130,6 +1214,14 @@ def service_action_playbook(action: str, service_name: str = "") -> Path:
     service_report_file: "{(ROOT_REPORTS_DIR / "g1_env_summary.json")}"
     service_action: "{action}"
     service_restart_name: "{service_name}"
+    camera_topic_min_rate_hz: 0.0
+    camera_topics:
+      - topic: /cam_head/compressed_image
+        label: 头部相机
+      - topic: /cam_wrist_left/compressed_image
+        label: 左腕相机
+      - topic: /cam_wrist_right/compressed_image
+        label: 右腕相机
 
   tasks:
 {restart_line}
@@ -1343,6 +1435,116 @@ def service_action_playbook(action: str, service_name: str = "") -> Path:
             service_result_map | dict2items | map(attribute='value') | list
           }}}}
 
+    - name: Check ROS2 camera topic heartbeats
+      ansible.builtin.shell: |
+        set +e
+        export HOME=/home/unitree
+        export ROS_VERSION=2
+        export ROS_DISTRO=foxy
+        export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+        export CYCLONEDDS_URI=/home/unitree/cyclonedds_ws/cyclonedds.xml
+        export PYTHONUNBUFFERED=1
+        source /opt/ros/foxy/setup.bash
+        if [ -f /home/unitree/cyclonedds_ws/install/setup.bash ]; then
+          source /home/unitree/cyclonedds_ws/install/setup.bash
+        fi
+        if [ -f /home/unitree/cos_ws/install/setup.bash ]; then
+          source /home/unitree/cos_ws/install/setup.bash
+        fi
+        python3 - "{{{{ item.topic }}}}" <<'PY'
+        import sys
+        import time
+
+        topic = sys.argv[1]
+        duration_seconds = 6.0
+        count = 0
+        first_time = None
+        last_time = None
+
+        try:
+            import rclpy
+            from sensor_msgs.msg import CompressedImage
+        except Exception as exc:
+            print("ros_hz_error: import failed: %s" % exc, file=sys.stderr, flush=True)
+            sys.exit(2)
+
+        def callback(_msg):
+            global count, first_time, last_time
+            now = time.monotonic()
+            if first_time is None:
+                first_time = now
+            last_time = now
+            count += 1
+
+        try:
+            rclpy.init(args=None)
+            node = rclpy.create_node("operator_console_camera_hz_check")
+            node.create_subscription(CompressedImage, topic, callback, 10)
+            deadline = time.monotonic() + duration_seconds
+            while time.monotonic() < deadline:
+                rclpy.spin_once(node, timeout_sec=0.2)
+            node.destroy_node()
+            rclpy.shutdown()
+        except Exception as exc:
+            print("ros_hz_error: %s" % exc, file=sys.stderr, flush=True)
+            try:
+                rclpy.shutdown()
+            except Exception:
+                pass
+            sys.exit(3)
+
+        if count >= 2 and first_time is not None and last_time is not None and last_time > first_time:
+            rate = (count - 1) / (last_time - first_time)
+            print("average rate: %.3f" % rate, flush=True)
+            sys.exit(0)
+
+        print("ros_hz_warning: no messages received on %s count=%d" % (topic, count), flush=True)
+        sys.exit(1)
+        PY
+      args:
+        executable: /bin/bash
+      loop: "{{{{ camera_topics }}}}"
+      register: camera_topic_hz_checks
+      changed_when: false
+      failed_when: false
+
+    - name: Initialize ROS2 camera topic heartbeat results
+      ansible.builtin.set_fact:
+        camera_topic_results: []
+
+    - name: Record ROS2 camera topic heartbeat status
+      ansible.builtin.set_fact:
+        camera_topic_results: "{{{{ camera_topic_results + [camera_topic_result] }}}}"
+      vars:
+        camera_topic_rate_matches: "{{{{ item.stdout | default('') | regex_findall('average rate:\\\\s*([0-9]+(?:\\\\.[0-9]+)?)') }}}}"
+        camera_topic_rate_hz: "{{{{ (camera_topic_rate_matches | first | default('0', true)) | float }}}}"
+        camera_topic_ok: "{{{{ (item.rc | default(1) == 0) and (camera_topic_rate_hz | float > camera_topic_min_rate_hz | default(0.0) | float) }}}}"
+        camera_topic_reason: "{{{{ item.item.label }}}}无数据"
+        camera_topic_suggestion: "检查{{{{ item.item.label }}}} Type-C 连接或重启 cos_teleop.service"
+        camera_topic_detail: >-
+          {{{{
+            'average rate: ' ~ camera_topic_rate_hz ~ ' Hz'
+            if camera_topic_ok | bool
+            else 'timeout 10 ros2 topic hz ' ~ item.item.topic ~ ' did not receive messages'
+          }}}}
+        camera_topic_result: >-
+          {{{{
+            {{
+              'topic': item.item.topic,
+              'label': item.item.label,
+              'status': ('OK' if camera_topic_ok | bool else 'WARN'),
+              'rate_hz': camera_topic_rate_hz | float
+            }}
+            | combine({{}} if camera_topic_ok | bool else {{
+              'reason': camera_topic_reason,
+              'suggestion': camera_topic_suggestion,
+              'detail': camera_topic_detail,
+              'stdout': item.stdout | default(''),
+              'stderr': item.stderr | default('')
+            }})
+          }}}}
+      loop: "{{{{ camera_topic_hz_checks.results | default([]) }}}}"
+
     - name: Build service issue lists
       ansible.builtin.set_fact:
         service_failed_items: >-
@@ -1356,6 +1558,12 @@ def service_action_playbook(action: str, service_name: str = "") -> Path:
             service_result_map | dict2items
             | selectattr('value.status', 'equalto', 'WARN')
             | map(attribute='key') | list
+          }}}}
+        camera_warn_items: >-
+          {{{{
+            camera_topic_results | default([])
+            | selectattr('status', 'equalto', 'WARN')
+            | map(attribute='topic') | list
           }}}}
 
     - name: Build service final report
@@ -1371,17 +1579,18 @@ def service_action_playbook(action: str, service_name: str = "") -> Path:
               'FAIL'
               if service_failed_items | length > 0
               else 'WARN'
-              if service_warn_items | length > 0
+              if (service_warn_items | length > 0 or camera_warn_items | length > 0)
               else 'OK'
             }}}}
           summary: >-
             {{{{
               '服务状态正常。'
-              if (service_failed_items | length == 0 and service_warn_items | length == 0)
-              else '服务存在异常：' ~ ((service_failed_items + service_warn_items) | join(', '))
+              if (service_failed_items | length == 0 and service_warn_items | length == 0 and camera_warn_items | length == 0)
+              else '服务存在异常：' ~ ((service_failed_items + service_warn_items + camera_warn_items) | join(', '))
             }}}}
           services: "{{{{ service_result_map | default({{}}) }}}}"
           checks: "{{{{ service_result_map | dict2items | map(attribute='value') | list }}}}"
+          camera_topics: "{{{{ camera_topic_results | default([]) }}}}"
           restart:
             service: "{{{{ service_restart_name }}}}"
             rc: "{{{{ service_restart_result.rc | default('') }}}}"

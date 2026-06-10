@@ -413,6 +413,87 @@ button:disabled {
   gap: 12px;
 }
 
+.camera-status-board {
+  display: grid;
+  gap: 12px;
+}
+
+.camera-robot {
+  border: 1px solid #dfe4ec;
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.camera-robot-head {
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.camera-robot-head small {
+  color: #667386;
+}
+
+.camera-topic-grid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.camera-topic-row {
+  align-items: center;
+  border: 1px solid #dfe4ec;
+  border-left: 5px solid #8b96a8;
+  border-radius: 8px;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  min-height: 82px;
+  padding: 10px;
+}
+
+.camera-topic-row.ok {
+  background: #f4fbf7;
+  border-left-color: #1f8a5b;
+}
+
+.camera-topic-row.warn {
+  background: #fff8ec;
+  border-left-color: #c98213;
+}
+
+.camera-topic-row.fail {
+  background: #fff0f0;
+  border-left-color: #c73535;
+}
+
+.camera-topic-row b,
+.camera-topic-row small {
+  display: block;
+}
+
+.camera-topic-row small {
+  color: #667386;
+  font-size: 12px;
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+}
+
+.camera-topic-row strong {
+  color: #253244;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.camera-topic-row p {
+  color: #6f4700;
+  font-size: 13px;
+  grid-column: 1 / -1;
+  line-height: 1.45;
+}
+
 .issue-card {
   background: #ffffff;
   border: 1px solid #dfe4ec;
@@ -734,6 +815,7 @@ pre.stderr {
   .password-grid,
   .robot-form,
   .robot-row,
+  .camera-topic-grid,
   .metrics {
     grid-template-columns: 1fr;
   }

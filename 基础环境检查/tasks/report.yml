@@ -155,6 +155,7 @@
         fail: "{{ g1_fail_items | length }}"
         skip: "{{ g1_skip_items | length }}"
       warnings: "{{ g1_check_warnings }}"
+      camera_topics: "{{ g1_camera_topic_results | default([]) }}"
       failed_items: "{{ g1_fail_items }}"
       warn_items: "{{ g1_warn_items }}"
       skipped_items: "{{ g1_skip_items }}"

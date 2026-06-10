@@ -57,6 +57,9 @@ items:
   /dev/cam_head: 头部相机设备
   /dev/cam_wrist_left: 左腕相机设备
   /dev/cam_wrist_right: 右腕相机设备
+  /cam_head/compressed_image: 头部相机心跳
+  /cam_wrist_left/compressed_image: 左腕相机心跳
+  /cam_wrist_right/compressed_image: 右腕相机心跳
   dex1 source directory: dex1 源码目录
   dex1 bin directory: dex1 可执行目录
   dex1 server binary: dex1 服务程序
