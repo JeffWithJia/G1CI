@@ -1,0 +1,132 @@
+status:
+  OK: 正常
+  WARN: 警告
+  FAIL: 失败
+  SKIP: 跳过
+  UNREACHABLE: 无法连接
+  NO_REPORT: 未生成报告
+  UNKNOWN: 未知
+
+fields:
+  inventory_hostname: 机器人名称
+  host: 机器人名称
+  ansible_host: 机器人 IP
+  robot_id: 机器人 ID
+  end_effector: 末端类型
+  mode: 执行模式
+  overall_status: 总体状态
+  setup_status: cos_setup 状态
+  setup_detail: cos_setup 结果
+  reason: 问题原因
+  suggestion: 处理建议
+  detail: 详细信息
+  stdout: 标准输出
+  stderr: 错误输出
+  rc: 返回码
+  changed: 是否变更
+  start_time: 开始时间
+  end_time: 结束时间
+  first_attempt: 首次执行
+  retry_attempt: 重试执行
+  librealsense_cleanup: RealSense 清理
+  remote_start: remote_start 服务
+  time_sync: 时间同步
+  services: COS 服务
+
+items:
+  remote_start preflight stop: 运行前停止 remote_start 服务
+  g1_setup directory: g1_setup 目录
+  unitree_sdk2: Unitree SDK2
+  unitree_sdk2 source: Unitree SDK2 源码目录
+  unitree_sdk2 library: Unitree SDK2 静态库
+  unitree_sdk2 cmake config: Unitree SDK2 CMake 配置
+  unitree_sdk2 go2 header: Unitree SDK2 头文件
+  Conda engine: Conda 环境管理器
+  conda engine: Conda 环境管理器
+  conda env tv: tv 运行环境
+  tv python version: tv Python 版本
+  Python cv2: Python OpenCV 依赖
+  Python zmq: Python ZMQ 通信依赖
+  Python logging_mp: Python 日志依赖
+  Python av: Python 视频处理依赖
+  Python numpy: Python 数值计算依赖
+  Python pyrealsense2: Python pyrealsense2 模块
+  remote image binary: remote 图像程序
+  camera udev rules: 相机 udev 规则
+  cos_teleop camera log: teleop 相机运行日志检查
+  /dev/cam_head: 头部相机设备
+  /dev/cam_wrist_left: 左腕相机设备
+  /dev/cam_wrist_right: 右腕相机设备
+  dex1 source directory: dex1 源码目录
+  dex1 bin directory: dex1 可执行目录
+  dex1 server binary: dex1 服务程序
+  dex1 test binary: dex1 测试程序
+  dex1 systemd unit file: dex1 systemd 配置
+  dex1 server executable: dex1 服务程序权限
+  dex1 shared libraries: dex1 运行库
+  dex1 service enabled: dex1 服务开机启动
+  dex1 service active: Dex1 灵巧手服务状态
+  dex1 motor binding: Dex1 电机和串口绑定状态
+  dex1_gripper.service: Dex1 灵巧手服务
+  brainco source directory: brainco 源码目录
+  brainco bin directory: brainco 可执行目录
+  brainco server binary: brainco 服务程序
+  brainco systemd unit file: brainco systemd 配置
+  brainco server executable: brainco 服务程序权限
+  brainco shared libraries: brainco 运行库
+  brainco service enabled: brainco 服务开机启动
+  brainco service active: Brainco 灵巧手服务状态
+  brainco hand binding: Brainco 手部端口绑定状态
+  brainco_hand.service: Brainco 灵巧手服务
+  cos_agent: cos_agent 服务状态
+  cos_teleop: cos_teleop 服务状态
+  cos_agent.service: cos_agent 服务
+  cos_teleop.service: cos_teleop 服务
+  cos_agent service active: cos_agent 服务状态
+  cos_agent service enabled: cos_agent 服务开机自启状态
+  xrobotoolkit-pc-service: XRoboToolkit 机器人侧服务状态
+  xrobotoolkit-pc-service.service: XRoboToolkit 机器人侧服务
+  xrobotoolkit-pc-service service active: XRoboToolkit 机器人侧服务状态
+  xrobotoolkit-pc-service service enabled: XRoboToolkit 机器人侧服务开机自启状态
+  cos_teleop service active: cos_teleop 服务状态
+  cos_teleop service enabled: cos_teleop 服务开机自启状态
+  remote_start service: remote_start 服务
+
+phrases:
+  "pyrealsense2 cannot be imported because RealSense runtime or binary dependency is incompatible.": "pyrealsense2 无法导入，通常是 RealSense 运行库或二进制依赖不兼容。"
+  "Camera device symlink does not exist.": "相机设备软链接不存在。"
+  "cos_teleop 服务正在运行，但日志中存在相机初始化或读取异常。": "cos_teleop 服务正在运行，但日志中存在相机初始化或读取异常。"
+  "请尝试重启 cos_teleop.service；如果仍异常，请检查相机 Type-C 连接、udev 映射和相机设备状态。": "请尝试重启 cos_teleop.service；如果仍异常，请检查相机 Type-C 连接、udev 映射和相机设备状态。"
+  "cos_teleop 服务正在运行，但日志中存在相机读取或初始化异常。": "cos_teleop 服务正在运行，但日志中存在相机读取或初始化异常。"
+  "cos_teleop 日志中发现相机读取异常，建议重启 cos_teleop.service。": "cos_teleop 日志中发现相机读取异常，建议重启 cos_teleop.service。"
+  "请尝试重启 cos_teleop.service；如果仍异常，请检查相机 Type-C 连接、udev 映射、相机设备状态或相机是否被占用。": "请尝试重启 cos_teleop.service；如果仍异常，请检查相机 Type-C 连接、udev 映射、相机设备状态或相机是否被占用。"
+  "dex1_gripper.service 运行中，但日志显示电机或串口绑定异常。": "dex1_gripper.service 运行中，但日志显示电机或串口绑定异常。"
+  "请检查 Dex1 有线连接或硬件状态，并尝试重新插拔后重启 dex1_gripper.service。": "请检查 Dex1 有线连接或硬件状态，并尝试重新插拔后重启 dex1_gripper.service。"
+  "Dex1 服务未正常运行。": "Dex1 服务未正常运行。"
+  "Dex1 服务已启动，但未确认左右手电机绑定成功。": "Dex1 服务已启动，但未确认左右手电机绑定成功。"
+  "请检查 Dex1 服务文件、程序路径、有线连接和硬件状态。": "请检查 Dex1 服务文件、程序路径、有线连接和硬件状态。"
+  "请尝试重启 dex1_gripper.service；如果仍异常，请检查 Dex1 有线连接、串口识别和硬件状态。": "请尝试重启 dex1_gripper.service；如果仍异常，请检查 Dex1 有线连接、串口识别和硬件状态。"
+  "brainco_hand.service 运行中，但日志显示手部设备信息获取或端口绑定异常。": "brainco_hand.service 运行中，但日志显示手部设备信息获取或端口绑定异常。"
+  "请检查 Brainco 手有线连接或硬件状态，并尝试重新插拔后重启 brainco_hand.service。": "请检查 Brainco 手有线连接或硬件状态，并尝试重新插拔后重启 brainco_hand.service。"
+  "Brainco 服务未正常运行。": "Brainco 服务未正常运行。"
+  "Brainco 服务已启动，但未确认左右手绑定成功。": "Brainco 服务已启动，但未确认左右手绑定成功。"
+  "请检查 Brainco 服务文件、程序路径、有线连接和硬件状态。": "请检查 Brainco 服务文件、程序路径、有线连接和硬件状态。"
+  "请尝试重启 brainco_hand.service；如果仍异常，请检查 Brainco 有线连接和硬件状态。": "请尝试重启 brainco_hand.service；如果仍异常，请检查 Brainco 有线连接和硬件状态。"
+  "XRoboToolkit 机器人侧服务未安装或未设置开机自启。": "XRoboToolkit 机器人侧服务未安装或未设置开机自启。"
+  "请执行服务重启；如果仍失败，请重新执行“执行 cos_setup.sh”并检查 /home/unitree/apk 下的 deb 包。": "请执行服务重启；如果仍失败，请重新执行“执行 cos_setup.sh”并检查 /home/unitree/apk 下的 deb 包。"
+  "Systemd service is not active.": "systemd 服务未处于运行状态。"
+  "Run systemctl status <service> and check service logs.": "请查看 systemctl status 和 journalctl 日志确认服务失败原因。"
+  "Check camera connection and udev rules. If wrist cameras are not required for this robot, this warning can be ignored.": "请检查相机连接和 udev 规则；如果该机器人不需要腕部相机，可以忽略此警告。"
+  "pyrealsense2 is optional by default. If this robot requires RealSense, run EVA robot deploy / cos_setup flow first, or set require_pyrealsense2=true in inventory.": "pyrealsense2 默认是可选项；如果该机器人需要 RealSense，请先执行 EVA/cos_setup 流程，或在 inventory 中设置 require_pyrealsense2=true。"
+  "cos_setup.sh completed": "cos_setup.sh 执行完成。"
+  "cos_setup.sh 执行完成，cos_agent / cos_teleop / xrobotoolkit-pc-service 状态正常。": "cos_setup.sh 执行完成，cos_agent / cos_teleop / xrobotoolkit-pc-service 状态正常。"
+  "cos_setup.sh failed": "cos_setup.sh 执行失败。"
+  "cos_setup.sh failed after retry": "cos_setup.sh 重试后仍然失败。"
+  "remote cos_setup.sh not found": "机器人上未找到 cos_setup.sh。"
+  "check mode: cos_setup.sh execution skipped; cleanup/retry disabled": "检查模式下跳过 cos_setup.sh 执行，未进行清理或重试。"
+  "cos_setup 报告缺少 XRoboToolkit 服务检查结果。": "cos_setup 报告缺少 XRoboToolkit 服务检查结果。"
+  "请确认 batch_cos_setup.yml 已更新，并重新执行 cos_setup。": "请确认 batch_cos_setup.yml 已更新，并重新执行 cos_setup。"
+  "XRoboToolkit 机器人侧服务未安装。": "XRoboToolkit 机器人侧服务未安装。"
+  "请重新执行“执行 cos_setup.sh”。如果仍失败，请联系工程师查看 /home/unitree/apk 下的 deb 包是否存在。": "请重新执行“执行 cos_setup.sh”。如果仍失败，请联系工程师查看 /home/unitree/apk 下的 deb 包是否存在。"
+  "XRoboToolkit 机器人侧服务未设置开机自启。": "XRoboToolkit 机器人侧服务未设置开机自启。"
+  "请重新执行“执行 cos_setup.sh”，或联系工程师检查 systemd 服务文件。": "请重新执行“执行 cos_setup.sh”，或联系工程师检查 systemd 服务文件。"

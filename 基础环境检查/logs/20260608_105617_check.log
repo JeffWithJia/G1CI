@@ -1,0 +1,7 @@
+$ ansible-playbook -k -K -T 15 -i '/home/jeff/coscene/code/codex/基础环境检查/inventory.ini' -e '{"ansible_ssh_common_args": "-o PreferredAuthentications=password -o PubkeyAuthentication=no -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -o ConnectionAttempts=1"}' '/home/jeff/coscene/code/codex/基础环境检查/check_base_env.yml' --limit g1_robot_065
+cwd=/home/jeff/coscene/code/codex/基础环境检查
+
+SSH password: 
+BECOME password[defaults to SSH password]: 
+returncode=1
+执行失败：任务执行超时

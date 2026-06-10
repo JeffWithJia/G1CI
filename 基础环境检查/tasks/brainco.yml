@@ -1,0 +1,286 @@
+---
+- name: Set brainco paths
+  ansible.builtin.set_fact:
+    brainco_dir: "{{ project_dir }}/brainco_hand_service"
+    brainco_bin_dir: "{{ project_dir }}/brainco_hand_service/bin"
+    brainco_server_bin: "{{ project_dir }}/brainco_hand_service/bin/brainco_hand_server"
+    brainco_test_bin: "{{ project_dir }}/brainco_hand_service/bin/test_brainco_hand_server"
+    brainco_service_name: brainco_hand.service
+    brainco_service_file: /etc/systemd/system/brainco_hand.service
+
+- name: Check preferred brainco sdk library
+  ansible.builtin.stat:
+    path: "{{ brainco_dir }}/lib/{{ ansible_architecture }}/libbc_stark_sdk.so"
+  register: brainco_preferred_sdk_lib_stat
+
+- name: Find brainco sdk library
+  ansible.builtin.find:
+    paths: "{{ brainco_dir }}/lib"
+    patterns: libbc_stark_sdk.so
+    recurse: true
+    file_type: file
+  register: brainco_sdk_lib_find
+  when: not brainco_preferred_sdk_lib_stat.stat.exists | default(false)
+
+- name: Set brainco sdk library path
+  ansible.builtin.set_fact:
+    brainco_sdk_lib: >-
+      {{
+        brainco_dir ~ '/lib/' ~ ansible_architecture ~ '/libbc_stark_sdk.so'
+        if brainco_preferred_sdk_lib_stat.stat.exists | default(false)
+        else (
+          (brainco_sdk_lib_find.files | default([]) | map(attribute='path') | first)
+          | default(brainco_dir ~ '/lib/' ~ ansible_architecture ~ '/libbc_stark_sdk.so', true)
+        )
+      }}
+
+- name: Check brainco files
+  ansible.builtin.stat:
+    path: "{{ item.path }}"
+  loop:
+    - name: brainco source directory
+      path: "{{ brainco_dir }}"
+    - name: brainco bin directory
+      path: "{{ brainco_bin_dir }}"
+    - name: brainco server binary
+      path: "{{ brainco_server_bin }}"
+    - name: brainco test binary
+      path: "{{ brainco_test_bin }}"
+    - name: brainco sdk library
+      path: "{{ brainco_sdk_lib }}"
+    - name: brainco systemd unit file
+      path: "{{ brainco_service_file }}"
+  register: brainco_file_stats
+
+- name: Record brainco file status
+  ansible.builtin.set_fact:
+    g1_check_results: "{{ g1_check_results + [{'name': item.item.name, 'status': ('OK' if item.stat.exists | default(false) else 'FAIL'), 'detail': item.item.path}] }}"
+  loop: "{{ brainco_file_stats.results }}"
+
+- name: Check brainco server binary executable bit
+  ansible.builtin.command: "test -x {{ brainco_server_bin }}"
+  register: brainco_server_executable
+  changed_when: false
+  failed_when: false
+
+- name: Record brainco server executable status
+  ansible.builtin.set_fact:
+    g1_check_results: "{{ g1_check_results + [{'name': 'brainco server executable', 'status': ('OK' if brainco_server_executable.rc == 0 else 'FAIL'), 'detail': brainco_server_bin}] }}"
+
+- name: Check brainco dynamic library dependencies
+  ansible.builtin.command: "ldd {{ brainco_server_bin }}"
+  register: brainco_ldd
+  changed_when: false
+  failed_when: false
+
+- name: Record brainco dynamic library status
+  ansible.builtin.set_fact:
+    g1_check_results: "{{ g1_check_results + [{'name': 'brainco shared libraries', 'status': ('OK' if brainco_ldd.rc == 0 and 'not found' not in brainco_ldd.stdout else 'FAIL'), 'detail': ('ldd rc=' ~ brainco_ldd.rc)}] }}"
+
+- name: Check brainco service enabled state
+  ansible.builtin.command: "systemctl is-enabled {{ brainco_service_name }}"
+  register: brainco_service_enabled
+  changed_when: false
+  failed_when: false
+
+- name: Check brainco service active state
+  ansible.builtin.command: "systemctl is-active {{ brainco_service_name }}"
+  register: brainco_service_active
+  changed_when: false
+  failed_when: false
+
+- name: Initialize brainco service recovery result
+  ansible.builtin.set_fact:
+    brainco_service_recovery_allowed: "{{ g1_run_mode == 'install' or auto_recover_services_in_check | default(false) | bool }}"
+    brainco_service_final_active: "{{ brainco_service_active.stdout | trim }}"
+    brainco_service_active_detail: "{{ brainco_service_active.stdout | trim }}"
+    brainco_service_recovery_attempts: 0
+    brainco_service_recovery_stdout: ""
+    brainco_service_recovery_stderr: ""
+
+- name: Restart brainco service until active
+  become: true
+  ansible.builtin.shell: |
+    restart_rc=0
+    systemctl restart {{ brainco_service_name }} || restart_rc=$?
+    sleep {{ service_recovery_delay | int }}
+    systemctl is-active {{ brainco_service_name }} || true
+    exit "$restart_rc"
+  args:
+    executable: /bin/bash
+  register: brainco_service_recovery
+  changed_when: brainco_service_recovery.stdout | trim == 'active'
+  failed_when: false
+  until: brainco_service_recovery.stdout | trim == 'active'
+  retries: "{{ service_recovery_retries | int }}"
+  delay: 0
+  when:
+    - brainco_service_recovery_allowed | bool
+    - brainco_service_active.stdout | trim != 'active'
+
+- name: Recheck brainco service active state after recovery
+  ansible.builtin.command: "systemctl is-active {{ brainco_service_name }}"
+  register: brainco_service_active_after_recovery
+  changed_when: false
+  failed_when: false
+  when:
+    - brainco_service_recovery_allowed | bool
+    - brainco_service_active.stdout | trim != 'active'
+
+- name: Update brainco service recovery result
+  ansible.builtin.set_fact:
+    brainco_service_final_active: "{{ brainco_service_active_after_recovery.stdout | default(brainco_service_recovery.stdout | default(brainco_service_active.stdout)) | trim }}"
+    brainco_service_active_detail: "{{ ('active after restart attempt ' ~ (brainco_service_recovery.attempts | default(1))) if (brainco_service_active_after_recovery.stdout | default(brainco_service_recovery.stdout | default('')) | trim == 'active') else ('still ' ~ (brainco_service_active_after_recovery.stdout | default(brainco_service_recovery.stdout | default(brainco_service_active.stdout)) | trim) ~ ' after ' ~ (brainco_service_recovery.attempts | default(service_recovery_retries)) ~ ' restart attempts') }}"
+    brainco_service_recovery_attempts: "{{ brainco_service_recovery.attempts | default(0) }}"
+    brainco_service_recovery_stdout: "{{ brainco_service_recovery.stdout | default('') }}"
+    brainco_service_recovery_stderr: "{{ brainco_service_recovery.stderr | default('') }}"
+  when:
+    - brainco_service_recovery_allowed | bool
+    - brainco_service_active.stdout | trim != 'active'
+
+- name: Collect brainco service status after failed recovery
+  ansible.builtin.command: "systemctl status {{ brainco_service_name }} --no-pager -l"
+  register: brainco_service_status_after_recovery
+  changed_when: false
+  failed_when: false
+  when:
+    - brainco_service_recovery_allowed | bool
+    - brainco_service_active.stdout | trim != 'active'
+    - brainco_service_final_active | trim != 'active'
+
+- name: Collect brainco service journal after failed recovery
+  ansible.builtin.command: "journalctl -u {{ brainco_service_name }} -n 50 --no-pager"
+  register: brainco_service_journal_after_recovery
+  changed_when: false
+  failed_when: false
+  when:
+    - brainco_service_recovery_allowed | bool
+    - brainco_service_active.stdout | trim != 'active'
+    - brainco_service_final_active | trim != 'active'
+
+- name: Record brainco service status
+  ansible.builtin.set_fact:
+    g1_check_results: "{{ g1_check_results + [
+      {'name': 'brainco service enabled', 'status': ('OK' if brainco_service_enabled.stdout | trim == 'enabled' else 'WARN'), 'detail': brainco_service_enabled.stdout | trim},
+      {'name': 'brainco service active', 'status': ('OK' if brainco_service_final_active | trim == 'active' else 'WARN'), 'detail': brainco_service_active_detail, 'stdout': brainco_service_recovery_stdout ~ '\n--- systemctl status ---\n' ~ (brainco_service_status_after_recovery.stdout | default('')) ~ '\n--- journalctl -u brainco_hand.service -n 50 ---\n' ~ (brainco_service_journal_after_recovery.stdout | default('')), 'stderr': brainco_service_recovery_stderr ~ '\n--- systemctl status stderr ---\n' ~ (brainco_service_status_after_recovery.stderr | default('')) ~ '\n--- journalctl stderr ---\n' ~ (brainco_service_journal_after_recovery.stderr | default(''))}
+    ] }}"
+
+- name: Collect brainco recent service journal
+  ansible.builtin.shell: |
+    set +e
+    journalctl -u {{ brainco_service_name }} -n 120 --no-pager -o cat
+    exit 0
+  args:
+    executable: /bin/bash
+  register: brainco_service_health_journal
+  changed_when: false
+  failed_when: false
+
+- name: Detect brainco service health issue
+  ansible.builtin.set_fact:
+    brainco_service_health_issue: >-
+      {{
+        (
+          brainco_service_final_active | trim == 'active'
+        ) and (
+          not (
+            (brainco_service_health_journal.stdout | default('') | lower) is search('left hand bound') and
+            (brainco_service_health_journal.stdout | default('') | lower) is search('right hand bound') and
+            (brainco_service_health_journal.stdout | default('')) is search('Starting worker for left') and
+            (brainco_service_health_journal.stdout | default('')) is search('Starting worker for right')
+          )
+        )
+      }}
+
+- name: Restart brainco service after health issue
+  become: true
+  ansible.builtin.shell: |
+    systemctl restart {{ brainco_service_name }}
+    sleep {{ service_recovery_delay | int }}
+    systemctl is-active {{ brainco_service_name }}
+  args:
+    executable: /bin/bash
+  register: brainco_service_health_restart
+  changed_when: brainco_service_health_restart.rc == 0
+  failed_when: false
+  when: brainco_service_health_issue | bool
+
+- name: Collect brainco recent service journal after health restart
+  ansible.builtin.shell: |
+    set +e
+    journalctl -u {{ brainco_service_name }} -n 120 --no-pager -o cat
+    exit 0
+  args:
+    executable: /bin/bash
+  register: brainco_service_health_journal_after_restart
+  changed_when: false
+  failed_when: false
+  when: brainco_service_health_issue | bool
+
+- name: Record brainco hand binding health
+  ansible.builtin.set_fact:
+    g1_check_results: "{{ g1_check_results + [brainco_hand_binding_result] }}"
+  vars:
+    brainco_health_log: "{{ brainco_service_health_journal_after_restart.stdout | default(brainco_service_health_journal.stdout | default('')) }}"
+    brainco_health_log_lower: "{{ brainco_health_log | lower }}"
+    brainco_health_ok: >-
+      {{
+        brainco_service_final_active | trim == 'active' and
+        brainco_service_enabled.stdout | trim == 'enabled' and
+        brainco_health_log_lower is search('left hand bound') and
+        brainco_health_log_lower is search('right hand bound') and
+        brainco_health_log is search('Starting worker for left') and
+        brainco_health_log is search('Starting worker for right')
+      }}
+    brainco_health_fail: "{{ brainco_service_final_active | trim != 'active' or brainco_service_enabled.stdout | trim != 'enabled' }}"
+    brainco_hand_binding_result:
+      name: brainco hand binding
+      status: "{{ 'OK' if brainco_health_ok | bool else 'FAIL' if brainco_health_fail | bool else 'WARN' }}"
+      detail: "{{ 'Brainco left/right hands bound and workers started' if brainco_health_ok | bool else brainco_health_log }}"
+      stdout: "{{ brainco_health_log }}"
+      stderr: "{{ brainco_service_health_restart.stderr | default('') }}"
+      reason: "{{ '' if brainco_health_ok | bool else 'Brainco 服务未正常运行。' if brainco_health_fail | bool else 'Brainco 服务已启动，但未确认左右手绑定成功。' }}"
+      suggestion: "{{ '' if brainco_health_ok | bool else '请检查 Brainco 服务文件、程序路径、有线连接和硬件状态。' if brainco_health_fail | bool else '请尝试重启 brainco_hand.service；如果仍异常，请检查 Brainco 有线连接和硬件状态。' }}"
+
+- name: Record brainco service recovery install result
+  ansible.builtin.set_fact:
+    g1_install_results: "{{ g1_install_results + [{
+      'name': 'brainco service recovery',
+      'changed': brainco_service_recovery.changed | default(false),
+      'rc': 0,
+      'status': 'OK' if brainco_service_final_active | trim == 'active' else 'WARN',
+      'detail': brainco_service_active_detail,
+      'stdout': brainco_service_recovery_stdout ~ '\n--- systemctl status ---\n' ~ (brainco_service_status_after_recovery.stdout | default('')) ~ '\n--- journalctl -u brainco_hand.service -n 50 ---\n' ~ (brainco_service_journal_after_recovery.stdout | default('')),
+      'stderr': brainco_service_recovery_stderr ~ '\n--- systemctl status stderr ---\n' ~ (brainco_service_status_after_recovery.stderr | default('')) ~ '\n--- journalctl stderr ---\n' ~ (brainco_service_journal_after_recovery.stderr | default(''))
+    }] }}"
+  when: g1_run_mode == 'install'
+
+- name: Check conflicting dex1 service enabled state
+  ansible.builtin.command: "systemctl is-enabled dex1_gripper.service"
+  register: conflicting_dex1_service_enabled
+  changed_when: false
+  failed_when: false
+  when: check_conflicting_end_effector_service | default(false) | bool
+
+- name: Check conflicting dex1 service active state
+  ansible.builtin.command: "systemctl is-active dex1_gripper.service"
+  register: conflicting_dex1_service_active
+  changed_when: false
+  failed_when: false
+  when: check_conflicting_end_effector_service | default(false) | bool
+
+- name: Record conflicting dex1 service status
+  ansible.builtin.set_fact:
+    g1_check_results: "{{ g1_check_results + [conflicting_dex1_result] }}"
+  vars:
+    conflicting_dex1_active: "{{ conflicting_dex1_service_active.stdout | default('unknown') | trim }}"
+    conflicting_dex1_enabled: "{{ conflicting_dex1_service_enabled.stdout | default('unknown') | trim }}"
+    conflicting_dex1_result:
+      name: conflicting dex1 service
+      status: "{{ 'WARN' if conflicting_dex1_active == 'active' else 'OK' }}"
+      detail: "active={{ conflicting_dex1_active }}, enabled={{ conflicting_dex1_enabled }}"
+      stdout: "{{ conflicting_dex1_service_active.stdout | default('') ~ '\n' ~ conflicting_dex1_service_enabled.stdout | default('') }}"
+      stderr: "{{ conflicting_dex1_service_active.stderr | default('') ~ '\n' ~ conflicting_dex1_service_enabled.stderr | default('') }}"
+      reason: "{{ 'Conflicting dex1_gripper.service is active while end_effector=brainco.' if conflicting_dex1_active == 'active' else '' }}"
+      suggestion: "{{ 'Run install mode to stop and disable the conflicting Dex1 service, or stop it manually.' if conflicting_dex1_active == 'active' else '' }}"
+  when: check_conflicting_end_effector_service | default(false) | bool

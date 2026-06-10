@@ -1,0 +1,289 @@
+{
+    "ansible_host": "192.168.90.69",
+    "card": {
+        "issue_count": "2",
+        "issue_text": "[WARN] /dev/cam_wrist_right - Camera device symlink does not exist. | [WARN] cos_teleop camera log - cos_teleop \u670d\u52a1\u6b63\u5728\u8fd0\u884c\uff0c\u4f46\u65e5\u5fd7\u4e2d\u5b58\u5728\u76f8\u673a\u8bfb\u53d6\u6216\u521d\u59cb\u5316\u5f02\u5e38\u3002",
+        "issues": [
+            {
+                "detail": "/dev/cam_wrist_right",
+                "name": "/dev/cam_wrist_right",
+                "reason": "Camera device symlink does not exist.",
+                "source": "check",
+                "status": "WARN",
+                "suggestion": "Check camera connection and udev rules. If wrist cameras are not required for this robot, this warning can be ignored.",
+                "summary": "[WARN] /dev/cam_wrist_right - Camera device symlink does not exist."
+            },
+            {
+                "detail": "[teleop_server_node-1] \u001b[33m2026-06-09 16:40:13.530 [ WARN] [camera_publisher.cpp:575] Failed to open V4L2 device for camera[2] /dev/cam_wrist_right: No such file or directory\u001b[0m\n[teleop_server_node-1] \u001b[31m2026-06-09 16:40:13.530 [ERROR] [camera_publisher.cpp:297] Failed to initialize V4L2 direct MJPEG capture for camera[2]: /dev/cam_wrist_right\u001b[0m\n[teleop_server_node-1] \u001b[33m2026-06-09 16:40:13.535 [ WARN] [camera_publisher.cpp:575] Failed to open V4L2 device for camera[2] /dev/cam_wrist_right: No such file or directory\u001b[0m\n[teleop_server_node-1] \u001b[31m2026-06-09 16:40:13.535 [ERROR] [camera_publisher.cpp:297] Failed to initialize V4L2 direct MJPEG capture for camera[2]: /dev/cam_wrist_right\u001b[0m\n[teleop_server_node-1] \u001b[33m2026-06-09 16:40:43.563 [ WARN] [camera_publisher.cpp:575] Failed to open V4L2 device for camera[2] /dev/cam_wrist_right: No such file or directory\u001b[0m\n[teleop_server_node-1] \u001b[31m2026-06-09 16:40:43.563 [ERROR] [camera_publisher.cpp:297] Failed to initialize V4L2 direct MJPEG capture for camera[2]: /dev/cam_wrist_right\u001b[0m\n[teleop_server_node-1] \u001b[33m2026-06-09 16:41:13.588 [ WARN] [camera_publisher.cpp:575] Failed to open V4L2 device for camera[2] /dev/cam_wrist_right: No such file or directory\u001b[0m\n[teleop_server_node-1] \u001b[31m2026-06-09 16:41:13.588 [ERROR] [camera_publisher.cpp:297] Failed to initialize V4L2 direct MJPEG capture for camera[2]: /dev/cam_wrist_right\u001b[0m\n[teleop_server_node-1] \u001b[33m2026-06-09 16:41:43.615 [ WARN] [camera_publisher.cpp:575] Failed to open V4L2 device for camera[2] /dev/cam_wrist_right: No such file or directory\u001b[0m\n[teleop_server_node-1] \u001b[31m2026-06-09 16:41:43.615 [ERROR] [camera_publisher.cpp:297] Failed to initialize V4L2 direct MJPEG capture for camera[2]: /dev/cam_wrist_right\u001b[0m\n[teleop_server_node-1] \u001b[33m2026-06-09 16:42:13.640 [ WARN] [camera_publisher.cpp:575] Failed to open V4L2 device for camera[2] /dev/cam_wrist_right: No such file or directory\u001b[0m\n[teleop_server_node-1] \u001b[31m2026-06-09 16:42:13.640 [ERROR] [camera_publisher.cpp:297] Failed to initialize V4L2 direct MJPEG capture for camera[2]: /dev/cam_wrist_right\u001b[0m\n[teleop_server_node-1] \u001b[33m2026-06-09 16:42:43.666 [ WARN] [camera_publisher.cpp:575] Failed to open V4L2 device for camera[2] /dev/cam_wrist_right: No such file or directory\u001b[0m\n[teleop_server_node-1] \u001b[31m2026-06-09 16:42:43.666 [ERROR] [camera_publisher.cpp:297] Failed to initialize V4L2 direct MJPEG capture for camera[2]: /dev/cam_wrist_right\u001b[0m\n[teleop_server_node-1] \u001b[33m2026-06-09 16:43:13.691 [ WARN] [camera_publisher.cpp:575] Failed to open V4L2 device for camera[2] /dev/cam_wrist_right: No such file or directory\u001b[0m\n[teleop_server_node-1] \u001b[31m2026-06-09 16:43:13.691 [ERROR] [camera_publisher.cpp:297] Failed to initialize V4L2 direct MJPEG capture for camera[2]: /dev/cam_wrist_right\u001b[0m\n[teleop_server_node-1] \u001b[33m2026-06-09 16:43:43.716 [ WARN] [camera_publisher.cpp:575] Failed to open V4L2 device for camera[2] /dev/cam_wrist_right: No such file or directory\u001b[0m\n[teleop_server_node-1] \u001b[31m2026-06-09 16:43:43.716 [ERROR] [camera_publisher.cpp:297] Failed to initialize V4L2 direct MJPEG capture for camera[2]: /dev/cam_wrist_right\u001b[0m\n[teleop_server_node-1] \u001b[33m2026-06-09 16:44:13.742 [ WARN] [camera_publisher.cpp:575] Failed to open V4L2 device for camera[2] /dev/cam_wrist_right: No such file or directory\u001b[0m\n[teleop_server_node-1] \u001b[31m2026-06-09 16:44:13.742 [ERROR] [camera_publisher.cpp:297] Failed to initialize V4L2 direct MJPEG capture for camera[2]: /dev/cam_wrist_right\u001b[0m",
+                "name": "cos_teleop camera log",
+                "reason": "cos_teleop \u670d\u52a1\u6b63\u5728\u8fd0\u884c\uff0c\u4f46\u65e5\u5fd7\u4e2d\u5b58\u5728\u76f8\u673a\u8bfb\u53d6\u6216\u521d\u59cb\u5316\u5f02\u5e38\u3002",
+                "source": "check",
+                "status": "WARN",
+                "suggestion": "\u8bf7\u5c1d\u8bd5\u91cd\u542f cos_teleop.service\uff1b\u5982\u679c\u4ecd\u5f02\u5e38\uff0c\u8bf7\u68c0\u67e5\u76f8\u673a Type-C \u8fde\u63a5\u3001udev \u6620\u5c04\u3001\u76f8\u673a\u8bbe\u5907\u72b6\u6001\u6216\u76f8\u673a\u662f\u5426\u88ab\u5360\u7528\u3002",
+                "summary": "[WARN] cos_teleop camera log - cos_teleop \u670d\u52a1\u6b63\u5728\u8fd0\u884c\uff0c\u4f46\u65e5\u5fd7\u4e2d\u5b58\u5728\u76f8\u673a\u8bfb\u53d6\u6216\u521d\u59cb\u5316\u5f02\u5e38\u3002"
+            }
+        ],
+        "status": "WARN",
+        "subtitle": "robot_id=69, end_effector=brainco, mode=check",
+        "title": "g1_robot_069 (192.168.90.69)"
+    },
+    "checks": [
+        {
+            "detail": "stopped remote_start.service",
+            "name": "remote_start preflight stop",
+            "status": "OK",
+            "stderr": "",
+            "stdout": ""
+        },
+        {
+            "detail": "/home/unitree/g1_setup",
+            "name": "g1_setup directory",
+            "status": "OK"
+        },
+        {
+            "detail": "/home/unitree/g1_setup/unitree_sdk2",
+            "name": "unitree_sdk2 source",
+            "status": "OK"
+        },
+        {
+            "detail": "/home/unitree/miniconda3/bin/conda",
+            "name": "Conda engine",
+            "status": "OK"
+        },
+        {
+            "detail": "/home/unitree/miniconda3/envs/tv/bin/python",
+            "name": "conda env tv",
+            "status": "OK"
+        },
+        {
+            "detail": "Python 3.10.20",
+            "name": "tv python version",
+            "reason": "",
+            "status": "OK",
+            "stderr": "",
+            "stdout": "Python 3.10.20",
+            "suggestion": ""
+        },
+        {
+            "detail": "import cv2",
+            "name": "Python cv2",
+            "status": "OK",
+            "stderr": "",
+            "stdout": ""
+        },
+        {
+            "detail": "import zmq",
+            "name": "Python zmq",
+            "status": "OK",
+            "stderr": "",
+            "stdout": ""
+        },
+        {
+            "detail": "import logging_mp",
+            "name": "Python logging_mp",
+            "status": "OK",
+            "stderr": "",
+            "stdout": ""
+        },
+        {
+            "detail": "import av",
+            "name": "Python av",
+            "status": "OK",
+            "stderr": "",
+            "stdout": ""
+        },
+        {
+            "detail": "import numpy",
+            "name": "Python numpy",
+            "status": "OK",
+            "stderr": "",
+            "stdout": ""
+        },
+        {
+            "detail": "/usr/local/lib/libunitree_sdk2.a",
+            "name": "unitree_sdk2 library",
+            "status": "OK"
+        },
+        {
+            "detail": "/usr/local/lib/cmake/unitree_sdk2/unitree_sdk2Config.cmake",
+            "name": "unitree_sdk2 cmake config",
+            "status": "OK"
+        },
+        {
+            "detail": "/usr/local/include/unitree/idl/go2/MotorCmds_.hpp",
+            "name": "unitree_sdk2 go2 header",
+            "status": "OK"
+        },
+        {
+            "detail": "build-essential",
+            "name": "apt build-essential",
+            "status": "OK"
+        },
+        {
+            "detail": "cmake",
+            "name": "apt cmake",
+            "status": "OK"
+        },
+        {
+            "detail": "make",
+            "name": "apt make",
+            "status": "OK"
+        },
+        {
+            "detail": "libeigen3-dev",
+            "name": "apt libeigen3-dev",
+            "status": "OK"
+        },
+        {
+            "detail": "libspdlog-dev",
+            "name": "apt libspdlog-dev",
+            "status": "OK"
+        },
+        {
+            "detail": "libfmt-dev",
+            "name": "apt libfmt-dev",
+            "status": "OK"
+        },
+        {
+            "detail": "libboost-all-dev",
+            "name": "apt libboost-all-dev",
+            "status": "OK"
+        },
+        {
+            "detail": "libyaml-cpp-dev",
+            "name": "apt libyaml-cpp-dev",
+            "status": "OK"
+        },
+        {
+            "detail": "/home/unitree/g1_setup/remote",
+            "name": "remote image binary",
+            "status": "OK"
+        },
+        {
+            "detail": "/etc/udev/rules.d/99-usb-cameras.rules",
+            "name": "camera udev rules",
+            "status": "OK"
+        },
+        {
+            "detail": "/dev/cam_head",
+            "name": "/dev/cam_head",
+            "status": "OK"
+        },
+        {
+            "detail": "/dev/cam_wrist_left",
+            "name": "/dev/cam_wrist_left",
+            "status": "OK"
+        },
+        {
+            "detail": "/dev/cam_wrist_right",
+            "name": "/dev/cam_wrist_right",
+            "reason": "Camera device symlink does not exist.",
+            "status": "WARN",
+            "suggestion": "Check camera connection and udev rules. If wrist cameras are not required for this robot, this warning can be ignored."
+        },
+        {
+            "detail": "[teleop_server_node-1] \u001b[33m2026-06-09 16:40:13.530 [ WARN] [camera_publisher.cpp:575] Failed to open V4L2 device for camera[2] /dev/cam_wrist_right: No such file or directory\u001b[0m\n[teleop_server_node-1] \u001b[31m2026-06-09 16:40:13.530 [ERROR] [camera_publisher.cpp:297] Failed to initialize V4L2 direct MJPEG capture for camera[2]: /dev/cam_wrist_right\u001b[0m\n[teleop_server_node-1] \u001b[33m2026-06-09 16:40:13.535 [ WARN] [camera_publisher.cpp:575] Failed to open V4L2 device for camera[2] /dev/cam_wrist_right: No such file or directory\u001b[0m\n[teleop_server_node-1] \u001b[31m2026-06-09 16:40:13.535 [ERROR] [camera_publisher.cpp:297] Failed to initialize V4L2 direct MJPEG capture for camera[2]: /dev/cam_wrist_right\u001b[0m\n[teleop_server_node-1] \u001b[33m2026-06-09 16:40:43.563 [ WARN] [camera_publisher.cpp:575] Failed to open V4L2 device for camera[2] /dev/cam_wrist_right: No such file or directory\u001b[0m\n[teleop_server_node-1] \u001b[31m2026-06-09 16:40:43.563 [ERROR] [camera_publisher.cpp:297] Failed to initialize V4L2 direct MJPEG capture for camera[2]: /dev/cam_wrist_right\u001b[0m\n[teleop_server_node-1] \u001b[33m2026-06-09 16:41:13.588 [ WARN] [camera_publisher.cpp:575] Failed to open V4L2 device for camera[2] /dev/cam_wrist_right: No such file or directory\u001b[0m\n[teleop_server_node-1] \u001b[31m2026-06-09 16:41:13.588 [ERROR] [camera_publisher.cpp:297] Failed to initialize V4L2 direct MJPEG capture for camera[2]: /dev/cam_wrist_right\u001b[0m\n[teleop_server_node-1] \u001b[33m2026-06-09 16:41:43.615 [ WARN] [camera_publisher.cpp:575] Failed to open V4L2 device for camera[2] /dev/cam_wrist_right: No such file or directory\u001b[0m\n[teleop_server_node-1] \u001b[31m2026-06-09 16:41:43.615 [ERROR] [camera_publisher.cpp:297] Failed to initialize V4L2 direct MJPEG capture for camera[2]: /dev/cam_wrist_right\u001b[0m\n[teleop_server_node-1] \u001b[33m2026-06-09 16:42:13.640 [ WARN] [camera_publisher.cpp:575] Failed to open V4L2 device for camera[2] /dev/cam_wrist_right: No such file or directory\u001b[0m\n[teleop_server_node-1] \u001b[31m2026-06-09 16:42:13.640 [ERROR] [camera_publisher.cpp:297] Failed to initialize V4L2 direct MJPEG capture for camera[2]: /dev/cam_wrist_right\u001b[0m\n[teleop_server_node-1] \u001b[33m2026-06-09 16:42:43.666 [ WARN] [camera_publisher.cpp:575] Failed to open V4L2 device for camera[2] /dev/cam_wrist_right: No such file or directory\u001b[0m\n[teleop_server_node-1] \u001b[31m2026-06-09 16:42:43.666 [ERROR] [camera_publisher.cpp:297] Failed to initialize V4L2 direct MJPEG capture for camera[2]: /dev/cam_wrist_right\u001b[0m\n[teleop_server_node-1] \u001b[33m2026-06-09 16:43:13.691 [ WARN] [camera_publisher.cpp:575] Failed to open V4L2 device for camera[2] /dev/cam_wrist_right: No such file or directory\u001b[0m\n[teleop_server_node-1] \u001b[31m2026-06-09 16:43:13.691 [ERROR] [camera_publisher.cpp:297] Failed to initialize V4L2 direct MJPEG capture for camera[2]: /dev/cam_wrist_right\u001b[0m\n[teleop_server_node-1] \u001b[33m2026-06-09 16:43:43.716 [ WARN] [camera_publisher.cpp:575] Failed to open V4L2 device for camera[2] /dev/cam_wrist_right: No such file or directory\u001b[0m\n[teleop_server_node-1] \u001b[31m2026-06-09 16:43:43.716 [ERROR] [camera_publisher.cpp:297] Failed to initialize V4L2 direct MJPEG capture for camera[2]: /dev/cam_wrist_right\u001b[0m\n[teleop_server_node-1] \u001b[33m2026-06-09 16:44:13.742 [ WARN] [camera_publisher.cpp:575] Failed to open V4L2 device for camera[2] /dev/cam_wrist_right: No such file or directory\u001b[0m\n[teleop_server_node-1] \u001b[31m2026-06-09 16:44:13.742 [ERROR] [camera_publisher.cpp:297] Failed to initialize V4L2 direct MJPEG capture for camera[2]: /dev/cam_wrist_right\u001b[0m",
+            "name": "cos_teleop camera log",
+            "reason": "cos_teleop \u670d\u52a1\u6b63\u5728\u8fd0\u884c\uff0c\u4f46\u65e5\u5fd7\u4e2d\u5b58\u5728\u76f8\u673a\u8bfb\u53d6\u6216\u521d\u59cb\u5316\u5f02\u5e38\u3002",
+            "status": "WARN",
+            "stderr": "",
+            "stdout": "[teleop_server_node-1] \u001b[33m2026-06-09 16:40:13.530 [ WARN] [camera_publisher.cpp:575] Failed to open V4L2 device for camera[2] /dev/cam_wrist_right: No such file or directory\u001b[0m\n[teleop_server_node-1] \u001b[31m2026-06-09 16:40:13.530 [ERROR] [camera_publisher.cpp:297] Failed to initialize V4L2 direct MJPEG capture for camera[2]: /dev/cam_wrist_right\u001b[0m\n[teleop_server_node-1] \u001b[33m2026-06-09 16:40:13.535 [ WARN] [camera_publisher.cpp:575] Failed to open V4L2 device for camera[2] /dev/cam_wrist_right: No such file or directory\u001b[0m\n[teleop_server_node-1] \u001b[31m2026-06-09 16:40:13.535 [ERROR] [camera_publisher.cpp:297] Failed to initialize V4L2 direct MJPEG capture for camera[2]: /dev/cam_wrist_right\u001b[0m\n[teleop_server_node-1] \u001b[33m2026-06-09 16:40:43.563 [ WARN] [camera_publisher.cpp:575] Failed to open V4L2 device for camera[2] /dev/cam_wrist_right: No such file or directory\u001b[0m\n[teleop_server_node-1] \u001b[31m2026-06-09 16:40:43.563 [ERROR] [camera_publisher.cpp:297] Failed to initialize V4L2 direct MJPEG capture for camera[2]: /dev/cam_wrist_right\u001b[0m\n[teleop_server_node-1] \u001b[33m2026-06-09 16:41:13.588 [ WARN] [camera_publisher.cpp:575] Failed to open V4L2 device for camera[2] /dev/cam_wrist_right: No such file or directory\u001b[0m\n[teleop_server_node-1] \u001b[31m2026-06-09 16:41:13.588 [ERROR] [camera_publisher.cpp:297] Failed to initialize V4L2 direct MJPEG capture for camera[2]: /dev/cam_wrist_right\u001b[0m\n[teleop_server_node-1] \u001b[33m2026-06-09 16:41:43.615 [ WARN] [camera_publisher.cpp:575] Failed to open V4L2 device for camera[2] /dev/cam_wrist_right: No such file or directory\u001b[0m\n[teleop_server_node-1] \u001b[31m2026-06-09 16:41:43.615 [ERROR] [camera_publisher.cpp:297] Failed to initialize V4L2 direct MJPEG capture for camera[2]: /dev/cam_wrist_right\u001b[0m\n[teleop_server_node-1] \u001b[33m2026-06-09 16:42:13.640 [ WARN] [camera_publisher.cpp:575] Failed to open V4L2 device for camera[2] /dev/cam_wrist_right: No such file or directory\u001b[0m\n[teleop_server_node-1] \u001b[31m2026-06-09 16:42:13.640 [ERROR] [camera_publisher.cpp:297] Failed to initialize V4L2 direct MJPEG capture for camera[2]: /dev/cam_wrist_right\u001b[0m\n[teleop_server_node-1] \u001b[33m2026-06-09 16:42:43.666 [ WARN] [camera_publisher.cpp:575] Failed to open V4L2 device for camera[2] /dev/cam_wrist_right: No such file or directory\u001b[0m\n[teleop_server_node-1] \u001b[31m2026-06-09 16:42:43.666 [ERROR] [camera_publisher.cpp:297] Failed to initialize V4L2 direct MJPEG capture for camera[2]: /dev/cam_wrist_right\u001b[0m\n[teleop_server_node-1] \u001b[33m2026-06-09 16:43:13.691 [ WARN] [camera_publisher.cpp:575] Failed to open V4L2 device for camera[2] /dev/cam_wrist_right: No such file or directory\u001b[0m\n[teleop_server_node-1] \u001b[31m2026-06-09 16:43:13.691 [ERROR] [camera_publisher.cpp:297] Failed to initialize V4L2 direct MJPEG capture for camera[2]: /dev/cam_wrist_right\u001b[0m\n[teleop_server_node-1] \u001b[33m2026-06-09 16:43:43.716 [ WARN] [camera_publisher.cpp:575] Failed to open V4L2 device for camera[2] /dev/cam_wrist_right: No such file or directory\u001b[0m\n[teleop_server_node-1] \u001b[31m2026-06-09 16:43:43.716 [ERROR] [camera_publisher.cpp:297] Failed to initialize V4L2 direct MJPEG capture for camera[2]: /dev/cam_wrist_right\u001b[0m\n[teleop_server_node-1] \u001b[33m2026-06-09 16:44:13.742 [ WARN] [camera_publisher.cpp:575] Failed to open V4L2 device for camera[2] /dev/cam_wrist_right: No such file or directory\u001b[0m\n[teleop_server_node-1] \u001b[31m2026-06-09 16:44:13.742 [ERROR] [camera_publisher.cpp:297] Failed to initialize V4L2 direct MJPEG capture for camera[2]: /dev/cam_wrist_right\u001b[0m",
+            "suggestion": "\u8bf7\u5c1d\u8bd5\u91cd\u542f cos_teleop.service\uff1b\u5982\u679c\u4ecd\u5f02\u5e38\uff0c\u8bf7\u68c0\u67e5\u76f8\u673a Type-C \u8fde\u63a5\u3001udev \u6620\u5c04\u3001\u76f8\u673a\u8bbe\u5907\u72b6\u6001\u6216\u76f8\u673a\u662f\u5426\u88ab\u5360\u7528\u3002"
+        },
+        {
+            "detail": "/home/unitree/g1_setup/brainco_hand_service",
+            "name": "brainco source directory",
+            "status": "OK"
+        },
+        {
+            "detail": "/home/unitree/g1_setup/brainco_hand_service/bin",
+            "name": "brainco bin directory",
+            "status": "OK"
+        },
+        {
+            "detail": "/home/unitree/g1_setup/brainco_hand_service/bin/brainco_hand_server",
+            "name": "brainco server binary",
+            "status": "OK"
+        },
+        {
+            "detail": "/home/unitree/g1_setup/brainco_hand_service/bin/test_brainco_hand_server",
+            "name": "brainco test binary",
+            "status": "OK"
+        },
+        {
+            "detail": "/home/unitree/g1_setup/brainco_hand_service/lib/aarch64/libbc_stark_sdk.so",
+            "name": "brainco sdk library",
+            "status": "OK"
+        },
+        {
+            "detail": "/etc/systemd/system/brainco_hand.service",
+            "name": "brainco systemd unit file",
+            "status": "OK"
+        },
+        {
+            "detail": "/home/unitree/g1_setup/brainco_hand_service/bin/brainco_hand_server",
+            "name": "brainco server executable",
+            "status": "OK"
+        },
+        {
+            "detail": "ldd rc=0",
+            "name": "brainco shared libraries",
+            "status": "OK"
+        },
+        {
+            "detail": "enabled",
+            "name": "brainco service enabled",
+            "status": "OK"
+        },
+        {
+            "detail": "active",
+            "name": "brainco service active",
+            "status": "OK",
+            "stderr": "\n--- systemctl status stderr ---\n\n--- journalctl stderr ---\n",
+            "stdout": "\n--- systemctl status ---\n\n--- journalctl -u brainco_hand.service -n 50 ---\n"
+        },
+        {
+            "detail": "Brainco left/right hands bound and workers started",
+            "name": "brainco hand binding",
+            "reason": "",
+            "status": "OK",
+            "stderr": "",
+            "stdout": "Started Brainco Hand Service Start.\n[1970-02-03 06:50:42.944] [info] Available Serial Ports: /dev/ttyUSB3, /dev/ttyUSB2, /dev/ttyUSB1, /dev/ttyUSB0\n[1970-02-03 06:50:42.944] [info] Trying port for left hand from /dev/ttyUSB3 port\n[1970-02-03 06:50:43.158] [warning] Failed to get device info from /dev/ttyUSB3 port\n[1970-02-03 06:50:43.159] [info] Trying port for left hand from /dev/ttyUSB2 port\n[1970-02-03 06:50:43.365] [warning] Failed to get device info from /dev/ttyUSB2 port\n[1970-02-03 06:50:43.368] [info] Trying port for left hand from /dev/ttyUSB1 port\n[1970-02-03 06:50:43.377] [info] left hand bound to /dev/ttyUSB1 port\n[1970-02-03 06:50:43.377] [info] Trying port for right hand from /dev/ttyUSB3 port\n[1970-02-03 06:50:43.585] [warning] Failed to get device info from /dev/ttyUSB3 port\n[1970-02-03 06:50:43.588] [info] Trying port for right hand from /dev/ttyUSB2 port\n[1970-02-03 06:50:43.608] [info] right hand bound to /dev/ttyUSB2 port\n[1970-02-03 06:50:43.608] [info] \ud83d\ude80 Starting worker for left (slave 126)\n[1970-02-03 06:50:43.608] [info] \ud83d\ude80 Starting worker for right (slave 127)\nStarted Brainco Hand Service Start.\n[1970-02-03 08:10:27.596] [info] Available Serial Ports: /dev/ttyUSB3, /dev/ttyUSB2, /dev/ttyUSB1, /dev/ttyUSB0\n[1970-02-03 08:10:27.596] [info] Trying port for left hand from /dev/ttyUSB3 port\n[1970-02-03 08:10:27.808] [warning] Failed to get device info from /dev/ttyUSB3 port\n[1970-02-03 08:10:27.812] [info] Trying port for left hand from /dev/ttyUSB2 port\n[1970-02-03 08:10:28.022] [warning] Failed to get device info from /dev/ttyUSB2 port\n[1970-02-03 08:10:28.025] [info] Trying port for left hand from /dev/ttyUSB1 port\n[1970-02-03 08:10:28.232] [warning] Failed to get device info from /dev/ttyUSB1 port\n[1970-02-03 08:10:28.234] [info] Trying port for left hand from /dev/ttyUSB0 port\n[1970-02-03 08:10:28.441] [warning] Failed to get device info from /dev/ttyUSB0 port\n[1970-02-03 08:10:28.444] [info] Trying port for right hand from /dev/ttyUSB3 port\n[1970-02-03 08:10:28.651] [warning] Failed to get device info from /dev/ttyUSB3 port\n[1970-02-03 08:10:28.656] [info] Trying port for right hand from /dev/ttyUSB2 port\n[1970-02-03 08:10:28.668] [info] right hand bound to /dev/ttyUSB2 port\n[1970-02-03 08:10:28.668] [info] \ud83d\ude80 Starting worker for right (slave 127)\nStopping Brainco Hand Service Start...\nbrainco_hand.service: Succeeded.\nStopped Brainco Hand Service Start.\nStarted Brainco Hand Service Start.\n[1970-02-03 08:14:40.968] [info] Available Serial Ports: /dev/ttyUSB3, /dev/ttyUSB2, /dev/ttyUSB1, /dev/ttyUSB0\n[1970-02-03 08:14:40.968] [info] Trying port for left hand from /dev/ttyUSB3 port\n[1970-02-03 08:14:41.175] [warning] Failed to get device info from /dev/ttyUSB3 port\n[1970-02-03 08:14:41.178] [info] Trying port for left hand from /dev/ttyUSB2 port\n[1970-02-03 08:14:41.383] [warning] Failed to get device info from /dev/ttyUSB2 port\n[1970-02-03 08:14:41.386] [info] Trying port for left hand from /dev/ttyUSB1 port\n[1970-02-03 08:14:41.401] [info] left hand bound to /dev/ttyUSB1 port\n[1970-02-03 08:14:41.401] [info] Trying port for right hand from /dev/ttyUSB3 port\n[1970-02-03 08:14:41.608] [warning] Failed to get device info from /dev/ttyUSB3 port\n[1970-02-03 08:14:41.611] [info] Trying port for right hand from /dev/ttyUSB2 port\n[1970-02-03 08:14:41.627] [info] right hand bound to /dev/ttyUSB2 port\n[1970-02-03 08:14:41.627] [info] \ud83d\ude80 Starting worker for left (slave 126)\n[1970-02-03 08:14:41.627] [info] \ud83d\ude80 Starting worker for right (slave 127)\nStopping Brainco Hand Service Start...\nbrainco_hand.service: Succeeded.\nStopped Brainco Hand Service Start.\nStarted Brainco Hand Service Start.\n[2026-06-09 15:43:20.754] [info] Available Serial Ports: /dev/ttyUSB3, /dev/ttyUSB2, /dev/ttyUSB1, /dev/ttyUSB0\n[2026-06-09 15:43:20.754] [info] Trying port for left hand from /dev/ttyUSB3 port\n[2026-06-09 15:43:20.964] [warning] Failed to get device info from /dev/ttyUSB3 port\n[2026-06-09 15:43:20.967] [info] Trying port for left hand from /dev/ttyUSB2 port\n[2026-06-09 15:43:21.173] [warning] Failed to get device info from /dev/ttyUSB2 port\n[2026-06-09 15:43:21.176] [info] Trying port for left hand from /dev/ttyUSB1 port\n[2026-06-09 15:43:21.191] [info] left hand bound to /dev/ttyUSB1 port\n[2026-06-09 15:43:21.191] [info] Trying port for right hand from /dev/ttyUSB3 port\n[2026-06-09 15:43:21.399] [warning] Failed to get device info from /dev/ttyUSB3 port\n[2026-06-09 15:43:21.402] [info] Trying port for right hand from /dev/ttyUSB2 port\n[2026-06-09 15:43:21.426] [info] right hand bound to /dev/ttyUSB2 port\n[2026-06-09 15:43:21.426] [info] \ud83d\ude80 Starting worker for left (slave 126)\n[2026-06-09 15:43:21.426] [info] \ud83d\ude80 Starting worker for right (slave 127)",
+            "suggestion": ""
+        }
+    ],
+    "counts": {
+        "fail": "0",
+        "ok": "37",
+        "skip": "0",
+        "warn": "2"
+    },
+    "end_effector": "brainco",
+    "failed_items": [],
+    "host": "g1_robot_069",
+    "install_failed_items": [],
+    "install_results": [],
+    "mode": "check",
+    "overall_status": "WARN",
+    "robot_id": "69",
+    "skipped_items": [],
+    "warn_items": [
+        {
+            "detail": "/dev/cam_wrist_right",
+            "name": "/dev/cam_wrist_right",
+            "reason": "Camera device symlink does not exist.",
+            "status": "WARN",
+            "suggestion": "Check camera connection and udev rules. If wrist cameras are not required for this robot, this warning can be ignored."
+        },
+        {
+            "detail": "[teleop_server_node-1] \u001b[33m2026-06-09 16:40:13.530 [ WARN] [camera_publisher.cpp:575] Failed to open V4L2 device for camera[2] /dev/cam_wrist_right: No such file or directory\u001b[0m\n[teleop_server_node-1] \u001b[31m2026-06-09 16:40:13.530 [ERROR] [camera_publisher.cpp:297] Failed to initialize V4L2 direct MJPEG capture for camera[2]: /dev/cam_wrist_right\u001b[0m\n[teleop_server_node-1] \u001b[33m2026-06-09 16:40:13.535 [ WARN] [camera_publisher.cpp:575] Failed to open V4L2 device for camera[2] /dev/cam_wrist_right: No such file or directory\u001b[0m\n[teleop_server_node-1] \u001b[31m2026-06-09 16:40:13.535 [ERROR] [camera_publisher.cpp:297] Failed to initialize V4L2 direct MJPEG capture for camera[2]: /dev/cam_wrist_right\u001b[0m\n[teleop_server_node-1] \u001b[33m2026-06-09 16:40:43.563 [ WARN] [camera_publisher.cpp:575] Failed to open V4L2 device for camera[2] /dev/cam_wrist_right: No such file or directory\u001b[0m\n[teleop_server_node-1] \u001b[31m2026-06-09 16:40:43.563 [ERROR] [camera_publisher.cpp:297] Failed to initialize V4L2 direct MJPEG capture for camera[2]: /dev/cam_wrist_right\u001b[0m\n[teleop_server_node-1] \u001b[33m2026-06-09 16:41:13.588 [ WARN] [camera_publisher.cpp:575] Failed to open V4L2 device for camera[2] /dev/cam_wrist_right: No such file or directory\u001b[0m\n[teleop_server_node-1] \u001b[31m2026-06-09 16:41:13.588 [ERROR] [camera_publisher.cpp:297] Failed to initialize V4L2 direct MJPEG capture for camera[2]: /dev/cam_wrist_right\u001b[0m\n[teleop_server_node-1] \u001b[33m2026-06-09 16:41:43.615 [ WARN] [camera_publisher.cpp:575] Failed to open V4L2 device for camera[2] /dev/cam_wrist_right: No such file or directory\u001b[0m\n[teleop_server_node-1] \u001b[31m2026-06-09 16:41:43.615 [ERROR] [camera_publisher.cpp:297] Failed to initialize V4L2 direct MJPEG capture for camera[2]: /dev/cam_wrist_right\u001b[0m\n[teleop_server_node-1] \u001b[33m2026-06-09 16:42:13.640 [ WARN] [camera_publisher.cpp:575] Failed to open V4L2 device for camera[2] /dev/cam_wrist_right: No such file or directory\u001b[0m\n[teleop_server_node-1] \u001b[31m2026-06-09 16:42:13.640 [ERROR] [camera_publisher.cpp:297] Failed to initialize V4L2 direct MJPEG capture for camera[2]: /dev/cam_wrist_right\u001b[0m\n[teleop_server_node-1] \u001b[33m2026-06-09 16:42:43.666 [ WARN] [camera_publisher.cpp:575] Failed to open V4L2 device for camera[2] /dev/cam_wrist_right: No such file or directory\u001b[0m\n[teleop_server_node-1] \u001b[31m2026-06-09 16:42:43.666 [ERROR] [camera_publisher.cpp:297] Failed to initialize V4L2 direct MJPEG capture for camera[2]: /dev/cam_wrist_right\u001b[0m\n[teleop_server_node-1] \u001b[33m2026-06-09 16:43:13.691 [ WARN] [camera_publisher.cpp:575] Failed to open V4L2 device for camera[2] /dev/cam_wrist_right: No such file or directory\u001b[0m\n[teleop_server_node-1] \u001b[31m2026-06-09 16:43:13.691 [ERROR] [camera_publisher.cpp:297] Failed to initialize V4L2 direct MJPEG capture for camera[2]: /dev/cam_wrist_right\u001b[0m\n[teleop_server_node-1] \u001b[33m2026-06-09 16:43:43.716 [ WARN] [camera_publisher.cpp:575] Failed to open V4L2 device for camera[2] /dev/cam_wrist_right: No such file or directory\u001b[0m\n[teleop_server_node-1] \u001b[31m2026-06-09 16:43:43.716 [ERROR] [camera_publisher.cpp:297] Failed to initialize V4L2 direct MJPEG capture for camera[2]: /dev/cam_wrist_right\u001b[0m\n[teleop_server_node-1] \u001b[33m2026-06-09 16:44:13.742 [ WARN] [camera_publisher.cpp:575] Failed to open V4L2 device for camera[2] /dev/cam_wrist_right: No such file or directory\u001b[0m\n[teleop_server_node-1] \u001b[31m2026-06-09 16:44:13.742 [ERROR] [camera_publisher.cpp:297] Failed to initialize V4L2 direct MJPEG capture for camera[2]: /dev/cam_wrist_right\u001b[0m",
+            "name": "cos_teleop camera log",
+            "reason": "cos_teleop \u670d\u52a1\u6b63\u5728\u8fd0\u884c\uff0c\u4f46\u65e5\u5fd7\u4e2d\u5b58\u5728\u76f8\u673a\u8bfb\u53d6\u6216\u521d\u59cb\u5316\u5f02\u5e38\u3002",
+            "status": "WARN",
+            "stderr": "",
+            "stdout": "[teleop_server_node-1] \u001b[33m2026-06-09 16:40:13.530 [ WARN] [camera_publisher.cpp:575] Failed to open V4L2 device for camera[2] /dev/cam_wrist_right: No such file or directory\u001b[0m\n[teleop_server_node-1] \u001b[31m2026-06-09 16:40:13.530 [ERROR] [camera_publisher.cpp:297] Failed to initialize V4L2 direct MJPEG capture for camera[2]: /dev/cam_wrist_right\u001b[0m\n[teleop_server_node-1] \u001b[33m2026-06-09 16:40:13.535 [ WARN] [camera_publisher.cpp:575] Failed to open V4L2 device for camera[2] /dev/cam_wrist_right: No such file or directory\u001b[0m\n[teleop_server_node-1] \u001b[31m2026-06-09 16:40:13.535 [ERROR] [camera_publisher.cpp:297] Failed to initialize V4L2 direct MJPEG capture for camera[2]: /dev/cam_wrist_right\u001b[0m\n[teleop_server_node-1] \u001b[33m2026-06-09 16:40:43.563 [ WARN] [camera_publisher.cpp:575] Failed to open V4L2 device for camera[2] /dev/cam_wrist_right: No such file or directory\u001b[0m\n[teleop_server_node-1] \u001b[31m2026-06-09 16:40:43.563 [ERROR] [camera_publisher.cpp:297] Failed to initialize V4L2 direct MJPEG capture for camera[2]: /dev/cam_wrist_right\u001b[0m\n[teleop_server_node-1] \u001b[33m2026-06-09 16:41:13.588 [ WARN] [camera_publisher.cpp:575] Failed to open V4L2 device for camera[2] /dev/cam_wrist_right: No such file or directory\u001b[0m\n[teleop_server_node-1] \u001b[31m2026-06-09 16:41:13.588 [ERROR] [camera_publisher.cpp:297] Failed to initialize V4L2 direct MJPEG capture for camera[2]: /dev/cam_wrist_right\u001b[0m\n[teleop_server_node-1] \u001b[33m2026-06-09 16:41:43.615 [ WARN] [camera_publisher.cpp:575] Failed to open V4L2 device for camera[2] /dev/cam_wrist_right: No such file or directory\u001b[0m\n[teleop_server_node-1] \u001b[31m2026-06-09 16:41:43.615 [ERROR] [camera_publisher.cpp:297] Failed to initialize V4L2 direct MJPEG capture for camera[2]: /dev/cam_wrist_right\u001b[0m\n[teleop_server_node-1] \u001b[33m2026-06-09 16:42:13.640 [ WARN] [camera_publisher.cpp:575] Failed to open V4L2 device for camera[2] /dev/cam_wrist_right: No such file or directory\u001b[0m\n[teleop_server_node-1] \u001b[31m2026-06-09 16:42:13.640 [ERROR] [camera_publisher.cpp:297] Failed to initialize V4L2 direct MJPEG capture for camera[2]: /dev/cam_wrist_right\u001b[0m\n[teleop_server_node-1] \u001b[33m2026-06-09 16:42:43.666 [ WARN] [camera_publisher.cpp:575] Failed to open V4L2 device for camera[2] /dev/cam_wrist_right: No such file or directory\u001b[0m\n[teleop_server_node-1] \u001b[31m2026-06-09 16:42:43.666 [ERROR] [camera_publisher.cpp:297] Failed to initialize V4L2 direct MJPEG capture for camera[2]: /dev/cam_wrist_right\u001b[0m\n[teleop_server_node-1] \u001b[33m2026-06-09 16:43:13.691 [ WARN] [camera_publisher.cpp:575] Failed to open V4L2 device for camera[2] /dev/cam_wrist_right: No such file or directory\u001b[0m\n[teleop_server_node-1] \u001b[31m2026-06-09 16:43:13.691 [ERROR] [camera_publisher.cpp:297] Failed to initialize V4L2 direct MJPEG capture for camera[2]: /dev/cam_wrist_right\u001b[0m\n[teleop_server_node-1] \u001b[33m2026-06-09 16:43:43.716 [ WARN] [camera_publisher.cpp:575] Failed to open V4L2 device for camera[2] /dev/cam_wrist_right: No such file or directory\u001b[0m\n[teleop_server_node-1] \u001b[31m2026-06-09 16:43:43.716 [ERROR] [camera_publisher.cpp:297] Failed to initialize V4L2 direct MJPEG capture for camera[2]: /dev/cam_wrist_right\u001b[0m\n[teleop_server_node-1] \u001b[33m2026-06-09 16:44:13.742 [ WARN] [camera_publisher.cpp:575] Failed to open V4L2 device for camera[2] /dev/cam_wrist_right: No such file or directory\u001b[0m\n[teleop_server_node-1] \u001b[31m2026-06-09 16:44:13.742 [ERROR] [camera_publisher.cpp:297] Failed to initialize V4L2 direct MJPEG capture for camera[2]: /dev/cam_wrist_right\u001b[0m",
+            "suggestion": "\u8bf7\u5c1d\u8bd5\u91cd\u542f cos_teleop.service\uff1b\u5982\u679c\u4ecd\u5f02\u5e38\uff0c\u8bf7\u68c0\u67e5\u76f8\u673a Type-C \u8fde\u63a5\u3001udev \u6620\u5c04\u3001\u76f8\u673a\u8bbe\u5907\u72b6\u6001\u6216\u76f8\u673a\u662f\u5426\u88ab\u5360\u7528\u3002"
+        }
+    ],
+    "warnings": []
+}

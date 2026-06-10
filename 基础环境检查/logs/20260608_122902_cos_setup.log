@@ -1,0 +1,90 @@
+$ ansible-playbook -k -K -T 15 -i '/home/jeff/coscene/code/codex/基础环境检查/inventory.ini' -e '{"ansible_ssh_common_args": "-o PreferredAuthentications=password -o PubkeyAuthentication=no -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -o ConnectionAttempts=1"}' '/home/jeff/coscene/code/codex/基础环境检查/deploy_eva_robot检测/batch_cos_setup.yml' -e 'cos_setup_report_dir=/home/jeff/coscene/code/codex/基础环境检查/reports/raw' --limit g1_robot_069
+cwd=/home/jeff/coscene/code/codex/基础环境检查
+
+SSH password: 
+[operator_console] detected SSH password prompt, password sent
+
+BECOME password[defaults to SSH password]: 
+[operator_console] detected BECOME password prompt, sudo password sent
+
+
+PLAY [Run cos_setup.sh on G1 robots] *******************************************
+
+TASK [Record cos_setup start time] *********************************************
+[0;32mok: [g1_robot_069][0m
+
+TASK [Resolve local cos_setup report directory] ********************************
+[0;32mok: [g1_robot_069][0m
+
+TASK [Get controller current time before cos_setup] ****************************
+[0;32mok: [g1_robot_069][0m
+
+TASK [Sync robot time from controller before cos_setup] ************************
+[0;33mchanged: [g1_robot_069][0m
+
+TASK [Stop remote_start.service before cos_setup] ******************************
+[0;33mchanged: [g1_robot_069][0m
+
+TASK [Check remote cos_setup.sh] ***********************************************
+[0;32mok: [g1_robot_069][0m
+
+TASK [Build cos_setup path facts] **********************************************
+[0;32mok: [g1_robot_069][0m
+
+TASK [Run cos_setup.sh first attempt] ******************************************
+[0;32mok: [g1_robot_069][0m
+
+TASK [Build check-mode cos_setup result] ***************************************
+[0;36mskipping: [g1_robot_069][0m
+
+TASK [Detect pyrealsense/librealsense/GLIBC error] *****************************
+[0;32mok: [g1_robot_069][0m
+
+TASK [Remove librealsense packages after detected error] ***********************
+[0;36mskipping: [g1_robot_069][0m
+
+TASK [Run cos_setup.sh retry after librealsense cleanup] ***********************
+[0;36mskipping: [g1_robot_069][0m
+
+TASK [Check cos services] ******************************************************
+[0;32mok: [g1_robot_069] => (item=cos_agent)[0m
+[0;32mok: [g1_robot_069] => (item=cos_teleop)[0m
+
+TASK [Record cos_setup end time] ***********************************************
+[0;32mok: [g1_robot_069][0m
+
+TASK [Build cos_setup final result] ********************************************
+[0;32mok: [g1_robot_069][0m
+
+TASK [Build cos service report] ************************************************
+[0;32mok: [g1_robot_069] => (item={'cmd': 'set +e\nsystemctl is-active cos_agent\nactive_rc=$?\nsystemctl status cos_agent --no-pager -l\nstatus_rc=$?\nprintf \'\\n__COS_SERVICE_RC__ active=%s status=%s\\n\' "$active_rc" "$status_rc"\nexit 0\n', 'stdout': 'active\n● cos_agent.service - coScene agent ROS2 Node\n     Loaded: loaded (/etc/systemd/system/cos_agent.service; enabled; vendor preset: enabled)\n     Active: active (running) since Mon 2026-06-08 12:26:46 CST; 2min 18s ago\n   Main PID: 10095 (ros2)\n      Tasks: 22 (limit: 18143)\n     Memory: 36.9M\n     CGroup: /system.slice/cos_agent.service\n             ├─10095 /usr/bin/python3 /opt/ros/foxy/bin/ros2 launch agent agent.launch.py\n             └─10148 /opt/ros/foxy/lib/agent/agent_node --ros-args -r __node:=agent_node --params-file /tmp/launch_params_xlafdyow\n\nJun 08 12:26:46 ubuntu systemd[1]: Started coScene agent ROS2 Node.\nJun 08 12:26:47 ubuntu bash[10095]: [INFO] [launch]: All log files can be found below /home/unitree/.ros/log/2026-06-08-12-26-47-479475-ubuntu-10095\nJun 08 12:26:47 ubuntu bash[10095]: [INFO] [launch]: Default logging verbosity is set to INFO\nJun 08 12:26:47 ubuntu bash[10095]: [INFO] [agent_node-1]: process started with pid [10148]\nJun 08 12:26:47 ubuntu bash[10095]: [agent_node-1] [INFO] [1780892807.626570624] [agent]: GIT HASH: fbcc00f6c493a29951e8f43724f1a21da3e81af9\nJun 08 12:26:47 ubuntu bash[10095]: [agent_node-1] ╔═════════════════════════════════════════════════════════════════════════╗\nJun 08 12:26:47 ubuntu bash[10095]: [agent_node-1] ║              coScene Agent Started - ROS 2, version: 0.4.11              ║\nJun 08 12:26:47 ubuntu bash[10095]: [agent_node-1] ╚═════════════════════════════════════════════════════════════════════════╝\nJun 08 12:26:47 ubuntu bash[10095]: [agent_node-1] [INFO] [1780892807.626624768] [agent]: try to connect nats server...\nJun 08 12:26:47 ubuntu bash[10095]: [agent_node-1] [INFO] [1780892807.666574848] [agent]: connect nats success!\n\n__COS_SERVICE_RC__ active=0 status=0', 'stderr': '', 'rc': 0, 'start': '2026-06-08 12:29:04.425232', 'end': '2026-06-08 12:29:04.440971', 'delta': '0:00:00.015739', 'changed': False, 'invocation': {'module_args': {'executable': '/bin/bash', '_raw_params': 'set +e\nsystemctl is-active cos_agent\nactive_rc=$?\nsystemctl status cos_agent --no-pager -l\nstatus_rc=$?\nprintf \'\\n__COS_SERVICE_RC__ active=%s status=%s\\n\' "$active_rc" "$status_rc"\nexit 0\n', '_uses_shell': True, 'warn': True, 'stdin_add_newline': True, 'strip_empty_ends': True, 'argv': None, 'chdir': None, 'creates': None, 'removes': None, 'stdin': None}}, 'stdout_lines': ['active', '● cos_agent.service - coScene agent ROS2 Node', '     Loaded: loaded (/etc/systemd/system/cos_agent.service; enabled; vendor preset: enabled)', '     Active: active (running) since Mon 2026-06-08 12:26:46 CST; 2min 18s ago', '   Main PID: 10095 (ros2)', '      Tasks: 22 (limit: 18143)', '     Memory: 36.9M', '     CGroup: /system.slice/cos_agent.service', '             ├─10095 /usr/bin/python3 /opt/ros/foxy/bin/ros2 launch agent agent.launch.py', '             └─10148 /opt/ros/foxy/lib/agent/agent_node --ros-args -r __node:=agent_node --params-file /tmp/launch_params_xlafdyow', '', 'Jun 08 12:26:46 ubuntu systemd[1]: Started coScene agent ROS2 Node.', 'Jun 08 12:26:47 ubuntu bash[10095]: [INFO] [launch]: All log files can be found below /home/unitree/.ros/log/2026-06-08-12-26-47-479475-ubuntu-10095', 'Jun 08 12:26:47 ubuntu bash[10095]: [INFO] [launch]: Default logging verbosity is set to INFO', 'Jun 08 12:26:47 ubuntu bash[10095]: [INFO] [agent_node-1]: process started with pid [10148]', 'Jun 08 12:26:47 ubuntu bash[10095]: [agent_node-1] [INFO] [1780892807.626570624] [agent]: GIT HASH: fbcc00f6c493a29951e8f43724f1a21da3e81af9', 'Jun 08 12:26:47 ubuntu bash[10095]: [agent_node-1] ╔═════════════════════════════════════════════════════════════════════════╗', 'Jun 08 12:26:47 ubuntu bash[10095]: [agent_node-1] ║              coScene Agent Started - ROS 2, version: 0.4.11              ║', 'Jun 08 12:26:47 ubuntu bash[10095]: [agent_node-1] ╚═════════════════════════════════════════════════════════════════════════╝', 'Jun 08 12:26:47 ubuntu bash[10095]: [agent_node-1] [INFO] [1780892807.626624768] [agent]: try to connect nats server...', 'Jun 08 12:26:47 ubuntu bash[10095]: [agent_node-1] [INFO] [1780892807.666574848] [agent]: connect nats success!', '', '__COS_SERVICE_RC__ active=0 status=0'], 'stderr_lines': [], 'failed': False, 'failed_when_result': False, 'item': 'cos_agent', 'ansible_loop_var': 'item'})[0m
+[0;32mok: [g1_robot_069] => (item={'cmd': 'set +e\nsystemctl is-active cos_teleop\nactive_rc=$?\nsystemctl status cos_teleop --no-pager -l\nstatus_rc=$?\nprintf \'\\n__COS_SERVICE_RC__ active=%s status=%s\\n\' "$active_rc" "$status_rc"\nexit 0\n', 'stdout': 'active\n● cos_teleop.service - coScene teleop_server ROS2 Node\n     Loaded: loaded (/etc/systemd/system/cos_teleop.service; enabled; vendor preset: enabled)\n     Active: active (running) since Mon 2026-06-08 12:27:02 CST; 2min 1s ago\n   Main PID: 10205 (ros2)\n      Tasks: 47 (limit: 18143)\n     Memory: 83.9M\n     CGroup: /system.slice/cos_teleop.service\n             ├─10205 /usr/bin/python3 /opt/ros/foxy/bin/ros2 launch teleop_server teleop_server.launch.py urdf_file:=/home/unitree/cos_ws/src/g1_description/g1_29dof_mode_15_with_dex1_1.urdf\n             ├─10259 /home/unitree/cos_ws/install/teleop_server/lib/teleop_server/teleop_server_node /home/unitree/cos_ws/install/teleop_server/share/teleop_server/config/teleop_server.yaml --ros-args\n             └─10261 /opt/ros/foxy/lib/robot_state_publisher/robot_state_publisher /home/unitree/cos_ws/src/g1_description/g1_29dof_mode_15_with_dex1_1.urdf --ros-args\n\nJun 08 12:27:04 ubuntu bash[10205]: [teleop_server_node-1] [INFO] [1780892824.512675840] [teleop_server]: Camera[0] publishes RealSense ROS topic: cam_head/compressed_image\nJun 08 12:27:04 ubuntu bash[10205]: [teleop_server_node-1] [INFO] [1780892824.512796096] [teleop_server]: Open camera[1]: type: V4L2, device: /dev/cam_wrist_left, width: 640, height: 480, frame rate: 30, flip: false\nJun 08 12:27:04 ubuntu bash[10205]: [teleop_server_node-1] [INFO] [1780892824.647251552] [teleop_server]: Camera[1] uses V4L2 direct MJPEG path and publishes ROS topic: cam_wrist_left/compressed_image\nJun 08 12:27:04 ubuntu bash[10205]: [teleop_server_node-1] [INFO] [1780892824.647359520] [teleop_server]: Open camera[2]: type: V4L2, device: /dev/cam_wrist_right, width: 640, height: 480, frame rate: 30, flip: false\nJun 08 12:27:04 ubuntu bash[10205]: [teleop_server_node-1] [INFO] [1780892824.787974368] [teleop_server]: Camera[2] uses V4L2 direct MJPEG path and publishes ROS topic: cam_wrist_right/compressed_image\nJun 08 12:27:04 ubuntu bash[10205]: [teleop_server_node-1] [INFO] [1780892824.795276992] [teleop_server]: Dex1 hand state provider listening on /dex1/left/state and /dex1/right/state\nJun 08 12:27:04 ubuntu bash[10205]: [teleop_server_node-1] [INFO] [1780892824.795382400] [teleop_server]: JointsPublisher started, body joints: 29, hand type: dex1, total joints: 31\nJun 08 12:27:04 ubuntu bash[10205]: [teleop_server_node-1] [INFO] [1780892824.808080512] [teleop_server]: Use fixed QoS for /cmd_recording: BEST_EFFORT + VOLATILE + AUTOMATIC liveliness\nJun 08 12:27:04 ubuntu bash[10205]: [teleop_server_node-1] [INFO] [1780892824.809930080] [teleop_server]: CmdForwarder started. Listening on /cmd_recording\nJun 08 12:29:03 ubuntu bash[10205]: [robot_state_publisher-2] [WARN] [1780892943.003224832] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!\n\n__COS_SERVICE_RC__ active=0 status=0', 'stderr': '', 'rc': 0, 'start': '2026-06-08 12:29:04.644547', 'end': '2026-06-08 12:29:04.662124', 'delta': '0:00:00.017577', 'changed': False, 'invocation': {'module_args': {'executable': '/bin/bash', '_raw_params': 'set +e\nsystemctl is-active cos_teleop\nactive_rc=$?\nsystemctl status cos_teleop --no-pager -l\nstatus_rc=$?\nprintf \'\\n__COS_SERVICE_RC__ active=%s status=%s\\n\' "$active_rc" "$status_rc"\nexit 0\n', '_uses_shell': True, 'warn': True, 'stdin_add_newline': True, 'strip_empty_ends': True, 'argv': None, 'chdir': None, 'creates': None, 'removes': None, 'stdin': None}}, 'stdout_lines': ['active', '● cos_teleop.service - coScene teleop_server ROS2 Node', '     Loaded: loaded (/etc/systemd/system/cos_teleop.service; enabled; vendor preset: enabled)', '     Active: active (running) since Mon 2026-06-08 12:27:02 CST; 2min 1s ago', '   Main PID: 10205 (ros2)', '      Tasks: 47 (limit: 18143)', '     Memory: 83.9M', '     CGroup: /system.slice/cos_teleop.service', '             ├─10205 /usr/bin/python3 /opt/ros/foxy/bin/ros2 launch teleop_server teleop_server.launch.py urdf_file:=/home/unitree/cos_ws/src/g1_description/g1_29dof_mode_15_with_dex1_1.urdf', '             ├─10259 /home/unitree/cos_ws/install/teleop_server/lib/teleop_server/teleop_server_node /home/unitree/cos_ws/install/teleop_server/share/teleop_server/config/teleop_server.yaml --ros-args', '             └─10261 /opt/ros/foxy/lib/robot_state_publisher/robot_state_publisher /home/unitree/cos_ws/src/g1_description/g1_29dof_mode_15_with_dex1_1.urdf --ros-args', '', 'Jun 08 12:27:04 ubuntu bash[10205]: [teleop_server_node-1] [INFO] [1780892824.512675840] [teleop_server]: Camera[0] publishes RealSense ROS topic: cam_head/compressed_image', 'Jun 08 12:27:04 ubuntu bash[10205]: [teleop_server_node-1] [INFO] [1780892824.512796096] [teleop_server]: Open camera[1]: type: V4L2, device: /dev/cam_wrist_left, width: 640, height: 480, frame rate: 30, flip: false', 'Jun 08 12:27:04 ubuntu bash[10205]: [teleop_server_node-1] [INFO] [1780892824.647251552] [teleop_server]: Camera[1] uses V4L2 direct MJPEG path and publishes ROS topic: cam_wrist_left/compressed_image', 'Jun 08 12:27:04 ubuntu bash[10205]: [teleop_server_node-1] [INFO] [1780892824.647359520] [teleop_server]: Open camera[2]: type: V4L2, device: /dev/cam_wrist_right, width: 640, height: 480, frame rate: 30, flip: false', 'Jun 08 12:27:04 ubuntu bash[10205]: [teleop_server_node-1] [INFO] [1780892824.787974368] [teleop_server]: Camera[2] uses V4L2 direct MJPEG path and publishes ROS topic: cam_wrist_right/compressed_image', 'Jun 08 12:27:04 ubuntu bash[10205]: [teleop_server_node-1] [INFO] [1780892824.795276992] [teleop_server]: Dex1 hand state provider listening on /dex1/left/state and /dex1/right/state', 'Jun 08 12:27:04 ubuntu bash[10205]: [teleop_server_node-1] [INFO] [1780892824.795382400] [teleop_server]: JointsPublisher started, body joints: 29, hand type: dex1, total joints: 31', 'Jun 08 12:27:04 ubuntu bash[10205]: [teleop_server_node-1] [INFO] [1780892824.808080512] [teleop_server]: Use fixed QoS for /cmd_recording: BEST_EFFORT + VOLATILE + AUTOMATIC liveliness', 'Jun 08 12:27:04 ubuntu bash[10205]: [teleop_server_node-1] [INFO] [1780892824.809930080] [teleop_server]: CmdForwarder started. Listening on /cmd_recording', 'Jun 08 12:29:03 ubuntu bash[10205]: [robot_state_publisher-2] [WARN] [1780892943.003224832] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!', '', '__COS_SERVICE_RC__ active=0 status=0'], 'stderr_lines': [], 'failed': False, 'failed_when_result': False, 'item': 'cos_teleop', 'ansible_loop_var': 'item'})[0m
+
+TASK [Build final cos_setup JSON object] ***************************************
+[0;32mok: [g1_robot_069][0m
+
+TASK [Ensure local cos_setup report directory exists] **************************
+[0;32mok: [g1_robot_069][0m
+
+TASK [Write per-robot cos_setup JSON report] ***********************************
+[0;33mchanged: [g1_robot_069][0m
+
+TASK [Write cos_setup aggregate JSON report] ***********************************
+[0;33mchanged: [g1_robot_069][0m
+
+TASK [Print cos_setup report paths] ********************************************
+[0;32mok: [g1_robot_069] => {[0m
+[0;32m    "msg": [[0m
+[0;32m        "COS setup result: g1_robot_069 (192.168.90.49)",[0m
+[0;32m        "robot_id=69",[0m
+[0;32m        "end_effector=dex1",[0m
+[0;32m        "Per-robot report: /home/jeff/coscene/code/codex/基础环境检查/reports/raw/cos_setup_<inventory_hostname>.json",[0m
+[0;32m        "Aggregate report: /home/jeff/coscene/code/codex/基础环境检查/reports/raw/cos_setup_summary.json"[0m
+[0;32m    ][0m
+[0;32m}[0m
+
+PLAY RECAP *********************************************************************
+[0;33mg1_robot_069[0m               : [0;32mok=18  [0m [0;33mchanged=4   [0m unreachable=0    failed=0    [0;36mskipped=3   [0m rescued=0    ignored=0   
+
+
+returncode=0
