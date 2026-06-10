@@ -1,0 +1,79 @@
+{
+    "ansible_host": "192.168.90.65",
+    "ansible_user": "unitree",
+    "changed": false,
+    "cos_setup_path": "/home/unitree/cos_setup.sh",
+    "end_effector": "dex1",
+    "end_time": "2026-06-08T15:01:12+08:00",
+    "first_attempt": {
+        "changed": false,
+        "rc": "1",
+        "stderr": "sudo: a terminal is required to read the password; either use the -S option to read from standard input or configure an askpass helper",
+        "stdout": "\n[cos_setup.sh] Installing apt dependencies\n\n[cos_setup.sh] Refreshing ROS apt key"
+    },
+    "inventory_hostname": "g1_robot_065",
+    "librealsense_cleanup": {
+        "changed": false,
+        "rc": "",
+        "stderr": "",
+        "stdout": ""
+    },
+    "overall_status": "FAIL",
+    "rc": "1",
+    "realsense_error_detected": false,
+    "remote_start": {
+        "changed": true,
+        "rc": "0",
+        "stderr": "",
+        "stdout": ""
+    },
+    "retry_attempt": {
+        "changed": false,
+        "rc": "",
+        "stderr": "",
+        "stdout": ""
+    },
+    "retry_performed": false,
+    "robot_id": "65",
+    "services": {
+        "cos_agent": {
+            "active": true,
+            "detail": "active",
+            "enabled": true,
+            "loaded": true,
+            "rc": 0,
+            "status": "OK",
+            "stderr": "",
+            "stdout": "enabled\nactive\n\u25cf cos_agent.service - coScene agent ROS2 Node\n     Loaded: loaded (/etc/systemd/system/cos_agent.service; enabled; vendor preset: enabled)\n     Active: active (running) since Tue 2024-06-18 04:29:44 CST; 1 years 11 months ago\n   Main PID: 944 (ros2)\n      Tasks: 5 (limit: 18143)\n     Memory: 68.9M\n     CGroup: /system.slice/cos_agent.service\n             \u251c\u2500 944 /usr/bin/python3 /opt/ros/foxy/bin/ros2 launch agent agent.launch.py\n             \u2514\u25001842 /opt/ros/foxy/lib/agent/agent_node --ros-args -r __node:=agent_node --params-file /tmp/launch_params_s4s62gun\n\nJun 18 04:29:44 ubuntu systemd[1]: Started coScene agent ROS2 Node.\nJun 08 13:53:01 ubuntu bash[944]: [INFO] [launch]: All log files can be found below /home/unitree/.ros/log/2026-06-08-13-53-01-010316-ubuntu-944\nJun 08 13:53:01 ubuntu bash[944]: [INFO] [launch]: Default logging verbosity is set to INFO\nJun 08 13:53:01 ubuntu bash[944]: [INFO] [agent_node-1]: process started with pid [1842]\nJun 08 13:53:01 ubuntu bash[944]: [agent_node-1] [INFO] [1780897981.215232096] [agent]: GIT HASH: fbcc00f6c493a29951e8f43724f1a21da3e81af9\nJun 08 13:53:01 ubuntu bash[944]: [agent_node-1] \u2554\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2557\nJun 08 13:53:01 ubuntu bash[944]: [agent_node-1] \u2551              coScene Agent Started - ROS 2, version: 0.4.11              \u2551\nJun 08 13:53:01 ubuntu bash[944]: [agent_node-1] \u255a\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u255d\nJun 08 13:53:01 ubuntu bash[944]: [agent_node-1] [INFO] [1780897981.215291008] [agent]: try to connect nats server...\n\n__COS_SERVICE_RC__ loaded=1 enabled=1 active=1 enabled_rc=0 active_rc=0 status_rc=0"
+        },
+        "cos_teleop": {
+            "active": true,
+            "detail": "active",
+            "enabled": true,
+            "loaded": true,
+            "rc": 0,
+            "status": "OK",
+            "stderr": "",
+            "stdout": "enabled\nactive\n\u25cf cos_teleop.service - coScene teleop_server ROS2 Node\n     Loaded: loaded (/etc/systemd/system/cos_teleop.service; enabled; vendor preset: enabled)\n     Active: active (running) since Mon 2026-06-08 13:52:59 CST; 1h 8min ago\n   Main PID: 1264 (ros2)\n      Tasks: 49 (limit: 18143)\n     Memory: 194.6M\n     CGroup: /system.slice/cos_teleop.service\n             \u251c\u25001264 /usr/bin/python3 /opt/ros/foxy/bin/ros2 launch teleop_server teleop_server.launch.py urdf_file:=/home/unitree/cos_ws/src/g1_description/g1_29dof_mode_15_with_dex1_1.urdf\n             \u251c\u25001839 /home/unitree/cos_ws/install/teleop_server/lib/teleop_server/teleop_server_node /home/unitree/cos_ws/install/teleop_server/share/teleop_server/config/teleop_server.yaml --ros-args\n             \u2514\u25002875 /opt/ros/foxy/lib/robot_state_publisher/robot_state_publisher /home/unitree/cos_ws/src/g1_description/g1_29dof_mode_15_with_dex1_1.urdf --ros-args\n\nJun 08 15:02:22 ubuntu bash[1264]: [teleop_server_node-1] [INFO] [1780902142.853389344] [teleop_server]: Camera[0] selected RealSense device: serial: 419522070970, name: Intel RealSense D435I\nJun 08 15:02:23 ubuntu bash[1264]: [teleop_server_node-1] [ERROR] [1780902143.072395488] [teleop_server]: Failed to start RealSense camera[0] serial '419522070970': xioctl(VIDIOC_S_FMT) failed Last Error: Device or resource busy (rs2_pipeline_start_with_config)\nJun 08 15:02:23 ubuntu bash[1264]: [teleop_server_node-1] [WARN] [1780902143.072694240] [teleop_server]: Failed to stop RealSense camera[0]: stop() cannot be called before start()\nJun 08 15:02:23 ubuntu bash[1264]: [teleop_server_node-1] [WARN] [1780902143.084785152] [teleop_server]: Camera[0] initialization failed, retrying in 30s\nJun 08 15:02:35 ubuntu bash[1264]: [teleop_server_node-1] [INFO] [1780902155.659488960] [teleop_server]: Retrying initialization for camera[1]...\nJun 08 15:02:35 ubuntu bash[1264]: [teleop_server_node-1] [INFO] [1780902155.659698912] [teleop_server]: Open camera[1]: type: V4L2, device: /dev/cam_wrist_left, width: 640, height: 480, frame rate: 30, flip: false\nJun 08 15:02:35 ubuntu bash[1264]: [teleop_server_node-1] [WARN] [1780902155.659830720] [teleop_server]: Failed to open V4L2 device for camera[1] /dev/cam_wrist_left: No such file or directory\nJun 08 15:02:35 ubuntu bash[1264]: [teleop_server_node-1] [ERROR] [1780902155.659891680] [teleop_server]: Failed to initialize V4L2 direct MJPEG capture for camera[1]: /dev/cam_wrist_left\nJun 08 15:02:35 ubuntu bash[1264]: [teleop_server_node-1] [WARN] [1780902155.659941312] [teleop_server]: Camera[1] initialization failed, retrying in 30s\nJun 08 15:01:10 ubuntu bash[1264]: [robot_state_publisher-2] [WARN] [1780902070.005604992] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!\n\n__COS_SERVICE_RC__ loaded=1 enabled=1 active=1 enabled_rc=0 active_rc=0 status_rc=0"
+        },
+        "xrobotoolkit-pc-service": {
+            "active": true,
+            "detail": "loaded/enabled",
+            "enabled": true,
+            "loaded": true,
+            "rc": 0,
+            "status": "OK",
+            "stderr": "",
+            "stdout": "enabled\nactive\n\u25cf xrobotoolkit-pc-service.service - XRoboToolkit PC Service\n     Loaded: loaded (/etc/systemd/system/xrobotoolkit-pc-service.service; enabled; vendor preset: enabled)\n     Active: active (running) since Mon 2026-06-08 13:52:59 CST; 1h 8min ago\n    Process: 1196 ExecStartPre=/usr/bin/test -x /opt/apps/xrobotoolkit-pc-service/runService.sh (code=exited, status=0/SUCCESS)\n   Main PID: 1255 (RoboticsService)\n      Tasks: 23 (limit: 18143)\n     Memory: 31.4M\n     CGroup: /system.slice/xrobotoolkit-pc-service.service\n             \u2514\u25001255 ./RoboticsServiceProcess\n\nJun 18 04:29:44 ubuntu systemd[1]: Starting XRoboToolkit PC Service...\nJun 08 13:52:59 ubuntu systemd[1]: Started XRoboToolkit PC Service.\nJun 08 13:52:59 ubuntu runService.sh[1255]: release mode\n\n__COS_SERVICE_RC__ loaded=1 enabled=1 active=1 enabled_rc=0 active_rc=0 status_rc=0"
+        }
+    },
+    "setup_detail": "cos_setup.sh failed",
+    "setup_status": "FAIL",
+    "start_time": "2026-06-08T15:02:47+08:00",
+    "time_sync": {
+        "changed": true,
+        "rc": "0",
+        "stderr": "",
+        "stdout": "Mon 08 Jun 2026 03:01:10 PM CST"
+    }
+}

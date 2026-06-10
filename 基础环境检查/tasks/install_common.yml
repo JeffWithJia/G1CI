@@ -1,0 +1,500 @@
+---
+- name: Check common apt dependencies before installation
+  ansible.builtin.command: "dpkg-query -W -f=${Status} {{ item }}"
+  loop: "{{ apt_packages }}"
+  register: common_apt_package_check
+  changed_when: false
+  failed_when: false
+
+- name: Set missing common apt package facts
+  ansible.builtin.set_fact:
+    missing_apt_packages: "{{ common_apt_package_check.results | rejectattr('stdout', 'search', 'install ok installed') | map(attribute='item') | list }}"
+
+- name: Install missing common apt dependencies
+  become: true
+  ansible.builtin.apt:
+    name: "{{ missing_apt_packages }}"
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+  register: common_apt_install
+  failed_when: false
+  when:
+    - missing_apt_packages | length > 0
+    - allow_online_apt | default(false) | bool
+
+- name: Record common apt installation result
+  ansible.builtin.set_fact:
+    g1_install_results: "{{ g1_install_results + [{
+      'name': 'common apt dependencies',
+      'changed': common_apt_install.changed | default(false),
+      'rc': common_apt_install_rc,
+      'detail': common_apt_install_detail,
+      'reason': common_apt_install_reason,
+      'suggestion': common_apt_install_suggestion,
+      'stdout': common_apt_install.stdout | default(''),
+      'stderr': common_apt_install.stderr | default(common_apt_install.msg | default(''))
+    }] }}"
+  vars:
+    common_apt_install_rc: "{{ 0 if (missing_apt_packages | length == 0 or (allow_online_apt | default(false) | bool and not common_apt_install.failed | default(false))) else 1 }}"
+    common_apt_install_detail: >-
+      {{
+        'all apt packages already installed'
+        if missing_apt_packages | length == 0
+        else (
+          'installed missing apt packages: ' ~ (missing_apt_packages | join(', '))
+          if allow_online_apt | default(false) | bool and not common_apt_install.failed | default(false)
+          else (
+            'failed to install missing apt packages: ' ~ (missing_apt_packages | join(', '))
+            if allow_online_apt | default(false) | bool
+            else 'missing apt packages in offline mode: ' ~ (missing_apt_packages | join(', '))
+          )
+        )
+      }}
+    common_apt_install_reason: "{{ 'apt packages are missing and allow_online_apt=false' if (missing_apt_packages | length > 0 and not allow_online_apt | default(false) | bool) else ('apt install failed even though allow_online_apt=true' if (missing_apt_packages | length > 0 and allow_online_apt | default(false) | bool and common_apt_install.failed | default(false)) else '') }}"
+    common_apt_install_suggestion: "{{ 'Install missing apt packages manually or rerun with -e allow_online_apt=true when network is available' if (missing_apt_packages | length > 0 and not allow_online_apt | default(false) | bool) else ('Check apt network access and package repository configuration, then rerun install mode.' if (missing_apt_packages | length > 0 and allow_online_apt | default(false) | bool and common_apt_install.failed | default(false)) else '') }}"
+
+- name: Detect conda before installation
+  ansible.builtin.shell: |
+    source ~/.bashrc 2>/dev/null || true
+
+    if command -v conda >/dev/null 2>&1; then
+      command -v conda
+      exit 0
+    fi
+
+    find /home/unitree -maxdepth 4 -type f -name conda -path "*/bin/conda" 2>/dev/null | head -n 1
+  args:
+    executable: /bin/bash
+  register: install_discovered_conda
+  changed_when: false
+  failed_when: false
+
+- name: Set pre-install conda facts
+  ansible.builtin.set_fact:
+    install_conda_bin: "{{ install_discovered_conda.stdout | trim }}"
+    install_conda_exists: "{{ (install_discovered_conda.stdout | trim | length) > 0 }}"
+
+- name: Check miniconda installers
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop: "{{ miniconda_installers }}"
+  register: miniconda_installer_stats
+  when: not install_conda_exists
+
+- name: Pick miniconda installer
+  ansible.builtin.set_fact:
+    selected_miniconda_installer: "{{ miniconda_installer_stats.results | default([]) | selectattr('stat.exists') | map(attribute='item') | first | default('') }}"
+  when: not install_conda_exists
+
+- name: Install miniconda when conda is missing
+  ansible.builtin.shell: |
+    set -e
+    mkdir -p {{ conda_default_base_dir }}
+    bash {{ selected_miniconda_installer }} -b -u -p {{ conda_default_base_dir }}
+    {{ conda_default_base_dir }}/bin/conda init --all || true
+  args:
+    executable: /bin/bash
+  register: miniconda_install
+  changed_when: miniconda_install.rc == 0
+  ignore_errors: true
+  when:
+    - not install_conda_exists
+    - selected_miniconda_installer | default('') | length > 0
+
+- name: Record miniconda installation result
+  ansible.builtin.set_fact:
+    g1_install_results: "{{ g1_install_results + [{
+      'name': 'miniconda',
+      'changed': miniconda_install.changed | default(false),
+      'rc': miniconda_install.rc | default(0 if install_conda_exists else 1),
+      'detail': install_conda_bin if install_conda_exists else (selected_miniconda_installer | default('installer missing')),
+      'stdout': miniconda_install.stdout | default(''),
+      'stderr': miniconda_install.stderr | default('installer missing' if not install_conda_exists and (selected_miniconda_installer | default('') | length == 0) else '')
+    }] }}"
+
+- name: Re-detect conda after installation
+  ansible.builtin.shell: |
+    source ~/.bashrc 2>/dev/null || true
+
+    if command -v conda >/dev/null 2>&1; then
+      command -v conda
+      exit 0
+    fi
+
+    find /home/unitree -maxdepth 4 -type f -name conda -path "*/bin/conda" 2>/dev/null | head -n 1
+  args:
+    executable: /bin/bash
+  register: install_final_conda
+  changed_when: false
+  failed_when: false
+
+- name: Set final install conda facts
+  ansible.builtin.set_fact:
+    install_conda_bin: "{{ install_final_conda.stdout | trim }}"
+    install_conda_exists: "{{ (install_final_conda.stdout | trim | length) > 0 }}"
+    install_conda_base_dir: "{{ (install_final_conda.stdout | trim | regex_replace('/bin/conda$', '')) if (install_final_conda.stdout | trim | length) > 0 else conda_default_base_dir }}"
+    install_tv_env_dir: "{{ ((install_final_conda.stdout | trim | regex_replace('/bin/conda$', '')) if (install_final_conda.stdout | trim | length) > 0 else conda_default_base_dir) }}/envs/{{ tv_env_name }}"
+    install_tv_python: "{{ ((install_final_conda.stdout | trim | regex_replace('/bin/conda$', '')) if (install_final_conda.stdout | trim | length) > 0 else conda_default_base_dir) }}/envs/{{ tv_env_name }}/bin/python"
+    install_tv_pip: "{{ ((install_final_conda.stdout | trim | regex_replace('/bin/conda$', '')) if (install_final_conda.stdout | trim | length) > 0 else conda_default_base_dir) }}/envs/{{ tv_env_name }}/bin/pip"
+    tv_env_dir: "{{ ((install_final_conda.stdout | trim | regex_replace('/bin/conda$', '')) if (install_final_conda.stdout | trim | length) > 0 else conda_default_base_dir) }}/envs/{{ tv_env_name }}"
+    tv_python: "{{ ((install_final_conda.stdout | trim | regex_replace('/bin/conda$', '')) if (install_final_conda.stdout | trim | length) > 0 else conda_default_base_dir) }}/envs/{{ tv_env_name }}/bin/python"
+    tv_pip: "{{ ((install_final_conda.stdout | trim | regex_replace('/bin/conda$', '')) if (install_final_conda.stdout | trim | length) > 0 else conda_default_base_dir) }}/envs/{{ tv_env_name }}/bin/pip"
+
+- name: Check tv environment before installation
+  ansible.builtin.stat:
+    path: "{{ install_tv_python }}"
+  register: install_tv_python_stat
+  when: install_conda_exists
+
+- name: Check existing tv python version before installation
+  ansible.builtin.command: "{{ install_tv_python }} --version"
+  register: install_tv_python_version_before
+  changed_when: false
+  failed_when: false
+  when:
+    - install_conda_exists
+    - install_tv_python_stat.stat.exists | default(false)
+
+- name: Set tv python version mismatch facts
+  ansible.builtin.set_fact:
+    install_tv_python_version_text: "{{ (install_tv_python_version_before.stdout | default('') ~ install_tv_python_version_before.stderr | default('')) | trim }}"
+    install_tv_python_version_matches: "{{ install_tv_python_version_before.rc | default(1) == 0 and ((install_tv_python_version_before.stdout | default('') ~ install_tv_python_version_before.stderr | default('')) | trim).startswith('Python ' ~ expected_tv_python_major_minor ~ '.') }}"
+    install_tv_python_version_mismatch: "{{ install_tv_python_stat.stat.exists | default(false) and not (install_tv_python_version_before.rc | default(1) == 0 and ((install_tv_python_version_before.stdout | default('') ~ install_tv_python_version_before.stderr | default('')) | trim).startswith('Python ' ~ expected_tv_python_major_minor ~ '.')) }}"
+  when: install_conda_exists
+
+- name: Backup and recreate tv conda environment on version mismatch
+  ansible.builtin.shell: |
+    set -e
+    backup_dir="{{ install_tv_env_dir }}_backup_{{ ansible_date_time.epoch }}"
+    mv {{ install_tv_env_dir }} "$backup_dir"
+    {{ install_conda_bin }} create -y -n {{ tv_env_name }} python={{ expected_tv_python_major_minor }}
+  args:
+    executable: /bin/bash
+  register: tv_env_recreate
+  changed_when: tv_env_recreate.rc == 0
+  ignore_errors: true
+  when:
+    - install_conda_exists
+    - install_tv_python_version_mismatch | default(false) | bool
+    - recreate_tv_if_version_mismatch | default(false) | bool
+
+- name: Record tv environment recreate result
+  ansible.builtin.set_fact:
+    g1_install_results: "{{ g1_install_results + [{
+      'name': 'conda env tv recreate',
+      'changed': tv_env_recreate.changed | default(false),
+      'rc': tv_recreate_rc,
+      'status': tv_recreate_status,
+      'detail': tv_recreate_detail,
+      'stdout': tv_recreate_stdout,
+      'stderr': tv_recreate_stderr
+    }] }}"
+  vars:
+    tv_recreate_attempted: "{{ recreate_tv_if_version_mismatch | default(false) | bool }}"
+    tv_recreate_succeeded: "{{ tv_env_recreate.rc | default(1) == 0 }}"
+    tv_recreate_rc: "{{ 0 if (not tv_recreate_attempted | bool or tv_recreate_succeeded | bool) else 1 }}"
+    tv_recreate_status: "{{ 'OK' if tv_recreate_attempted | bool and tv_recreate_succeeded | bool else ('WARN' if not tv_recreate_attempted | bool else 'FAIL') }}"
+    tv_recreate_detail: >-
+      {{
+        'recreated tv environment with Python ' ~ expected_tv_python_major_minor
+        if tv_recreate_attempted | bool and tv_recreate_succeeded | bool
+        else (
+          'failed to recreate tv environment with Python ' ~ expected_tv_python_major_minor
+          if tv_recreate_attempted | bool
+          else install_tv_python_version_text | default('unknown Python version')
+        )
+      }}
+    tv_recreate_stdout: "{{ tv_env_recreate.stdout | default(install_tv_python_version_text | default('')) }}"
+    tv_recreate_stderr: "{{ tv_env_recreate.stderr | default('tv python version mismatch; recreate_tv_if_version_mismatch=false') }}"
+  when:
+    - install_conda_exists
+    - install_tv_python_version_mismatch | default(false) | bool
+
+- name: Create tv conda environment
+  ansible.builtin.command: "{{ install_conda_bin }} create -y -n {{ tv_env_name }} python={{ expected_tv_python_major_minor }}"
+  register: tv_env_create
+  changed_when: tv_env_create.rc == 0
+  ignore_errors: true
+  when:
+    - install_conda_exists
+    - not install_tv_python_stat.stat.exists | default(false)
+
+- name: Record tv environment installation result
+  ansible.builtin.set_fact:
+    g1_install_results: "{{ g1_install_results + [{
+      'name': 'conda env tv',
+      'changed': tv_env_create.changed | default(false),
+      'rc': tv_env_create.rc | default(0 if install_tv_python_stat.stat.exists | default(false) else 1),
+      'detail': install_tv_python | default('conda not found'),
+      'stdout': tv_env_create.stdout | default(''),
+      'stderr': tv_env_create.stderr | default('conda not found' if not install_conda_exists else '')
+    }] }}"
+
+- name: Check tv environment after possible creation
+  ansible.builtin.stat:
+    path: "{{ install_tv_python }}"
+  register: install_tv_python_final_stat
+  when: install_conda_exists
+
+- name: Set pip install mode facts
+  ansible.builtin.set_fact:
+    pip_package_names: "{{ python_packages | map(attribute='pip_name') | list }}"
+
+- name: Record Python package install environment
+  ansible.builtin.shell: |
+    echo "which python:"
+    which python || true
+    echo
+    echo "{{ tv_python }} --version:"
+    {{ tv_python }} --version
+    echo
+    echo "{{ tv_pip }} --version:"
+    {{ tv_pip }} --version
+  args:
+    executable: /bin/bash
+  register: python_package_install_context
+  changed_when: false
+  failed_when: false
+  when:
+    - install_conda_exists
+    - install_tv_python_final_stat.stat.exists | default(false)
+
+- name: Print Python package install environment
+  ansible.builtin.debug:
+    msg: "{{ python_package_install_context.stdout_lines | default([]) }}"
+  when:
+    - install_conda_exists
+    - install_tv_python_final_stat.stat.exists | default(false)
+
+- name: Install Python packages into tv
+  ansible.builtin.shell: |
+    {{ tv_pip }} install {{ pip_package_names | join(' ') }} -i {{ pypi_mirror }}
+  args:
+    executable: /bin/bash
+  register: python_package_install
+  changed_when: python_package_install.rc == 0
+  failed_when: false
+  when:
+    - install_conda_exists
+    - install_tv_python_final_stat.stat.exists | default(false)
+
+- name: Recheck Python package imports after installation
+  ansible.builtin.command: "{{ tv_python }} -c 'import {{ item.import_name }}'"
+  loop: "{{ python_packages }}"
+  register: install_python_import_recheck
+  changed_when: false
+  failed_when: false
+  when:
+    - install_conda_exists
+    - install_tv_python_final_stat.stat.exists | default(false)
+
+- name: Record Python package installation result
+  ansible.builtin.set_fact:
+    g1_install_results: "{{ g1_install_results + [{
+      'name': 'python packages',
+      'changed': python_package_install.changed | default(false),
+      'rc': python_packages_install_rc,
+      'detail': python_packages_install_detail,
+      'reason': python_packages_install_reason,
+      'suggestion': python_packages_install_suggestion,
+      'stdout': python_packages_install_stdout,
+      'stderr': python_packages_install_stderr
+    }] }}"
+  vars:
+    python_install_failed_count: "{{ 1 if python_package_install.rc | default(1) != 0 else 0 }}"
+    python_import_recheck_failed_count: "{{ install_python_import_recheck.results | default([]) | selectattr('rc', 'defined') | selectattr('rc', 'ne', 0) | list | length }}"
+    python_packages_install_rc: "{{ 0 if (install_conda_exists and install_tv_python_final_stat.stat.exists | default(false) and (python_install_failed_count | int) == 0 and (python_import_recheck_failed_count | int) == 0) else 1 }}"
+    python_packages_install_reason: "{{ 'online pip install failed or final Python package import recheck failed' if ((python_install_failed_count | int) > 0 or (python_import_recheck_failed_count | int) > 0) else '' }}"
+    python_packages_install_suggestion: "{{ 'Check network access, pip output, and the tv environment; packages are installed with the Tsinghua PyPI mirror.' if ((python_install_failed_count | int) > 0 or (python_import_recheck_failed_count | int) > 0) else '' }}"
+    python_packages_install_detail: "{{ python_packages_install_reason if python_packages_install_reason | length > 0 else ('final import check passed using ' ~ (tv_python | default('missing python')) ~ '; pip=' ~ (tv_pip | default('missing pip')) ~ '; source=' ~ pypi_mirror) }}"
+    python_packages_install_stdout: >-
+      {{
+        '--- install environment ---\n' ~ (python_package_install_context.stdout | default('')) ~
+        '\n--- pip install stdout ---\n' ~ (python_package_install.stdout | default('')) ~
+        '\n--- import recheck stdout ---\n' ~ (install_python_import_recheck.results | default([]) | selectattr('stdout', 'defined') | map(attribute='stdout') | list | join('\n---\n'))
+      }}
+    python_packages_install_stderr: >-
+      {{
+        '--- install environment stderr ---\n' ~ (python_package_install_context.stderr | default('')) ~
+        '\n--- pip install stderr ---\n' ~ (python_package_install.stderr | default('')) ~
+        '\n--- import recheck stderr ---\n' ~ (install_python_import_recheck.results | default([]) | selectattr('stderr', 'defined') | map(attribute='stderr') | list | join('\n---\n'))
+      }}
+
+- name: Check unitree_sdk2 installed outputs before build
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - "{{ unitree_sdk_lib }}"
+    - "{{ unitree_sdk_config }}"
+    - "{{ unitree_sdk_header }}"
+  register: install_unitree_outputs
+
+- name: Check unitree_sdk2 source before build
+  ansible.builtin.stat:
+    path: "{{ unitree_sdk_dir }}"
+  register: install_unitree_src
+
+- name: Build and install unitree_sdk2
+  become: true
+  ansible.builtin.shell: |
+    set -e
+    cd {{ unitree_sdk_dir }}
+    rm -rf build
+    mkdir -p build
+    cd build
+    cmake ..
+    make -j$(nproc)
+    make install
+  args:
+    executable: /bin/bash
+  register: unitree_sdk_install
+  changed_when: unitree_sdk_install.rc == 0
+  ignore_errors: true
+  when:
+    - install_unitree_src.stat.isdir | default(false)
+    - install_unitree_outputs.results | selectattr('stat.exists', 'equalto', false) | list | length > 0
+
+- name: Record unitree_sdk2 installation result
+  ansible.builtin.set_fact:
+    g1_install_results: "{{ g1_install_results + [{
+      'name': 'unitree_sdk2',
+      'changed': unitree_sdk_install.changed | default(false),
+      'rc': unitree_sdk_install.rc | default(0 if (install_unitree_outputs.results | selectattr('stat.exists', 'equalto', false) | list | length == 0) else 1),
+      'detail': unitree_sdk_dir,
+      'stdout': unitree_sdk_install.stdout | default(''),
+      'stderr': unitree_sdk_install.stderr | default('unitree_sdk2 source missing' if not install_unitree_src.stat.isdir | default(false) else '')
+    }] }}"
+
+- name: Check remote_start source directory
+  ansible.builtin.stat:
+    path: "{{ remote_source_dir }}"
+  register: remote_start_src_stat
+
+- name: Check remote binary before build
+  ansible.builtin.stat:
+    path: "{{ remote_binary }}"
+  register: install_remote_binary_stat
+
+- name: Build remote_start binary when missing
+  ansible.builtin.shell: |
+    set -e
+    cd {{ remote_source_dir }}
+    rm -rf build
+    mkdir -p build
+    cd build
+    cmake ..
+    make -j$(nproc)
+    test -f ./remote
+    cp ./remote {{ remote_binary }}
+    chmod +x {{ remote_binary }}
+  args:
+    executable: /bin/bash
+  register: remote_start_build
+  changed_when: remote_start_build.rc == 0
+  ignore_errors: true
+  when:
+    - remote_start_src_stat.stat.isdir | default(false)
+    - not install_remote_binary_stat.stat.exists | default(false)
+
+- name: Check remote binary after possible build
+  ansible.builtin.stat:
+    path: "{{ remote_binary }}"
+  register: install_remote_binary_final_stat
+
+- name: Ensure remote binary executable when present
+  ansible.builtin.file:
+    path: "{{ remote_binary }}"
+    mode: "0755"
+  register: remote_binary_chmod
+  when: install_remote_binary_final_stat.stat.exists | default(false)
+
+- name: Check project remote_start service file
+  ansible.builtin.stat:
+    path: "{{ remote_project_service_file }}"
+  register: remote_project_service_stat
+
+- name: Copy project remote_start systemd unit
+  become: true
+  ansible.builtin.copy:
+    src: "{{ remote_project_service_file }}"
+    dest: "{{ remote_service_file }}"
+    remote_src: true
+    mode: "0644"
+  register: remote_service_copy_project
+  ignore_errors: true
+  when:
+    - install_remote_binary_final_stat.stat.exists | default(false)
+    - remote_project_service_stat.stat.exists | default(false)
+
+- name: Install fallback remote_start systemd unit
+  become: true
+  ansible.builtin.copy:
+    dest: "{{ remote_service_file }}"
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=Autostart remote binary
+      After=multi-user.target
+      Wants=multi-user.target
+
+      [Service]
+      Type=simple
+      User=unitree
+      Group=unitree
+      WorkingDirectory={{ project_dir }}
+      ExecStart={{ remote_binary }}
+      Restart=always
+      RestartSec=2
+
+      StandardOutput=journal
+      StandardError=journal
+
+      [Install]
+      WantedBy=multi-user.target
+  register: remote_service_copy_fallback
+  ignore_errors: true
+  when:
+    - install_remote_binary_final_stat.stat.exists | default(false)
+    - not remote_project_service_stat.stat.exists | default(false)
+
+- name: Reload systemd after remote_start service installation
+  become: true
+  ansible.builtin.systemd:
+    daemon_reload: true
+  register: remote_service_reload
+  ignore_errors: true
+  when: install_remote_binary_final_stat.stat.exists | default(false)
+
+- name: Enable and restart remote_start service when requested
+  become: true
+  ansible.builtin.systemd:
+    name: "{{ remote_service_name }}"
+    enabled: true
+    state: restarted
+    daemon_reload: true
+  register: remote_service_install
+  ignore_errors: true
+  when:
+    - install_remote_binary_final_stat.stat.exists | default(false)
+    - start_remote_start_after_install | default(false) | bool
+
+- name: Record remote_start installation result
+  ansible.builtin.set_fact:
+    g1_install_results: "{{ g1_install_results + [{
+      'name': 'remote_start.service',
+      'changed': (remote_start_build.changed | default(false)) or (remote_binary_chmod.changed | default(false)) or (remote_service_copy_project.changed | default(false)) or (remote_service_copy_fallback.changed | default(false)) or (remote_service_reload.changed | default(false)) or (remote_service_install.changed | default(false)),
+      'rc': 0 if (install_remote_binary_final_stat.stat.exists | default(false) and not remote_service_reload.failed | default(false) and not remote_service_install.failed | default(false)) else 1,
+      'detail': remote_service_detail,
+      'stdout': (remote_start_build.stdout | default('')) ~ '\n' ~ (remote_service_reload.stdout | default('')) ~ '\n' ~ (remote_service_install.stdout | default('')),
+      'stderr': (remote_start_build.stderr | default('')) ~ '\n' ~ (remote_service_reload.stderr | default(remote_service_reload.msg | default(''))) ~ '\n' ~ (remote_service_install.stderr | default(remote_service_install.msg | default('remote binary missing after build' if not install_remote_binary_final_stat.stat.exists | default(false) else '')))
+    }] }}"
+  vars:
+    remote_service_detail: >-
+      {{
+        (
+          remote_service_file ~ '; daemon-reload done; enable/restart requested=' ~ (start_remote_start_after_install | default(false) | bool | string)
+        )
+        if install_remote_binary_final_stat.stat.exists | default(false)
+        else ('remote binary missing after build; source dir exists=' ~ (remote_start_src_stat.stat.isdir | default(false) | string))
+      }}

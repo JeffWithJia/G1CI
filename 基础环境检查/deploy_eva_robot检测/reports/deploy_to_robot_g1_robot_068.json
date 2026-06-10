@@ -1,0 +1,12 @@
+{
+  "inventory_hostname": "g1_robot_068",
+  "ansible_host": "192.168.90.68",
+  "ansible_user": "unitree",
+  "remote": "unitree@192.168.90.68",
+  "status": "OK",
+  "rc": 0,
+  "started_at": "2026-06-07T20:25:12+08:00",
+  "ended_at": "2026-06-07T20:25:12+08:00",
+  "stdout": "dry-run: would execute /home/jeff/coscene/code/codex/基础环境检查/deploy_eva_robot检测/robot/deploy_to_robot.sh unitree@192.168.90.68\n",
+  "stderr": ""
+}

@@ -1,0 +1,12 @@
+{
+  "action": "check",
+  "robots": [
+    "g1_robot_065"
+  ],
+  "started_at": "20260608_101125",
+  "finished_at": "2026-06-08 10:12:11",
+  "returncode": 1,
+  "stdout": "",
+  "stderr": "执行失败：任务长时间没有响应。 请检查机器人网络连接、SSH 状态和 ansible 配置。",
+  "log_file": "/home/jeff/coscene/code/codex/基础环境检查/logs/20260608_101125_check.log"
+}
