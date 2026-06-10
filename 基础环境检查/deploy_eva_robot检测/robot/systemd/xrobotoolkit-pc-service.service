@@ -1,0 +1,15 @@
+[Unit]
+Description=XRoboToolkit PC Service
+After=network.target
+
+[Service]
+Type=simple
+User=unitree
+WorkingDirectory=/opt/apps/xrobotoolkit-pc-service
+ExecStartPre=/usr/bin/test -x /opt/apps/xrobotoolkit-pc-service/runService.sh
+ExecStart=/opt/apps/xrobotoolkit-pc-service/runService.sh
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target
