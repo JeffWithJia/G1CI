@@ -1,0 +1,19 @@
+{
+  "action": "deploy_to_robot",
+  "robots": [
+    "g1_robot_062"
+  ],
+  "started_at": "20260617_145059",
+  "start_time": "2026-06-17 14:50:59",
+  "finished_at": "2026-06-17 14:51:44",
+  "end_time": "2026-06-17 14:51:44",
+  "duration_seconds": 44.5,
+  "returncode": 0,
+  "stdout": "$ bash -c 'export REMOTE_HOST=192.168.90.62 && ./deploy_to_robot.sh unitree@192.168.90.62:/tmp/test'\ncwd=/home/jeff/coscene/code/codex/G1CI/基础环境检查/deploy_eva_robot检测/robot\n\n\nunitree@192.168.90.62's password: \n[operator_console] detected SSH password prompt, password sent\n\n[deploy_to_robot] Skip existing /home/unitree/apk/xrobotoolkit-pc-service_1.0.0.2_ubuntu20.04_arm64.deb\n[deploy_to_robot] Skip existing unitree_ros2 because /home/unitree/unitree_ros2/cyclonedds_ws/install/setup.bash exists\n[deploy_to_robot] Replace /home/unitree/cos_ws/src/g1_description\n[deploy_to_robot] Replace /home/unitree/cos_ws/src/teleop_server\n[deploy_to_robot] Replace /home/unitree/scripts\n[deploy_to_robot] Replace /home/unitree/systemd\n[deploy_to_robot] Copy cos_setup.sh -> unitree@192.168.90.62:/home/unitree/cos_setup.sh\n[deploy_to_robot] Done\n\nreturncode=0\n",
+  "stderr": "",
+  "latest_output": "$ bash -c 'export REMOTE_HOST=192.168.90.62 && ./deploy_to_robot.sh unitree@192.168.90.62:/tmp/test'\ncwd=/home/jeff/coscene/code/codex/G1CI/基础环境检查/deploy_eva_robot检测/robot\n\n\nunitree@192.168.90.62's password: \n[operator_console] detected SSH password prompt, password sent\n\n[deploy_to_robot] Skip existing /home/unitree/apk/xrobotoolkit-pc-service_1.0.0.2_ubuntu20.04_arm64.deb\n[deploy_to_robot] Skip existing unitree_ros2 because /home/unitree/unitree_ros2/cyclonedds_ws/install/setup.bash exists\n[deploy_to_robot] Replace /home/unitree/cos_ws/src/g1_description\n[deploy_to_robot] Replace /home/unitree/cos_ws/src/teleop_server\n[deploy_to_robot] Replace /home/unitree/scripts\n[deploy_to_robot] Replace /home/unitree/systemd\n[deploy_to_robot] Copy cos_setup.sh -> unitree@192.168.90.62:/home/unitree/cos_setup.sh\n[deploy_to_robot] Done\n\nreturncode=0\n",
+  "command": "bash -c 'export REMOTE_HOST=192.168.90.62 && ./deploy_to_robot.sh unitree@192.168.90.62:/tmp/test'",
+  "cwd": "/home/jeff/coscene/code/codex/G1CI/基础环境检查/deploy_eva_robot检测/robot",
+  "report_path": "reports/g1_env_summary.json",
+  "log_file": "/home/jeff/coscene/code/codex/G1CI/基础环境检查/logs/20260617_145059_deploy_to_robot.log"
+}

@@ -1,0 +1,642 @@
+---
+- name: Run cos_setup.sh on G1 robots
+  hosts: g1_robots
+  gather_facts: false
+  become: false
+  ignore_unreachable: true
+
+  vars:
+    cos_setup_path: "/home/unitree/cos_setup.sh"
+    cos_services:
+      - cos_agent
+      - xrobotoolkit-pc-service
+      - cos_teleop
+    cos_setup_report_dir: "reports"
+    cos_setup_log_dir: "/home/unitree/cos_logs"
+    cos_target_home: "/home/unitree"
+    cos_apk_dir: "/home/unitree/apk"
+    ros_setup_path: "/opt/ros/foxy/setup.bash"
+    ros_apt_key_url: "https://mirrors.tuna.tsinghua.edu.cn/rosdistro/ros.key"
+    ros_apt_key_fallback_url: "https://raw.githubusercontent.com/ros/rosdistro/master/ros.key"
+    ros_apt_mirror: "https://mirrors.tuna.tsinghua.edu.cn/ros2/ubuntu"
+    realsense_apt_key_url: "https://librealsense.realsenseai.com/Debian/librealsenseai.asc"
+    realsense_apt_repo_url: "https://librealsense.realsenseai.com/Debian/apt-repo"
+    cos_apt_packages:
+      - ca-certificates
+      - curl
+      - gnupg
+      - lsb-release
+      - git
+      - rsync
+      - build-essential
+      - cmake
+      - pkg-config
+      - tmux
+      - python3-colcon-common-extensions
+      - ros-foxy-rosidl-generator-dds-idl
+      - ros-foxy-rosbag2-cpp
+      - ros-foxy-cv-bridge
+      - ros-foxy-robot-state-publisher
+      - libeigen3-dev
+      - libyaml-cpp-dev
+      - libx264-dev
+      - libopencv-dev
+    cleanup_librealsense_on_error: true
+    cos_setup_retry_on_realsense_error: true
+
+  tasks:
+    - name: Record cos_setup start time
+      ansible.builtin.command: date -Iseconds
+      register: cos_setup_start_time
+      changed_when: false
+
+    - name: Resolve local cos_setup report directory
+      ansible.builtin.set_fact:
+        cos_setup_report_dir_resolved: >-
+          {{
+            cos_setup_report_dir
+            if cos_setup_report_dir.startswith('/')
+            else playbook_dir ~ '/' ~ (cos_setup_report_dir | regex_replace('^\\./', ''))
+          }}
+
+    - name: Get controller current time before cos_setup
+      ansible.builtin.command: date "+%Y-%m-%d %H:%M:%S"
+      register: controller_time
+      changed_when: false
+      delegate_to: localhost
+
+    - name: Sync robot time from controller before cos_setup
+      ansible.builtin.command: date -s "{{ controller_time.stdout }}"
+      become: true
+      register: cos_setup_time_sync
+      changed_when: cos_setup_time_sync.rc == 0
+      failed_when: false
+
+    - name: Stop remote_start.service before cos_setup
+      ansible.builtin.shell: |
+        systemctl stop remote_start.service
+      args:
+        executable: /bin/bash
+      become: true
+      register: remote_start_stop_result
+      changed_when: remote_start_stop_result.rc == 0
+      failed_when: false
+
+    - name: Check remote cos_setup.sh
+      ansible.builtin.stat:
+        path: "{{ cos_setup_path }}"
+      register: cos_setup_script_stat
+
+    - name: Build cos_setup path facts
+      ansible.builtin.set_fact:
+        cos_setup_dir: "{{ cos_setup_path | dirname }}"
+        cos_setup_file: "{{ cos_setup_path | basename }}"
+
+    - name: Ensure cos_setup log directory is writable by unitree
+      ansible.builtin.file:
+        path: "{{ cos_setup_log_dir }}"
+        state: directory
+        owner: unitree
+        group: unitree
+        mode: "0755"
+      become: true
+
+    - name: Detect Debian architecture
+      ansible.builtin.command: dpkg --print-architecture
+      register: cos_debian_arch
+      changed_when: false
+
+    - name: Detect and validate Ubuntu release
+      ansible.builtin.shell: |
+        set -euo pipefail
+        . /etc/os-release
+        if [ "$ID" != "ubuntu" ] || [ "$VERSION_ID" != "20.04" ]; then
+          printf '[ansible] ERROR: cos_setup requires Ubuntu 20.04, detected %s\n' "$PRETTY_NAME" >&2
+          exit 1
+        fi
+        printf '%s\n' "$VERSION_CODENAME"
+      args:
+        executable: /bin/bash
+      register: cos_ubuntu_codename
+      changed_when: false
+
+    - name: Ensure apt keyring directories exist
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - /usr/share/keyrings
+        - /etc/apt/trusted.gpg.d
+        - /etc/apt/keyrings
+      become: true
+
+    - name: Download ROS apt key from primary mirror
+      ansible.builtin.get_url:
+        url: "{{ ros_apt_key_url }}"
+        dest: /tmp/ros-archive-keyring.gpg
+        mode: "0644"
+      become: true
+      register: ros_key_primary
+      failed_when: false
+
+    - name: Download ROS apt key from fallback
+      ansible.builtin.get_url:
+        url: "{{ ros_apt_key_fallback_url }}"
+        dest: /tmp/ros-archive-keyring.gpg
+        mode: "0644"
+      become: true
+      when: ros_key_primary.failed | default(false)
+
+    - name: Install ROS apt keyrings
+      ansible.builtin.copy:
+        src: /tmp/ros-archive-keyring.gpg
+        dest: "{{ item }}"
+        remote_src: true
+        mode: "0644"
+      loop:
+        - /usr/share/keyrings/ros-archive-keyring.gpg
+        - /usr/share/keyrings/ros2-latest-archive-keyring.gpg
+        - /etc/apt/trusted.gpg.d/ros-archive-keyring.gpg
+      become: true
+
+    - name: Configure ROS apt source
+      ansible.builtin.copy:
+        dest: /etc/apt/sources.list.d/ros2.list
+        content: "deb [arch={{ cos_debian_arch.stdout }} signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] {{ ros_apt_mirror }} {{ cos_ubuntu_codename.stdout }} main\n"
+        mode: "0644"
+      become: true
+
+    - name: Remove stale RealSense apt sources before refresh
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/apt/sources.list.d/librealsense.list
+        - /etc/apt/sources.list.d/realsense-public.list
+      become: true
+
+    - name: Update apt package index before system dependency install
+      ansible.builtin.apt:
+        update_cache: true
+      become: true
+
+    - name: Install cos_setup apt dependencies
+      ansible.builtin.apt:
+        name: "{{ cos_apt_packages }}"
+        state: present
+        install_recommends: false
+      become: true
+
+    - name: Download Intel RealSense apt key
+      ansible.builtin.get_url:
+        url: "{{ realsense_apt_key_url }}"
+        dest: /tmp/librealsenseai.asc
+        mode: "0644"
+      register: realsense_key_download
+      retries: 3
+      delay: 5
+      until: realsense_key_download is succeeded  
+      become: true
+
+    - name: Install Intel RealSense apt keyring
+      ansible.builtin.shell: |
+        set -euo pipefail
+        gpg --dearmor </tmp/librealsenseai.asc >/etc/apt/keyrings/librealsenseai.gpg
+        chmod 0644 /etc/apt/keyrings/librealsenseai.gpg
+      args:
+        executable: /bin/bash
+      become: true
+      changed_when: true
+
+    - name: Configure Intel RealSense apt source
+      ansible.builtin.copy:
+        dest: /etc/apt/sources.list.d/librealsense.list
+        content: "deb [signed-by=/etc/apt/keyrings/librealsenseai.gpg] {{ realsense_apt_repo_url }} {{ cos_ubuntu_codename.stdout }} main\n"
+        mode: "0644"
+      become: true
+
+    - name: Update apt package index after RealSense source setup
+      ansible.builtin.apt:
+        update_cache: true
+      become: true
+
+    - name: Install Intel RealSense packages
+      ansible.builtin.apt:
+        name:
+          - librealsense2-dev
+          - librealsense2-utils
+        state: present
+      become: true
+
+    - name: Check ros-foxy-agent package status
+      ansible.builtin.command: dpkg-query -W -f=${Status} ros-foxy-agent
+      register: cos_agent_package_status
+      changed_when: false
+      failed_when: false
+
+    - name: Download ros-foxy-agent package
+      ansible.builtin.get_url:
+        url: "https://download.coscene.cn/agent/ros-foxy-agent_0.4.10-0focal_{{ cos_debian_arch.stdout }}.deb"
+        dest: "/tmp/ros-foxy-agent_0.4.10-0focal_{{ cos_debian_arch.stdout }}.deb"
+        mode: "0644"
+      become: true
+      when: "'install ok installed' not in (cos_agent_package_status.stdout | default(''))"
+
+    - name: Install ros-foxy-agent package
+      ansible.builtin.apt:
+        deb: "/tmp/ros-foxy-agent_0.4.10-0focal_{{ cos_debian_arch.stdout }}.deb"
+      become: true
+      when: "'install ok installed' not in (cos_agent_package_status.stdout | default(''))"
+
+    - name: Install local robot deb packages
+      ansible.builtin.shell: |
+        set -euo pipefail
+        apk_dir="{{ cos_apk_dir }}"
+        host_arch="$(dpkg --print-architecture)"
+        found_deb=0
+        while IFS= read -r -d '' deb; do
+          found_deb=1
+          deb_arch="$(dpkg-deb -f "$deb" Architecture)"
+          if [ "$deb_arch" != "all" ] && [ "$deb_arch" != "$host_arch" ]; then
+            printf '[ansible] ERROR: Debian package architecture mismatch: %s is %s, host is %s\n' "$deb" "$deb_arch" "$host_arch" >&2
+            exit 1
+          fi
+          DEBIAN_FRONTEND=noninteractive apt-get install -y "$deb"
+        done < <(find "$apk_dir" -maxdepth 1 -type f -name '*.deb' -print0 | sort -z)
+        if [ "$found_deb" -eq 0 ]; then
+          printf '[ansible] ERROR: no .deb packages found in %s\n' "$apk_dir" >&2
+          exit 1
+        fi
+      args:
+        executable: /bin/bash
+      become: true
+      register: cos_local_deb_install
+      changed_when: true
+
+    - name: Enable persistent systemd journal
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - /var/log/journal
+        - /etc/systemd/journald.conf.d
+      become: true
+
+    - name: Create persistent journald configuration
+      ansible.builtin.copy:
+        dest: /etc/systemd/journald.conf.d/99-coscene-persistent.conf
+        content: |
+          [Journal]
+          Storage=persistent
+          Compress=yes
+          SystemMaxUse=1G
+          RuntimeMaxUse=256M
+        mode: "0644"
+      become: true
+      register: cos_journald_config
+
+    - name: Initialize persistent journal directory
+      ansible.builtin.command: systemd-tmpfiles --create --prefix /var/log/journal
+      become: true
+      register: cos_journal_tmpfiles
+      changed_when: false
+      failed_when: false
+
+    - name: Restart systemd-journald after configuration change
+      ansible.builtin.systemd:
+        name: systemd-journald
+        state: restarted
+      become: true
+      when: cos_journald_config.changed | bool
+
+    - name: Run cos_setup.sh first attempt
+      ansible.builtin.shell: |
+        set -o pipefail
+        cd {{ cos_setup_dir }}
+        log_file="{{ cos_setup_log_dir }}/cos_setup_{{ inventory_hostname }}_first_attempt.log"
+        : > "$log_file"
+        printf '[ansible] starting %s/%s at %s\n' "{{ cos_setup_dir }}" "{{ cos_setup_file }}" "$(date -Iseconds)" | tee -a "$log_file"
+        stdbuf -oL -eL ./{{ cos_setup_file }} 2>&1 | tee -a "$log_file"
+        rc=${PIPESTATUS[0]}
+        printf '[ansible] finished %s/%s at %s rc=%s log=%s\n' "{{ cos_setup_dir }}" "{{ cos_setup_file }}" "$(date -Iseconds)" "$rc" "$log_file" | tee -a "$log_file"
+        exit "$rc"
+      args:
+        executable: /bin/bash
+      become: false
+      register: cos_setup_first
+      changed_when: true
+      failed_when: false
+      when:
+        - cos_setup_script_stat.stat.exists | default(false)
+        - not ansible_check_mode
+
+    - name: Build check-mode cos_setup result
+      ansible.builtin.set_fact:
+        cos_setup_first:
+          changed: false
+          rc: "{{ 0 if (cos_setup_script_stat.stat.exists | default(false)) else 127 }}"
+          stdout: "{{ 'check mode: cos_setup.sh execution skipped' if (cos_setup_script_stat.stat.exists | default(false)) else '' }}"
+          stderr: "{{ '' if (cos_setup_script_stat.stat.exists | default(false)) else 'remote cos_setup.sh not found' }}"
+      when: ansible_check_mode
+
+    - name: Detect pyrealsense/librealsense/GLIBC error
+      ansible.builtin.set_fact:
+        cos_setup_realsense_error_detected: >-
+          {{
+            (
+              (cos_setup_first.stdout | default('')) ~ '\n' ~
+              (cos_setup_first.stderr | default(''))
+            ) | lower is regex('pyrealsense|librealsense|glibc|glibcxx')
+          }}
+
+    - name: Remove librealsense packages after detected error
+      ansible.builtin.shell: |
+        apt remove -y librealsense2/now || true
+        apt remove -y librealsense2 || true
+      args:
+        executable: /bin/bash
+      become: true
+      register: cos_setup_cleanup
+      changed_when: true
+      failed_when: false
+      when:
+        - cleanup_librealsense_on_error | bool
+        - cos_setup_retry_on_realsense_error | bool
+        - cos_setup_realsense_error_detected | bool
+        - cos_setup_first.rc | default(127) != 0
+        - not ansible_check_mode
+
+    - name: Run cos_setup.sh retry after librealsense cleanup
+      ansible.builtin.shell: |
+        set -o pipefail
+        cd {{ cos_setup_dir }}
+        log_file="{{ cos_setup_log_dir }}/cos_setup_{{ inventory_hostname }}_retry_attempt.log"
+        : > "$log_file"
+        printf '[ansible] starting %s/%s retry at %s\n' "{{ cos_setup_dir }}" "{{ cos_setup_file }}" "$(date -Iseconds)" | tee -a "$log_file"
+        stdbuf -oL -eL ./{{ cos_setup_file }} 2>&1 | tee -a "$log_file"
+        rc=${PIPESTATUS[0]}
+        printf '[ansible] finished %s/%s retry at %s rc=%s log=%s\n' "{{ cos_setup_dir }}" "{{ cos_setup_file }}" "$(date -Iseconds)" "$rc" "$log_file" | tee -a "$log_file"
+        exit "$rc"
+      args:
+        executable: /bin/bash
+      become: false
+      register: cos_setup_retry
+      changed_when: true
+      failed_when: false
+      when:
+        - cleanup_librealsense_on_error | bool
+        - cos_setup_retry_on_realsense_error | bool
+        - cos_setup_realsense_error_detected | bool
+        - cos_setup_first.rc | default(127) != 0
+        - not ansible_check_mode
+
+    - name: Install and enable cos systemd services
+      ansible.builtin.command: bash "{{ cos_target_home }}/scripts/install_service.sh"
+      become: true
+      register: cos_service_install
+      changed_when: true
+      when:
+        - cos_setup_script_stat.stat.exists | default(false)
+        - (cos_setup_retry.rc | default(cos_setup_first.rc | default(127)) | int) == 0
+        - not ansible_check_mode
+
+    - name: Check cos services
+      ansible.builtin.shell: |
+        set +e
+        systemctl is-enabled {{ item }}
+        enabled_rc=$?
+        systemctl is-active {{ item }}
+        active_rc=$?
+        systemctl status {{ item }} --no-pager -l
+        status_rc=$?
+        if systemctl status {{ item }} --no-pager -l 2>/dev/null | grep -q 'Loaded: loaded'; then
+          loaded=1
+        else
+          loaded=0
+        fi
+        if [ "$enabled_rc" -eq 0 ]; then
+          enabled=1
+        else
+          enabled=0
+        fi
+        if [ "$active_rc" -eq 0 ]; then
+          active=1
+        else
+          active=0
+        fi
+        printf '\n__COS_SERVICE_RC__ loaded=%s enabled=%s active=%s enabled_rc=%s active_rc=%s status_rc=%s\n' "$loaded" "$enabled" "$active" "$enabled_rc" "$active_rc" "$status_rc"
+        exit 0
+      args:
+        executable: /bin/bash
+      loop: "{{ cos_services }}"
+      register: cos_service_checks
+      changed_when: false
+      failed_when: false
+
+    - name: Record cos_setup end time
+      ansible.builtin.command: date -Iseconds
+      register: cos_setup_end_time
+      changed_when: false
+
+    - name: Build cos_setup final result
+      ansible.builtin.set_fact:
+        cos_setup_script_rc: "{{ cos_setup_retry.rc | default(cos_setup_first.rc | default(127)) }}"
+        cos_setup_retry_performed: "{{ cos_setup_retry is defined and not (cos_setup_retry.skipped | default(false)) }}"
+        cos_setup_final_status: >-
+          {{
+            'WARN'
+            if ansible_check_mode and (cos_setup_script_stat.stat.exists | default(false))
+            else 'FAIL'
+          }}
+        cos_setup_final_detail: >-
+          {{
+            'check mode: cos_setup.sh execution skipped; cleanup/retry disabled'
+            if ansible_check_mode and (cos_setup_script_stat.stat.exists | default(false))
+            else (
+              'remote cos_setup.sh not found'
+              if not (cos_setup_script_stat.stat.exists | default(false))
+              else 'cos_setup.sh finished; waiting for service validation'
+            )
+          }}
+
+    - name: Build cos service report
+      ansible.builtin.set_fact:
+        cos_service_report: >-
+          {{
+            cos_service_report | default({}) | combine({
+              item.item: {
+                'rc': item.rc,
+                'stdout': item.stdout | default(''),
+                'stderr': item.stderr | default(''),
+                'loaded': item.stdout is search('__COS_SERVICE_RC__ .*loaded=1'),
+                'enabled': item.stdout is search('__COS_SERVICE_RC__ .*enabled=1'),
+                'active': item.stdout is search('__COS_SERVICE_RC__ .*active=1'),
+                'status': (
+                  'OK'
+                  if (item.stdout is search('__COS_SERVICE_RC__ .*active=1'))
+                  else 'FAIL'
+                ),
+                'detail': (
+                  'active'
+                  if (item.stdout is search('__COS_SERVICE_RC__ .*active=1'))
+                  else 'not active'
+                )
+              }
+            })
+          }}
+      loop: "{{ cos_service_checks.results | default([]) }}"
+
+    - name: Build cos service status facts
+      ansible.builtin.set_fact:
+        cos_agent_active_ok: "{{ cos_service_report.get('cos_agent', {}).get('active', false) | bool }}"
+        cos_teleop_active_ok: "{{ cos_service_report.get('cos_teleop', {}).get('active', false) | bool }}"
+        xrobotoolkit_active_ok: "{{ cos_service_report.get('xrobotoolkit-pc-service', {}).get('active', false) | bool }}"
+        cos_service_failed_items: >-
+          {{
+            cos_service_report | dict2items
+            | rejectattr('value.status', 'equalto', 'OK')
+            | map(attribute='key')
+            | list
+          }}
+
+    - name: Build canonical cos_setup success gate
+      ansible.builtin.set_fact:
+        setup_success: >-
+          {{
+            (cos_agent_active_ok | bool) and
+            (cos_teleop_active_ok | bool) and
+            (xrobotoolkit_active_ok | bool)
+          }}
+        cos_setup_final_rc: "{{ 0 if ((cos_agent_active_ok | bool) and (cos_teleop_active_ok | bool) and (xrobotoolkit_active_ok | bool)) else cos_setup_script_rc }}"
+        cos_setup_final_status: >-
+          {{
+            'WARN'
+            if ansible_check_mode and (cos_setup_script_stat.stat.exists | default(false))
+            else 'OK'
+            if ((cos_agent_active_ok | bool) and (cos_teleop_active_ok | bool) and (xrobotoolkit_active_ok | bool))
+            else 'FAIL'
+          }}
+        cos_setup_final_detail: >-
+          {{
+            'check mode: cos_setup.sh execution skipped; cleanup/retry disabled'
+            if ansible_check_mode and (cos_setup_script_stat.stat.exists | default(false))
+            else 'cos_setup.sh 执行完成，cos_agent / cos_teleop / xrobotoolkit-pc-service 状态正常。'
+            if ((cos_agent_active_ok | bool) and (cos_teleop_active_ok | bool) and (xrobotoolkit_active_ok | bool))
+            else (
+              'remote cos_setup.sh not found'
+              if not (cos_setup_script_stat.stat.exists | default(false))
+              else 'cos_setup.sh finished but required services are not active'
+            )
+          }}
+
+    - name: Build final cos_setup JSON object
+      ansible.builtin.set_fact:
+        cos_setup_report:
+          robot_id: "{{ robot_id | default('unknown') }}"
+          inventory_hostname: "{{ inventory_hostname }}"
+          ansible_host: "{{ ansible_host }}"
+          ansible_user: "{{ ansible_user | default('unitree') }}"
+          end_effector: "{{ end_effector | default('unknown') }}"
+          start_time: "{{ cos_setup_start_time.stdout | default('') }}"
+          end_time: "{{ cos_setup_end_time.stdout | default('') }}"
+          cos_setup_path: "{{ cos_setup_path }}"
+          setup_status: >-
+            {{
+              'OK'
+              if (setup_success | bool)
+              else 'FAIL'
+              if not ansible_check_mode
+              else cos_setup_final_status
+            }}
+          setup_detail: >-
+            {{
+              'cos_setup.sh 执行完成，cos_agent / cos_teleop / xrobotoolkit-pc-service 状态正常。'
+              if (setup_success | bool)
+              else cos_setup_final_detail ~ '; service checks failed: ' ~ (cos_service_failed_items | join(', '))
+              if (cos_service_failed_items | length) > 0
+              else cos_setup_final_detail
+            }}
+          changed: "{{ (cos_setup_first.changed | default(false)) or (cos_setup_retry.changed | default(false)) }}"
+          rc: "{{ cos_setup_final_rc }}"
+          realsense_error_detected: "{{ cos_setup_realsense_error_detected | default(false) }}"
+          retry_performed: "{{ cos_setup_retry_performed }}"
+          remote_start:
+            changed: "{{ remote_start_stop_result.changed | default(false) }}"
+            rc: "{{ remote_start_stop_result.rc | default('') }}"
+            stdout: "{{ remote_start_stop_result.stdout | default('') }}"
+            stderr: "{{ remote_start_stop_result.stderr | default('') }}"
+          time_sync:
+            changed: "{{ cos_setup_time_sync.changed | default(false) }}"
+            rc: "{{ cos_setup_time_sync.rc | default('') }}"
+            stdout: "{{ cos_setup_time_sync.stdout | default('') }}"
+            stderr: "{{ cos_setup_time_sync.stderr | default('') }}"
+          first_attempt:
+            changed: "{{ cos_setup_first.changed | default(false) }}"
+            rc: "{{ cos_setup_first.rc | default(127) }}"
+            stdout: "{{ cos_setup_first.stdout | default('') }}"
+            stderr: "{{ cos_setup_first.stderr | default('') }}"
+          librealsense_cleanup:
+            changed: "{{ cos_setup_cleanup.changed | default(false) }}"
+            rc: "{{ cos_setup_cleanup.rc | default('') }}"
+            stdout: "{{ cos_setup_cleanup.stdout | default('') }}"
+            stderr: "{{ cos_setup_cleanup.stderr | default('') }}"
+          retry_attempt:
+            changed: "{{ cos_setup_retry.changed | default(false) }}"
+            rc: "{{ cos_setup_retry.rc | default('') }}"
+            stdout: "{{ cos_setup_retry.stdout | default('') }}"
+            stderr: "{{ cos_setup_retry.stderr | default('') }}"
+          services: "{{ cos_service_report | default({}) }}"
+          overall_status: >-
+            {{
+              'OK'
+              if (setup_success | bool)
+              else 'FAIL'
+              if not ansible_check_mode
+              else cos_setup_final_status
+            }}
+
+    - name: Ensure local cos_setup report directory exists
+      ansible.builtin.file:
+        path: "{{ cos_setup_report_dir_resolved }}"
+        state: directory
+        mode: "0755"
+      delegate_to: localhost
+      run_once: true
+
+    - name: Write per-robot cos_setup JSON report
+      ansible.builtin.copy:
+        dest: "{{ cos_setup_report_dir_resolved }}/cos_setup_{{ inventory_hostname }}.json"
+        content: "{{ cos_setup_report | to_nice_json }}\n"
+        mode: "0644"
+      delegate_to: localhost
+
+    - name: Write cos_setup aggregate JSON report
+      ansible.builtin.copy:
+        dest: "{{ cos_setup_report_dir_resolved }}/cos_setup_summary.json"
+        content: |
+          [
+          {% for host_name in ansible_play_hosts_all %}
+          {{ hostvars[host_name].cos_setup_report | default({'inventory_hostname': host_name, 'overall_status': 'NO_REPORT'}) | to_nice_json }}{{ ',' if not loop.last else '' }}
+          {% endfor %}
+          ]
+        mode: "0644"
+      delegate_to: localhost
+      run_once: true
+
+    - name: Print cos_setup report paths
+      ansible.builtin.debug:
+        msg:
+          - "COS setup result: {{ inventory_hostname }} ({{ ansible_host }})"
+          - "robot_id={{ robot_id | default('unknown') }}"
+          - "end_effector={{ end_effector | default('unknown') }}"
+          - "Per-robot report: {{ cos_setup_report_dir_resolved }}/cos_setup_<inventory_hostname>.json"
+          - "Aggregate report: {{ cos_setup_report_dir_resolved }}/cos_setup_summary.json"
+
+    - name: Fail when cos_setup did not complete successfully
+      ansible.builtin.fail:
+        msg: "{{ cos_setup_report.setup_detail }}"
+      when:
+        - not ansible_check_mode
+        - cos_setup_report.overall_status != 'OK'

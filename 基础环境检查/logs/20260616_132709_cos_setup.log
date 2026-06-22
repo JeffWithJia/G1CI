@@ -1,0 +1,44 @@
+$ /usr/bin/ansible-playbook -k -K -T 15 -i '/home/jeff/coscene/code/codex/G1CI/基础环境检查/inventory.ini' -e '{"ansible_ssh_common_args": "-o PreferredAuthentications=password -o PubkeyAuthentication=no -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -o ConnectionAttempts=1"}' '/home/jeff/coscene/code/codex/G1CI/基础环境检查/deploy_eva_robot检测/batch_cos_setup.yml' -e 'cos_setup_report_dir=/home/jeff/coscene/code/codex/G1CI/基础环境检查/reports/raw' --limit g1_robot_061
+cwd=/home/jeff/coscene/code/codex/G1CI/基础环境检查
+
+SSH password: 
+[operator_console] detected SSH password prompt, password sent
+
+BECOME password[defaults to SSH password]: 
+[operator_console] detected BECOME password prompt, sudo password sent
+
+
+PLAY [Run cos_setup.sh on G1 robots] *******************************************
+
+TASK [Record cos_setup start time] *********************************************
+[0;32mok: [g1_robot_061][0m
+
+TASK [Resolve local cos_setup report directory] ********************************
+[0;32mok: [g1_robot_061][0m
+
+TASK [Get controller current time before cos_setup] ****************************
+[0;32mok: [g1_robot_061][0m
+
+TASK [Sync robot time from controller before cos_setup] ************************
+[0;33mchanged: [g1_robot_061][0m
+
+TASK [Stop remote_start.service before cos_setup] ******************************
+[0;33mchanged: [g1_robot_061][0m
+
+TASK [Check remote cos_setup.sh] ***********************************************
+[0;32mok: [g1_robot_061][0m
+
+TASK [Build cos_setup path facts] **********************************************
+[0;32mok: [g1_robot_061][0m
+
+TASK [Ensure cos_setup log directory is writable by unitree] *******************
+[0;33mchanged: [g1_robot_061][0m
+
+TASK [Run cos_setup.sh first attempt] ******************************************
+[0;31mfatal: [g1_robot_061]: FAILED! => {"changed": true, "cmd": "set -o pipefail\ncurrent_user=\"$(id -un)\"\nif [ \"$current_user\" != \"unitree\" ]; then\n  printf '[ansible] ERROR: cos_setup.sh must run as unitree, current user=%s\\n' \"$current_user\"\n  exit 126\nfi\ncd /home/unitree\nlog_file=\"/home/unitree/cos_logs/cos_setup_g1_robot_061_first_attempt.log\"\n: > \"$log_file\"\nprintf '[ansible] starting %s/%s at %s\\n' \"/home/unitree\" \"cos_setup.sh\" \"$(date -Iseconds)\" | tee -a \"$log_file\"\nstdbuf -oL -eL ./cos_setup.sh 2>&1 | tee -a \"$log_file\"\nrc=${PIPESTATUS[0]}\nprintf '[ansible] finished %s/%s at %s rc=%s log=%s\\n' \"/home/unitree\" \"cos_setup.sh\" \"$(date -Iseconds)\" \"$rc\" \"$log_file\" | tee -a \"$log_file\"\nexit \"$rc\"\n", "delta": "0:00:00.178108", "end": "2026-06-16 13:27:13.038105", "failed_when_result": true, "msg": "non-zero return code", "rc": 1, "start": "2026-06-16 13:27:12.859997", "stderr": "", "stderr_lines": [], "stdout": "[ansible] starting /home/unitree/cos_setup.sh at 2026-06-16T13:27:12+08:00\n\n[cos_setup.sh] Installing apt dependencies\n\n[cos_setup.sh] Refreshing ROS apt key\nsudo: a terminal is required to read the password; either use the -S option to read from standard input or configure an askpass helper\n\n[cos_setup.sh] ERROR: Script failed at line 99 with exit code 1: sudo install -d -m 0755 /usr/share/keyrings\n[ansible] finished /home/unitree/cos_setup.sh at 2026-06-16T13:27:13+08:00 rc=1 log=/home/unitree/cos_logs/cos_setup_g1_robot_061_first_attempt.log", "stdout_lines": ["[ansible] starting /home/unitree/cos_setup.sh at 2026-06-16T13:27:12+08:00", "", "[cos_setup.sh] Installing apt dependencies", "", "[cos_setup.sh] Refreshing ROS apt key", "sudo: a terminal is required to read the password; either use the -S option to read from standard input or configure an askpass helper", "", "[cos_setup.sh] ERROR: Script failed at line 99 with exit code 1: sudo install -d -m 0755 /usr/share/keyrings", "[ansible] finished /home/unitree/cos_setup.sh at 2026-06-16T13:27:13+08:00 rc=1 log=/home/unitree/cos_logs/cos_setup_g1_robot_061_first_attempt.log"]}[0m
+
+PLAY RECAP *********************************************************************
+[0;31mg1_robot_061[0m               : [0;32mok=8   [0m [0;33mchanged=3   [0m unreachable=0    [0;31mfailed=1   [0m skipped=0    rescued=0    ignored=0   
+
+
+returncode=2

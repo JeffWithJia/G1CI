@@ -1,0 +1,19 @@
+{
+  "action": "service_check",
+  "robots": [
+    "g1_robot_065"
+  ],
+  "started_at": "20260622_123548",
+  "start_time": "2026-06-22 12:35:48",
+  "finished_at": "2026-06-22 12:35:51",
+  "end_time": "2026-06-22 12:35:51",
+  "duration_seconds": 3.0,
+  "returncode": 1,
+  "stdout": "",
+  "stderr": "机器人无法连接，请检查网络、IP 和 SSH 密码。\n192.168.90.65:22 连接失败：timed out",
+  "latest_output": "机器人无法连接，请检查网络、IP 和 SSH 密码。\n192.168.90.65:22 连接失败：timed out",
+  "command": "",
+  "cwd": "",
+  "report_path": "reports/g1_env_summary.json",
+  "log_file": "/home/jeff/coscene/code/codex/G1CI/基础环境检查/logs/20260622_123548_service_check.log"
+}

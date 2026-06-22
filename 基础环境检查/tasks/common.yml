@@ -1,0 +1,357 @@
+---
+- name: Check project directory
+  ansible.builtin.stat:
+    path: "{{ project_dir }}"
+  register: project_dir_stat
+
+- name: Record project directory status
+  ansible.builtin.set_fact:
+    g1_check_results: "{{ g1_check_results + [{'name': 'g1_setup directory', 'status': ('OK' if project_dir_stat.stat.isdir | default(false) else 'FAIL'), 'detail': project_dir}] }}"
+
+- name: Check unitree_sdk2 source directory
+  ansible.builtin.stat:
+    path: "{{ unitree_sdk_dir }}"
+  register: unitree_sdk_src_stat
+
+- name: Record unitree_sdk2 source status
+  ansible.builtin.set_fact:
+    g1_check_results: "{{ g1_check_results + [{'name': 'unitree_sdk2 source', 'status': ('OK' if unitree_sdk_src_stat.stat.isdir | default(false) else 'FAIL'), 'detail': unitree_sdk_dir}] }}"
+
+- name: Detect conda executable
+  ansible.builtin.shell: |
+    source ~/.bashrc 2>/dev/null || true
+
+    if command -v conda >/dev/null 2>&1; then
+      command -v conda
+      exit 0
+    fi
+
+    find /home/unitree -maxdepth 4 -type f -name conda -path "*/bin/conda" 2>/dev/null | head -n 1
+  args:
+    executable: /bin/bash
+  register: discovered_conda
+  changed_when: false
+  failed_when: false
+
+- name: Set conda paths
+  ansible.builtin.set_fact:
+    conda_bin: "{{ discovered_conda.stdout | trim }}"
+    conda_exists: "{{ (discovered_conda.stdout | trim | length) > 0 }}"
+    conda_base_dir: "{{ (discovered_conda.stdout | trim | regex_replace('/bin/conda$', '')) if (discovered_conda.stdout | trim | length) > 0 else '' }}"
+
+- name: Record conda status
+  ansible.builtin.set_fact:
+    g1_check_results: "{{ g1_check_results + [{'name': 'Conda engine', 'status': ('OK' if conda_exists else 'FAIL'), 'detail': (conda_bin if conda_exists else 'conda not found')}] }}"
+
+- name: Set tv python path
+  ansible.builtin.set_fact:
+    tv_python: "{{ conda_base_dir }}/envs/{{ tv_env_name }}/bin/python"
+  when: conda_exists
+
+- name: Check conda tv environment
+  ansible.builtin.stat:
+    path: "{{ tv_python }}"
+  register: tv_python_stat
+  when: conda_exists
+
+- name: Record conda tv environment status
+  ansible.builtin.set_fact:
+    g1_check_results: "{{ g1_check_results + [{'name': 'conda env tv', 'status': ('OK' if (conda_exists and tv_python_stat.stat.exists | default(false)) else 'FAIL'), 'detail': (tv_python if conda_exists else 'conda not found')}] }}"
+
+- name: Check tv python version
+  ansible.builtin.command: "{{ tv_python }} --version"
+  register: tv_python_version
+  changed_when: false
+  failed_when: false
+  when:
+    - conda_exists
+    - tv_python_stat.stat.exists | default(false)
+
+- name: Record tv python version status
+  ansible.builtin.set_fact:
+    g1_check_results: "{{ g1_check_results + [tv_python_version_result] }}"
+  vars:
+    tv_python_version_ok: "{{ tv_python_version.rc == 0 and ((tv_python_version.stdout ~ tv_python_version.stderr) | trim).startswith('Python ' ~ expected_tv_python_major_minor ~ '.') }}"
+    tv_python_version_result:
+      name: tv python version
+      status: "{{ 'OK' if tv_python_version_ok | bool else 'WARN' }}"
+      detail: "{{ (tv_python_version.stdout ~ tv_python_version.stderr) | trim }}"
+      stdout: "{{ tv_python_version.stdout | default('') }}"
+      stderr: "{{ tv_python_version.stderr | default('') }}"
+      reason: "{{ '' if tv_python_version_ok | bool else 'tv environment Python version is not the expected version.' }}"
+      suggestion: "{{ '' if tv_python_version_ok | bool else 'If current services work normally, this warning can be ignored; otherwise recreate tv with Python 3.10.' }}"
+  when:
+    - conda_exists
+    - tv_python_stat.stat.exists | default(false)
+
+- name: Record skipped tv python version status
+  ansible.builtin.set_fact:
+    g1_check_results: "{{ g1_check_results + [{'name': 'tv python version', 'status': 'SKIP', 'detail': 'tv environment missing'}] }}"
+  when: not (conda_exists and tv_python_stat.stat.exists | default(false))
+
+- name: Check Python package imports
+  ansible.builtin.command: "{{ tv_python }} -c 'import {{ item.import_name }}'"
+  loop: "{{ python_packages }}"
+  register: python_import_check
+  changed_when: false
+  failed_when: false
+  when:
+    - conda_exists
+    - tv_python_stat.stat.exists | default(false)
+
+- name: Record Python package import status
+  ansible.builtin.set_fact:
+    g1_check_results: "{{ g1_check_results + [{'name': item.item.display_name, 'status': ('OK' if item.rc == 0 else 'FAIL'), 'detail': ('import ' ~ item.item.import_name), 'stdout': item.stdout | default(''), 'stderr': item.stderr | default('')}] }}"
+  loop: "{{ python_import_check.results | default([]) }}"
+  when:
+    - conda_exists
+    - tv_python_stat.stat.exists | default(false)
+
+- name: Record skipped Python package imports
+  ansible.builtin.set_fact:
+    g1_check_results: "{{ g1_check_results + [{'name': item.display_name, 'status': 'SKIP', 'detail': 'tv environment missing'}] }}"
+  loop: "{{ python_packages }}"
+  when: not (conda_exists and tv_python_stat.stat.exists | default(false))
+
+- name: Check unitree_sdk2 installed files
+  ansible.builtin.stat:
+    path: "{{ item.path }}"
+  loop:
+    - name: unitree_sdk2 library
+      path: "{{ unitree_sdk_lib }}"
+    - name: unitree_sdk2 cmake config
+      path: "{{ unitree_sdk_config }}"
+    - name: unitree_sdk2 go2 header
+      path: "{{ unitree_sdk_header }}"
+  register: unitree_sdk_file_stats
+
+- name: Record unitree_sdk2 installed file status
+  ansible.builtin.set_fact:
+    g1_check_results: "{{ g1_check_results + [{'name': item.item.name, 'status': ('OK' if item.stat.exists | default(false) else 'FAIL'), 'detail': item.item.path}] }}"
+  loop: "{{ unitree_sdk_file_stats.results }}"
+
+- name: Check apt package installation
+  ansible.builtin.command: "dpkg-query -W -f=${Status} {{ item }}"
+  loop: "{{ apt_packages }}"
+  register: apt_package_check
+  changed_when: false
+  failed_when: false
+
+- name: Record apt package status
+  ansible.builtin.set_fact:
+    g1_check_results: "{{ g1_check_results + [{'name': 'apt ' ~ item.item, 'status': ('OK' if item.rc == 0 and 'install ok installed' in item.stdout else 'WARN'), 'detail': item.item}] }}"
+  loop: "{{ apt_package_check.results }}"
+
+- name: Check remote image service binary
+  ansible.builtin.stat:
+    path: "{{ remote_binary }}"
+  register: remote_binary_stat
+
+- name: Record remote image service binary status
+  ansible.builtin.set_fact:
+    g1_check_results: "{{ g1_check_results + [{'name': 'remote image binary', 'status': ('OK' if remote_binary_stat.stat.exists | default(false) else 'FAIL'), 'detail': remote_binary}] }}"
+
+- name: Check remote_start systemd unit file
+  ansible.builtin.stat:
+    path: "{{ remote_service_file }}"
+  register: remote_service_file_stat
+  when: check_remote_start | default(false) | bool
+
+- name: Check remote_start service enabled state
+  ansible.builtin.command: "systemctl is-enabled {{ remote_service_name }}"
+  register: remote_service_enabled
+  changed_when: false
+  failed_when: false
+  when: check_remote_start | default(false) | bool
+
+- name: Check remote_start service active state
+  ansible.builtin.command: "systemctl is-active {{ remote_service_name }}"
+  register: remote_service_active
+  changed_when: false
+  failed_when: false
+  when: check_remote_start | default(false) | bool
+
+- name: Record remote_start service status
+  ansible.builtin.set_fact:
+    g1_check_results: "{{ g1_check_results + [
+      {'name': 'remote_start unit file', 'status': ('OK' if remote_service_file_stat.stat.exists | default(false) else 'FAIL'), 'detail': remote_service_file},
+      {'name': 'remote_start enabled', 'status': ('OK' if remote_service_enabled.stdout | trim == 'enabled' else 'WARN'), 'detail': remote_service_enabled.stdout | trim},
+      {'name': 'remote_start active', 'status': ('OK' if remote_service_active.stdout | trim == 'active' else 'WARN'), 'detail': remote_service_active.stdout | trim}
+    ] }}"
+  when: check_remote_start | default(false) | bool
+
+- name: Check camera udev rule file
+  ansible.builtin.stat:
+    path: "{{ camera_rule_file }}"
+  register: camera_rule_file_stat
+
+- name: Record camera udev rule file status
+  ansible.builtin.set_fact:
+    g1_check_results: "{{ g1_check_results + [{'name': 'camera udev rules', 'status': ('OK' if camera_rule_file_stat.stat.exists | default(false) else 'WARN'), 'detail': camera_rule_file}] }}"
+
+- name: Check camera device symlinks
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop: "{{ camera_links }}"
+  register: camera_link_stats
+
+- name: Record camera device symlink status
+  ansible.builtin.set_fact:
+    g1_check_results: "{{ g1_check_results + [{'name': item.item, 'status': ('OK' if item.stat.exists | default(false) else 'WARN'), 'detail': item.item}] }}"
+  loop: "{{ camera_link_stats.results }}"
+
+- name: Check ROS2 camera topic heartbeats
+  ansible.builtin.shell: |
+    set +e
+    export HOME=/home/unitree
+    export ROS_VERSION=2
+    export ROS_DISTRO=foxy
+    export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+    export CYCLONEDDS_URI=file:///home/unitree/unitree_ros2/cyclonedds_ws/src/cyclonedds.xml
+    export PYTHONUNBUFFERED=1
+    source /opt/ros/foxy/setup.bash
+    if [ -f /home/unitree/unitree_ros2/cyclonedds_ws/install/setup.bash ]; then
+      source /home/unitree/unitree_ros2/cyclonedds_ws/install/setup.bash
+    fi
+    if [ -f /home/unitree/cos_ws/install/setup.bash ]; then
+      source /home/unitree/cos_ws/install/setup.bash
+    fi
+    timeout 5 ros2 topic hz {{ item.topic }} 2>&1
+    exit 0
+  args:
+    executable: /bin/bash
+  loop: "{{ camera_topics }}"
+  register: camera_topic_hz_checks
+  changed_when: false
+  failed_when: false
+
+- name: Initialize ROS2 camera topic heartbeat results
+  ansible.builtin.set_fact:
+    g1_camera_topic_results: []
+
+- name: Record ROS2 camera topic heartbeat status
+  ansible.builtin.set_fact:
+    g1_camera_topic_results: "{{ g1_camera_topic_results + [camera_topic_result] }}"
+    g1_check_results: "{{ g1_check_results + [camera_topic_check_result] }}"
+  vars:
+    camera_topic_rate_matches: "{{ item.stdout | default('') | regex_findall('average rate:\\s*([0-9]+(?:\\.[0-9]+)?)') }}"
+    camera_topic_rate_hz: "{{ (camera_topic_rate_matches | first | default('0', true)) | float }}"
+    camera_topic_ok: "{{ camera_topic_rate_hz | float > camera_topic_min_rate_hz | default(0.0) | float }}"
+    camera_topic_reason: "camera topic no data"
+    camera_topic_suggestion: "检查{{ item.item.label }} Type-C 连接或重启 cos_teleop.service"
+    camera_topic_detail: >-
+      {{
+        'average rate: ' ~ camera_topic_rate_hz ~ ' Hz'
+        if camera_topic_ok | bool
+        else 'timeout 5 ros2 topic hz ' ~ item.item.topic ~ ' did not receive messages'
+      }}
+    camera_topic_result: >-
+      {{
+        {
+          'topic': item.item.topic,
+          'label': item.item.label,
+          'status': ('OK' if camera_topic_ok | bool else 'FAIL'),
+          'rate_hz': camera_topic_rate_hz | float
+        }
+        | combine({} if camera_topic_ok | bool else {
+          'reason': camera_topic_reason,
+          'suggestion': camera_topic_suggestion,
+          'detail': camera_topic_detail,
+          'stdout': item.stdout | default(''),
+          'stderr': item.stderr | default('')
+        })
+      }}
+    camera_topic_check_result:
+      name: "{{ item.item.topic }}"
+      status: "{{ 'OK' if camera_topic_ok | bool else 'FAIL' }}"
+      detail: "{{ camera_topic_detail }}"
+      stdout: "{{ item.stdout | default('') }}"
+      stderr: "{{ item.stderr | default('') }}"
+      reason: "{{ '' if camera_topic_ok | bool else camera_topic_reason }}"
+      suggestion: "{{ '' if camera_topic_ok | bool else camera_topic_suggestion }}"
+  loop: "{{ camera_topic_hz_checks.results | default([]) }}"
+
+- name: Build structured camera status map
+  ansible.builtin.set_fact:
+    g1_camera_topic_by_topic: "{{ g1_camera_topic_by_topic | default({}) | combine({item.topic: item}) }}"
+  loop: "{{ g1_camera_topic_results | default([]) }}"
+
+- name: Initialize normalized camera topic heartbeat results
+  ansible.builtin.set_fact:
+    g1_camera_topic_results_normalized: []
+
+- name: Normalize camera topic heartbeat results
+  ansible.builtin.set_fact:
+    g1_camera_topic_results_normalized: "{{ g1_camera_topic_results_normalized + [camera_topic_result] }}"
+  vars:
+    existing_camera_topic: "{{ g1_camera_topic_by_topic.get(item.topic, {}) }}"
+    camera_topic_result: >-
+      {{
+        {
+          'topic': item.topic,
+          'label': item.label,
+          'status': existing_camera_topic.get('status', 'FAIL'),
+          'rate_hz': existing_camera_topic.get('rate_hz', 0) | float
+        }
+        | combine({} if existing_camera_topic.get('status', 'FAIL') == 'OK' else {
+          'reason': existing_camera_topic.get('reason', 'camera topic no data'),
+          'suggestion': existing_camera_topic.get('suggestion', '检查' ~ item.label ~ ' Type-C 连接或重启 cos_teleop.service'),
+          'detail': existing_camera_topic.get('detail', 'ros2 topic hz ' ~ item.topic ~ ' did not return data'),
+          'stdout': existing_camera_topic.get('stdout', ''),
+          'stderr': existing_camera_topic.get('stderr', '')
+        })
+      }}
+  loop: "{{ camera_topics }}"
+
+- name: Replace camera topic heartbeat results with normalized list
+  ansible.builtin.set_fact:
+    g1_camera_topic_results: "{{ g1_camera_topic_results_normalized }}"
+
+- name: Build structured camera status map
+  ansible.builtin.set_fact:
+    g1_camera_status: >-
+      {{
+        g1_camera_status | default({}) | combine({
+          (
+            'cam_head'
+            if item.topic == '/cam_head/compressed_image'
+            else 'cam_left'
+            if item.topic == '/cam_wrist_left/compressed_image'
+            else 'cam_right'
+          ): item.rate_hz | float
+        })
+      }}
+  loop: "{{ g1_camera_topic_results | default([]) }}"
+
+- name: Check cos_teleop camera journal
+  ansible.builtin.shell: |
+    set +e
+    journalctl -u cos_teleop.service -n 200 --no-pager -o cat | grep -Ei "RealSense camera\[0\] frame wait timed out|frame wait timed out|Failed to read direct MJPEG frame|Failed to open V4L2 device|Failed to initialize V4L2|Failed to initialize V4L2 direct MJPEG capture|Camera initialization failed|No such file or directory"
+    rc=$?
+    exit 0
+  args:
+    executable: /bin/bash
+  register: cos_teleop_camera_journal
+  changed_when: false
+  failed_when: false
+
+- name: Record cos_teleop camera journal status
+  ansible.builtin.set_fact:
+    g1_check_results: "{{ g1_check_results + [cos_teleop_camera_log_result] }}"
+  vars:
+    cos_teleop_camera_log_lines: "{{ cos_teleop_camera_journal.stdout_lines | default([]) }}"
+    cos_teleop_camera_error_lines: >-
+      {{
+        cos_teleop_camera_log_lines
+        | select('regex', '(?i)(RealSense camera\[0\] frame wait timed out|frame wait timed out|Failed to read direct MJPEG frame|Failed to open V4L2 device|Failed to initialize V4L2|Failed to initialize V4L2 direct MJPEG capture|Camera initialization failed|No such file or directory)')
+        | list
+      }}
+    cos_teleop_camera_log_has_error: "{{ cos_teleop_camera_error_lines | length > 0 }}"
+    cos_teleop_camera_log_result:
+      name: cos_teleop camera log
+      status: "{{ 'WARN' if cos_teleop_camera_log_has_error | bool else 'OK' }}"
+      detail: "{{ (cos_teleop_camera_error_lines | join('\n')) if cos_teleop_camera_log_has_error | bool else 'no recent camera error in cos_teleop journal' }}"
+      stdout: "{{ cos_teleop_camera_journal.stdout | default('') }}"
+      stderr: "{{ cos_teleop_camera_journal.stderr | default('') }}"
+      reason: "{{ 'cos_teleop 服务正在运行，但日志中存在相机读取或初始化异常。' if cos_teleop_camera_log_has_error | bool else '' }}"
+      suggestion: "{{ '请尝试重启 cos_teleop.service；如果仍异常，请检查相机 Type-C 连接、udev 映射、相机设备状态或相机是否被占用。' if cos_teleop_camera_log_has_error | bool else '' }}"

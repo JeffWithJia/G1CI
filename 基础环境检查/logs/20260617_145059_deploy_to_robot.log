@@ -1,0 +1,16 @@
+$ bash -c 'export REMOTE_HOST=192.168.90.62 && ./deploy_to_robot.sh unitree@192.168.90.62:/tmp/test'
+cwd=/home/jeff/coscene/code/codex/G1CI/基础环境检查/deploy_eva_robot检测/robot
+
+unitree@192.168.90.62's password: 
+[operator_console] detected SSH password prompt, password sent
+
+[deploy_to_robot] Skip existing /home/unitree/apk/xrobotoolkit-pc-service_1.0.0.2_ubuntu20.04_arm64.deb
+[deploy_to_robot] Skip existing unitree_ros2 because /home/unitree/unitree_ros2/cyclonedds_ws/install/setup.bash exists
+[deploy_to_robot] Replace /home/unitree/cos_ws/src/g1_description
+[deploy_to_robot] Replace /home/unitree/cos_ws/src/teleop_server
+[deploy_to_robot] Replace /home/unitree/scripts
+[deploy_to_robot] Replace /home/unitree/systemd
+[deploy_to_robot] Copy cos_setup.sh -> unitree@192.168.90.62:/home/unitree/cos_setup.sh
+[deploy_to_robot] Done
+
+returncode=0

@@ -1,0 +1,403 @@
+{
+    "ansible_host": "192.168.90.61",
+    "camera_topics": [
+        {
+            "label": "\u5934\u90e8\u76f8\u673a",
+            "rate_hz": 0.0,
+            "reason": "\u5934\u90e8\u76f8\u673a\u65e0\u6570\u636e",
+            "status": "WARN",
+            "suggestion": "\u68c0\u67e5\u5934\u90e8\u76f8\u673a Type-C \u8fde\u63a5\u6216\u91cd\u542f cos_teleop.service",
+            "topic": "/cam_head/compressed_image"
+        },
+        {
+            "label": "\u5de6\u8155\u76f8\u673a",
+            "rate_hz": 0.0,
+            "reason": "\u5de6\u8155\u76f8\u673a\u65e0\u6570\u636e",
+            "status": "WARN",
+            "suggestion": "\u68c0\u67e5\u5de6\u8155\u76f8\u673a Type-C \u8fde\u63a5\u6216\u91cd\u542f cos_teleop.service",
+            "topic": "/cam_wrist_left/compressed_image"
+        },
+        {
+            "label": "\u53f3\u8155\u76f8\u673a",
+            "rate_hz": 0.0,
+            "reason": "\u53f3\u8155\u76f8\u673a\u65e0\u6570\u636e",
+            "status": "WARN",
+            "suggestion": "\u68c0\u67e5\u53f3\u8155\u76f8\u673a Type-C \u8fde\u63a5\u6216\u91cd\u542f cos_teleop.service",
+            "topic": "/cam_wrist_right/compressed_image"
+        }
+    ],
+    "card": {
+        "issue_count": "3",
+        "issue_text": "[WARN] /cam_head/compressed_image - \u5934\u90e8\u76f8\u673a\u65e0\u6570\u636e | [WARN] /cam_wrist_left/compressed_image - \u5de6\u8155\u76f8\u673a\u65e0\u6570\u636e | [WARN] /cam_wrist_right/compressed_image - \u53f3\u8155\u76f8\u673a\u65e0\u6570\u636e",
+        "issues": [
+            {
+                "detail": "timeout 5 ros2 topic hz /cam_head/compressed_image did not receive messages",
+                "name": "/cam_head/compressed_image",
+                "reason": "\u5934\u90e8\u76f8\u673a\u65e0\u6570\u636e",
+                "source": "check",
+                "status": "WARN",
+                "suggestion": "\u68c0\u67e5\u5934\u90e8\u76f8\u673a Type-C \u8fde\u63a5\u6216\u91cd\u542f cos_teleop.service",
+                "summary": "[WARN] /cam_head/compressed_image - \u5934\u90e8\u76f8\u673a\u65e0\u6570\u636e"
+            },
+            {
+                "detail": "timeout 5 ros2 topic hz /cam_wrist_left/compressed_image did not receive messages",
+                "name": "/cam_wrist_left/compressed_image",
+                "reason": "\u5de6\u8155\u76f8\u673a\u65e0\u6570\u636e",
+                "source": "check",
+                "status": "WARN",
+                "suggestion": "\u68c0\u67e5\u5de6\u8155\u76f8\u673a Type-C \u8fde\u63a5\u6216\u91cd\u542f cos_teleop.service",
+                "summary": "[WARN] /cam_wrist_left/compressed_image - \u5de6\u8155\u76f8\u673a\u65e0\u6570\u636e"
+            },
+            {
+                "detail": "timeout 5 ros2 topic hz /cam_wrist_right/compressed_image did not receive messages",
+                "name": "/cam_wrist_right/compressed_image",
+                "reason": "\u53f3\u8155\u76f8\u673a\u65e0\u6570\u636e",
+                "source": "check",
+                "status": "WARN",
+                "suggestion": "\u68c0\u67e5\u53f3\u8155\u76f8\u673a Type-C \u8fde\u63a5\u6216\u91cd\u542f cos_teleop.service",
+                "summary": "[WARN] /cam_wrist_right/compressed_image - \u53f3\u8155\u76f8\u673a\u65e0\u6570\u636e"
+            }
+        ],
+        "status": "OK",
+        "subtitle": "robot_id=61, end_effector=dex1, mode=check",
+        "title": "g1_robot_061 (192.168.90.61)"
+    },
+    "checks": [
+        {
+            "detail": "stopped remote_start.service",
+            "name": "remote_start preflight stop",
+            "status": "OK",
+            "stderr": "",
+            "stdout": ""
+        },
+        {
+            "detail": "/home/unitree/g1_setup",
+            "name": "g1_setup directory",
+            "status": "OK"
+        },
+        {
+            "detail": "/home/unitree/g1_setup/unitree_sdk2",
+            "name": "unitree_sdk2 source",
+            "status": "OK"
+        },
+        {
+            "detail": "/home/unitree/miniconda3/bin/conda",
+            "name": "Conda engine",
+            "status": "OK"
+        },
+        {
+            "detail": "/home/unitree/miniconda3/envs/tv/bin/python",
+            "name": "conda env tv",
+            "status": "OK"
+        },
+        {
+            "detail": "Python 3.10.20",
+            "name": "tv python version",
+            "reason": "",
+            "status": "OK",
+            "stderr": "",
+            "stdout": "Python 3.10.20",
+            "suggestion": ""
+        },
+        {
+            "detail": "import cv2",
+            "name": "Python cv2",
+            "status": "OK",
+            "stderr": "",
+            "stdout": ""
+        },
+        {
+            "detail": "import zmq",
+            "name": "Python zmq",
+            "status": "OK",
+            "stderr": "",
+            "stdout": ""
+        },
+        {
+            "detail": "import logging_mp",
+            "name": "Python logging_mp",
+            "status": "OK",
+            "stderr": "",
+            "stdout": ""
+        },
+        {
+            "detail": "import av",
+            "name": "Python av",
+            "status": "OK",
+            "stderr": "",
+            "stdout": ""
+        },
+        {
+            "detail": "import numpy",
+            "name": "Python numpy",
+            "status": "OK",
+            "stderr": "",
+            "stdout": ""
+        },
+        {
+            "detail": "/usr/local/lib/libunitree_sdk2.a",
+            "name": "unitree_sdk2 library",
+            "status": "OK"
+        },
+        {
+            "detail": "/usr/local/lib/cmake/unitree_sdk2/unitree_sdk2Config.cmake",
+            "name": "unitree_sdk2 cmake config",
+            "status": "OK"
+        },
+        {
+            "detail": "/usr/local/include/unitree/idl/go2/MotorCmds_.hpp",
+            "name": "unitree_sdk2 go2 header",
+            "status": "OK"
+        },
+        {
+            "detail": "build-essential",
+            "name": "apt build-essential",
+            "status": "OK"
+        },
+        {
+            "detail": "cmake",
+            "name": "apt cmake",
+            "status": "OK"
+        },
+        {
+            "detail": "make",
+            "name": "apt make",
+            "status": "OK"
+        },
+        {
+            "detail": "libeigen3-dev",
+            "name": "apt libeigen3-dev",
+            "status": "OK"
+        },
+        {
+            "detail": "libspdlog-dev",
+            "name": "apt libspdlog-dev",
+            "status": "OK"
+        },
+        {
+            "detail": "libfmt-dev",
+            "name": "apt libfmt-dev",
+            "status": "OK"
+        },
+        {
+            "detail": "libboost-all-dev",
+            "name": "apt libboost-all-dev",
+            "status": "OK"
+        },
+        {
+            "detail": "libyaml-cpp-dev",
+            "name": "apt libyaml-cpp-dev",
+            "status": "OK"
+        },
+        {
+            "detail": "/home/unitree/g1_setup/remote",
+            "name": "remote image binary",
+            "status": "OK"
+        },
+        {
+            "detail": "/etc/udev/rules.d/99-usb-cameras.rules",
+            "name": "camera udev rules",
+            "status": "OK"
+        },
+        {
+            "detail": "/dev/cam_head",
+            "name": "/dev/cam_head",
+            "status": "OK"
+        },
+        {
+            "detail": "/dev/cam_wrist_left",
+            "name": "/dev/cam_wrist_left",
+            "status": "OK"
+        },
+        {
+            "detail": "/dev/cam_wrist_right",
+            "name": "/dev/cam_wrist_right",
+            "status": "OK"
+        },
+        {
+            "detail": "timeout 5 ros2 topic hz /cam_head/compressed_image did not receive messages",
+            "name": "/cam_head/compressed_image",
+            "reason": "\u5934\u90e8\u76f8\u673a\u65e0\u6570\u636e",
+            "status": "WARN",
+            "stderr": "timeout: failed to run command \u2018ros2\u2019: No such file or directory",
+            "stdout": "",
+            "suggestion": "\u68c0\u67e5\u5934\u90e8\u76f8\u673a Type-C \u8fde\u63a5\u6216\u91cd\u542f cos_teleop.service"
+        },
+        {
+            "detail": "timeout 5 ros2 topic hz /cam_wrist_left/compressed_image did not receive messages",
+            "name": "/cam_wrist_left/compressed_image",
+            "reason": "\u5de6\u8155\u76f8\u673a\u65e0\u6570\u636e",
+            "status": "WARN",
+            "stderr": "timeout: failed to run command \u2018ros2\u2019: No such file or directory",
+            "stdout": "",
+            "suggestion": "\u68c0\u67e5\u5de6\u8155\u76f8\u673a Type-C \u8fde\u63a5\u6216\u91cd\u542f cos_teleop.service"
+        },
+        {
+            "detail": "timeout 5 ros2 topic hz /cam_wrist_right/compressed_image did not receive messages",
+            "name": "/cam_wrist_right/compressed_image",
+            "reason": "\u53f3\u8155\u76f8\u673a\u65e0\u6570\u636e",
+            "status": "WARN",
+            "stderr": "timeout: failed to run command \u2018ros2\u2019: No such file or directory",
+            "stdout": "",
+            "suggestion": "\u68c0\u67e5\u53f3\u8155\u76f8\u673a Type-C \u8fde\u63a5\u6216\u91cd\u542f cos_teleop.service"
+        },
+        {
+            "detail": "no recent camera error in cos_teleop journal",
+            "name": "cos_teleop camera log",
+            "reason": "",
+            "status": "OK",
+            "stderr": "",
+            "stdout": "",
+            "suggestion": ""
+        },
+        {
+            "detail": "/home/unitree/g1_setup/dex1_1_service",
+            "name": "dex1 source directory",
+            "status": "OK"
+        },
+        {
+            "detail": "/home/unitree/g1_setup/dex1_1_service/bin",
+            "name": "dex1 bin directory",
+            "status": "OK"
+        },
+        {
+            "detail": "/home/unitree/g1_setup/dex1_1_service/bin/dex1_1_gripper_server",
+            "name": "dex1 server binary",
+            "status": "OK"
+        },
+        {
+            "detail": "/home/unitree/g1_setup/dex1_1_service/bin/test_dex1_1_gripper_server",
+            "name": "dex1 test binary",
+            "status": "OK"
+        },
+        {
+            "detail": "/etc/systemd/system/dex1_gripper.service",
+            "name": "dex1 systemd unit file",
+            "status": "OK"
+        },
+        {
+            "detail": "/home/unitree/g1_setup/dex1_1_service/bin/dex1_1_gripper_server",
+            "name": "dex1 server executable",
+            "status": "OK"
+        },
+        {
+            "detail": "ldd rc=0",
+            "name": "dex1 shared libraries",
+            "status": "OK"
+        },
+        {
+            "detail": "enabled",
+            "name": "dex1 service enabled",
+            "status": "OK"
+        },
+        {
+            "detail": "active",
+            "name": "dex1 service active",
+            "status": "OK",
+            "stderr": "\n--- systemctl status stderr ---\n\n--- journalctl stderr ---\n",
+            "stdout": "\n--- systemctl status ---\n\n--- journalctl -u dex1_gripper.service -n 50 ---\n"
+        },
+        {
+            "detail": "Dex1 left/right motors detected and server started",
+            "name": "dex1 motor binding",
+            "reason": "",
+            "status": "OK",
+            "stderr": "",
+            "stdout": "[WARNING] motor id=1 does not reply\n[WARNING] SerialPort::recv, unblock version, wait time out\n[WARNING] motor id=0 does not reply\n[WARNING] SerialPort::recv, unblock version, wait time out\n[WARNING] motor id=1 does not reply\n[WARNING] SerialPort::recv, unblock version, wait time out\n[WARNING] motor id=0 does not reply\n[WARNING] SerialPort::recv, unblock version, wait time out\n[WARNING] motor id=0 does not reply\n[WARNING] SerialPort::recv, unblock version, wait time out\n[WARNING] motor id=1 does not reply\n[WARNING] SerialPort::recv, unblock version, wait time out\n[WARNING] motor id=0 does not reply\n[WARNING] SerialPort::recv, unblock version, wait time out\n[WARNING] motor id=1 does not reply\n[WARNING] SerialPort::recv, unblock version, wait time out\n[WARNING] motor id=1 does not reply\n[WARNING] SerialPort::recv, unblock version, wait time out\n[WARNING] motor id=0 does not reply\n[WARNING] SerialPort::recv, unblock version, wait time out\n[WARNING] motor id=1 does not reply\n[WARNING] SerialPort::recv, unblock version, wait time out\n[WARNING] motor id=0 does not reply\n[WARNING] motor id=0 does not reply\n[WARNING] SerialPort::recv, unblock version, wait time out\n[WARNING] motor id=1 does not reply\n[WARNING] SerialPort::recv, unblock version, wait time out\n[WARNING] motor id=0 does not reply\n[WARNING] SerialPort::recv, unblock version, wait time out\n[WARNING] motor id=1 does not reply\n[WARNING] SerialPort::recv, unblock version, wait time out\n[WARNING] motor id=1 does not reply\n[WARNING] SerialPort::recv, unblock version, wait time out\n[WARNING] motor id=1 does not reply\n[WARNING] motor id=1 does not reply\n[WARNING] SerialPort::recv, unblock version, wait time out\n[WARNING] motor id=0 does not reply\n[WARNING] SerialPort::recv, unblock version, wait time out\n[WARNING] motor id=0 does not reply\n[WARNING] SerialPort::recv, unblock version, wait time out\n[WARNING] motor id=1 does not reply\n[WARNING] SerialPort::recv, unblock version, wait time out\n[WARNING] motor id=1 does not reply\n[WARNING] SerialPort::recv, unblock version, wait time out\n[WARNING] motor id=0 does not reply\n[WARNING] SerialPort::recv, unblock version, wait time out\n[WARNING] motor id=1 does not reply\n[WARNING] SerialPort::recv, unblock version, wait time out\n[WARNING] motor id=0 does not reply\n[WARNING] SerialPort::recv, unblock version, wait time out\n[WARNING] motor id=1 does not reply\n[WARNING] SerialPort::recv, unblock version, wait time out\n[WARNING] motor id=0 does not reply\n[WARNING] SerialPort::recv, unblock version, wait time out\n[WARNING] motor id=1 does not reply\n[WARNING] motor id=0 does not reply\n[WARNING] SerialPort::recv, unblock version, wait time out\n[WARNING] motor id=0 does not reply\n[WARNING] SerialPort::recv, unblock version, wait time out\n[WARNING] motor id=1 does not reply\n[WARNING] SerialPort::recv, unblock version, wait time out\n[WARNING] motor id=0 does not reply\n[WARNING] SerialPort::recv, unblock version, wait time out\n[WARNING] motor id=0 does not reply\n[WARNING] SerialPort::recv, unblock version, wait time out\n[WARNING] motor id=1 does not reply\n[WARNING] SerialPort::recv, unblock version, wait time out\n[WARNING] motor id=0 does not reply\n[WARNING] SerialPort::recv, unblock version, wait time out\n[WARNING] motor id=1 does not reply\n[WARNING] SerialPort::recv, unblock version, wait time out\n[WARNING] motor id=1 does not reply\n[WARNING] SerialPort::recv, unblock version, wait time out\n[WARNING] motor id=0 does not reply\n[WARNING] SerialPort::recv, unblock version, wait time out\n[WARNING] motor id=1 does not reply\n[WARNING] SerialPort::recv, unblock version, wait time out\n[WARNING] motor id=0 does not reply\n[WARNING] SerialPort::recv, unblock version, wait time out\n[WARNING] motor id=1 does not reply\n[WARNING] SerialPort::recv, unblock version, wait time out\n[WARNING] motor id=0 does not reply\n[WARNING] SerialPort::recv, unblock version, wait time out\n[WARNING] motor id=1 does not reply\n[WARNING] motor id=1 does not reply\n[WARNING] SerialPort::recv, unblock version, wait time out\n[WARNING] motor id=0 does not reply\n[WARNING] SerialPort::recv, unblock version, wait time out\n[WARNING] motor id=1 does not reply\n[WARNING] motor id=1 does not reply\n[WARNING] SerialPort::recv, unblock version, wait time out\n[WARNING] motor id=1 does not reply\n[WARNING] motor id=0 does not reply\n[WARNING] SerialPort::recv, unblock version, wait time out\n[WARNING] motor id=1 does not reply\n[WARNING] SerialPort::recv, unblock version, wait time out\n[WARNING] motor id=1 does not reply\n[WARNING] motor id=0 does not reply\n[WARNING] SerialPort::recv, unblock version, wait time out\n[WARNING] motor id=0 does not reply\n[WARNING] motor id=0 does not reply\n[WARNING] motor id=1 does not reply\nStopping Dex1-1 Service Start...\ndex1_gripper.service: Succeeded.\nStopped Dex1-1 Service Start.\nStarted Dex1-1 Service Start.\n[2026-06-15 13:51:07.211] [info] Available Serial Ports: /dev/ttyUSB3, /dev/ttyUSB2, /dev/ttyUSB1, /dev/ttyUSB0\n[2026-06-15 13:51:07.369] [info] Detected motors:\n[2026-06-15 13:51:07.369] [info]   - Motor ID: 0 \t Side: right \t Port: /dev/ttyUSB2 \t cmdTopic: rt/dex1/right/cmd \t stateTopic: rt/dex1/right/state\n[2026-06-15 13:51:07.369] [info]   - Motor ID: 1 \t Side: left \t Port: /dev/ttyUSB1 \t cmdTopic: rt/dex1/left/cmd \t stateTopic: rt/dex1/left/state\n[2026-06-15 13:51:07.572] [info] Dex1-1 Gripper Server started.\nStopping Dex1-1 Service Start...\ndex1_gripper.service: Succeeded.\nStopped Dex1-1 Service Start.\nStarted Dex1-1 Service Start.\n[2026-06-15 14:07:25.443] [info] Available Serial Ports: /dev/ttyUSB3, /dev/ttyUSB2, /dev/ttyUSB1, /dev/ttyUSB0\n[2026-06-15 14:07:25.602] [info] Detected motors:\n[2026-06-15 14:07:25.602] [info]   - Motor ID: 0 \t Side: right \t Port: /dev/ttyUSB2 \t cmdTopic: rt/dex1/right/cmd \t stateTopic: rt/dex1/right/state\n[2026-06-15 14:07:25.602] [info]   - Motor ID: 1 \t Side: left \t Port: /dev/ttyUSB1 \t cmdTopic: rt/dex1/left/cmd \t stateTopic: rt/dex1/left/state\n[2026-06-15 14:07:25.807] [info] Dex1-1 Gripper Server started.",
+            "suggestion": ""
+        },
+        {
+            "detail": "active",
+            "name": "cos_agent active",
+            "status": "OK",
+            "stderr": "",
+            "stdout": "__SETUP_SERVICE__ name=cos_agent.service active=1 active_rc=0 status_rc=0\nactive\n\u25cf cos_agent.service - coScene agent ROS2 Node\n     Loaded: loaded (/etc/systemd/system/cos_agent.service; enabled; vendor preset: enabled)\n     Active: active (running) since Tue 2024-06-18 04:29:44 CST; 1 years 11 months ago\n   Main PID: 1060 (ros2)\n      Tasks: 22 (limit: 18143)\n     Memory: 77.5M\n     CGroup: /system.slice/cos_agent.service\n             \u251c\u25001060 /usr/bin/python3 /opt/ros/foxy/bin/ros2 launch agent agent.launch.py\n             \u2514\u25002090 /opt/ros/foxy/lib/agent/agent_node --ros-args -r __node:=agent_node --params-file /tmp/launch_params_dlrd2910\n\nJun 18 04:29:44 ubuntu systemd[1]: Started coScene agent ROS2 Node.\nApr 01 05:58:04 ubuntu bash[1060]: [INFO] [launch]: All log files can be found below /home/unitree/.ros/log/1970-04-01-05-58-04-152802-ubuntu-1060\nApr 01 05:58:04 ubuntu bash[1060]: [INFO] [launch]: Default logging verbosity is set to INFO\nApr 01 05:58:04 ubuntu bash[1060]: [INFO] [agent_node-1]: process started with pid [2090]\nApr 01 05:58:04 ubuntu bash[1060]: [agent_node-1] [INFO] [0007768684.413655680] [agent]: GIT HASH: 3b79b82ad16859b4b425ab438c167e81ba597a76\nApr 01 05:58:04 ubuntu bash[1060]: [agent_node-1] \u2554\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2557\nApr 01 05:58:04 ubuntu bash[1060]: [agent_node-1] \u2551              coScene Agent Started - ROS 2, version: 0.4.10              \u2551\nApr 01 05:58:04 ubuntu bash[1060]: [agent_node-1] \u255a\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u255d\nApr 01 05:58:04 ubuntu bash[1060]: [agent_node-1] [INFO] [0007768684.413726784] [agent]: try to connect nats server...\nApr 01 05:58:19 ubuntu bash[1060]: [agent_node-1] [INFO] [0007768699.512411616] [agent]: connect nats success!"
+        },
+        {
+            "detail": "active",
+            "name": "cos_teleop active",
+            "status": "OK",
+            "stderr": "",
+            "stdout": "__SETUP_SERVICE__ name=cos_teleop.service active=1 active_rc=0 status_rc=0\nactive\n\u25cf cos_teleop.service - coScene teleop_server ROS2 Node\n     Loaded: loaded (/etc/systemd/system/cos_teleop.service; enabled; vendor preset: enabled)\n     Active: active (running) since Wed 1970-04-01 05:58:02 CST; 56 years 2 months ago\n   Main PID: 1356 (ros2)\n      Tasks: 68 (limit: 18143)\n     Memory: 210.4M\n     CGroup: /system.slice/cos_teleop.service\n             \u251c\u25001356 /usr/bin/python3 /opt/ros/foxy/bin/ros2 launch teleop_server teleop_server.launch.py urdf_file:=/home/unitree/cos_ws/src/g1_description/g1_29dof_mode_15_with_dex1_1.urdf\n             \u251c\u25002079 /home/unitree/cos_ws/install/teleop_server/lib/teleop_server/teleop_server_node /home/unitree/cos_ws/install/teleop_server/share/teleop_server/config/teleop_server.yaml --ros-args\n             \u2514\u25002087 /opt/ros/foxy/lib/robot_state_publisher/robot_state_publisher /home/unitree/cos_ws/src/g1_description/g1_29dof_mode_15_with_dex1_1.urdf --ros-args\n\nApr 01 05:58:05 ubuntu bash[1356]: [teleop_server_node-1] 1970-04-01 05:58:05.737 [ INFO] [pico_data_receiver.cpp:360] PicoDataReceiver started.\nApr 01 05:58:06 ubuntu bash[1356]: [teleop_server_node-1] 1970-04-01 05:58:06.259 [ INFO] [PXREARobotSDK] client start server stream\nApr 01 05:58:06 ubuntu bash[1356]: [teleop_server_node-1] 1970-04-01 05:58:06.259 [ INFO] [pico_data_receiver.cpp:388] XRoboToolkit server connected\nApr 01 05:58:06 ubuntu bash[1356]: [teleop_server_node-1] 1970-04-01 05:58:06.259 [ INFO] [PXREARobotSDK] server connect\nApr 01 05:58:06 ubuntu bash[1356]: [teleop_server_node-1] 1970-04-01 05:58:06.279 [ INFO] [PXREARobotSDK] watch server feedback thread start\nApr 01 05:58:32 ubuntu bash[1356]: [teleop_server_node-1] 1970-04-01 05:58:32.572 [ WARN] [hand_state_provider.cpp:229] Waiting for Dex1 hand states\nJun 16 13:02:54 ubuntu bash[1356]: [robot_state_publisher-2] [WARN] [1781586174.006170272] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!\nJun 16 13:27:10 ubuntu bash[1356]: [robot_state_publisher-2] [WARN] [1781587630.009063840] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!\nJun 16 13:30:55 ubuntu bash[1356]: [robot_state_publisher-2] [WARN] [1781587855.006109216] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!\nJun 16 14:06:52 ubuntu bash[1356]: [robot_state_publisher-2] [WARN] [1781590012.008202752] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!"
+        },
+        {
+            "detail": "active",
+            "name": "xrobotoolkit-pc-service active",
+            "status": "OK",
+            "stderr": "",
+            "stdout": "__SETUP_SERVICE__ name=xrobotoolkit-pc-service.service active=1 active_rc=0 status_rc=0\nactive\n\u25cf xrobotoolkit-pc-service.service - XRoboToolkit PC Service\n     Loaded: loaded (/etc/systemd/system/xrobotoolkit-pc-service.service; enabled; vendor preset: enabled)\n     Active: active (running) since Wed 1970-04-01 05:58:02 CST; 56 years 2 months ago\n    Process: 1299 ExecStartPre=/usr/bin/test -x /opt/apps/xrobotoolkit-pc-service/runService.sh (code=exited, status=0/SUCCESS)\n   Main PID: 1352 (RoboticsService)\n      Tasks: 23 (limit: 18143)\n     Memory: 31.9M\n     CGroup: /system.slice/xrobotoolkit-pc-service.service\n             \u2514\u25001352 ./RoboticsServiceProcess\n\nJun 18 04:29:45 ubuntu systemd[1]: Starting XRoboToolkit PC Service...\nApr 01 05:58:02 ubuntu systemd[1]: Started XRoboToolkit PC Service.\nApr 01 05:58:02 ubuntu runService.sh[1352]: release mode"
+        }
+    ],
+    "counts": {
+        "fail": "0",
+        "ok": "41",
+        "skip": "0",
+        "warn": "3"
+    },
+    "end_effector": "dex1",
+    "failed_items": [],
+    "host": "g1_robot_061",
+    "install_failed_items": [],
+    "install_results": [],
+    "mode": "check",
+    "overall_status": "OK",
+    "required_services": {
+        "cos_agent.service": {
+            "active": true,
+            "detail": "active",
+            "rc": 0,
+            "status": "OK",
+            "stderr": "",
+            "stdout": "__SETUP_SERVICE__ name=cos_agent.service active=1 active_rc=0 status_rc=0\nactive\n\u25cf cos_agent.service - coScene agent ROS2 Node\n     Loaded: loaded (/etc/systemd/system/cos_agent.service; enabled; vendor preset: enabled)\n     Active: active (running) since Tue 2024-06-18 04:29:44 CST; 1 years 11 months ago\n   Main PID: 1060 (ros2)\n      Tasks: 22 (limit: 18143)\n     Memory: 77.5M\n     CGroup: /system.slice/cos_agent.service\n             \u251c\u25001060 /usr/bin/python3 /opt/ros/foxy/bin/ros2 launch agent agent.launch.py\n             \u2514\u25002090 /opt/ros/foxy/lib/agent/agent_node --ros-args -r __node:=agent_node --params-file /tmp/launch_params_dlrd2910\n\nJun 18 04:29:44 ubuntu systemd[1]: Started coScene agent ROS2 Node.\nApr 01 05:58:04 ubuntu bash[1060]: [INFO] [launch]: All log files can be found below /home/unitree/.ros/log/1970-04-01-05-58-04-152802-ubuntu-1060\nApr 01 05:58:04 ubuntu bash[1060]: [INFO] [launch]: Default logging verbosity is set to INFO\nApr 01 05:58:04 ubuntu bash[1060]: [INFO] [agent_node-1]: process started with pid [2090]\nApr 01 05:58:04 ubuntu bash[1060]: [agent_node-1] [INFO] [0007768684.413655680] [agent]: GIT HASH: 3b79b82ad16859b4b425ab438c167e81ba597a76\nApr 01 05:58:04 ubuntu bash[1060]: [agent_node-1] \u2554\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2557\nApr 01 05:58:04 ubuntu bash[1060]: [agent_node-1] \u2551              coScene Agent Started - ROS 2, version: 0.4.10              \u2551\nApr 01 05:58:04 ubuntu bash[1060]: [agent_node-1] \u255a\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u255d\nApr 01 05:58:04 ubuntu bash[1060]: [agent_node-1] [INFO] [0007768684.413726784] [agent]: try to connect nats server...\nApr 01 05:58:19 ubuntu bash[1060]: [agent_node-1] [INFO] [0007768699.512411616] [agent]: connect nats success!"
+        },
+        "cos_teleop.service": {
+            "active": true,
+            "detail": "active",
+            "rc": 0,
+            "status": "OK",
+            "stderr": "",
+            "stdout": "__SETUP_SERVICE__ name=cos_teleop.service active=1 active_rc=0 status_rc=0\nactive\n\u25cf cos_teleop.service - coScene teleop_server ROS2 Node\n     Loaded: loaded (/etc/systemd/system/cos_teleop.service; enabled; vendor preset: enabled)\n     Active: active (running) since Wed 1970-04-01 05:58:02 CST; 56 years 2 months ago\n   Main PID: 1356 (ros2)\n      Tasks: 68 (limit: 18143)\n     Memory: 210.4M\n     CGroup: /system.slice/cos_teleop.service\n             \u251c\u25001356 /usr/bin/python3 /opt/ros/foxy/bin/ros2 launch teleop_server teleop_server.launch.py urdf_file:=/home/unitree/cos_ws/src/g1_description/g1_29dof_mode_15_with_dex1_1.urdf\n             \u251c\u25002079 /home/unitree/cos_ws/install/teleop_server/lib/teleop_server/teleop_server_node /home/unitree/cos_ws/install/teleop_server/share/teleop_server/config/teleop_server.yaml --ros-args\n             \u2514\u25002087 /opt/ros/foxy/lib/robot_state_publisher/robot_state_publisher /home/unitree/cos_ws/src/g1_description/g1_29dof_mode_15_with_dex1_1.urdf --ros-args\n\nApr 01 05:58:05 ubuntu bash[1356]: [teleop_server_node-1] 1970-04-01 05:58:05.737 [ INFO] [pico_data_receiver.cpp:360] PicoDataReceiver started.\nApr 01 05:58:06 ubuntu bash[1356]: [teleop_server_node-1] 1970-04-01 05:58:06.259 [ INFO] [PXREARobotSDK] client start server stream\nApr 01 05:58:06 ubuntu bash[1356]: [teleop_server_node-1] 1970-04-01 05:58:06.259 [ INFO] [pico_data_receiver.cpp:388] XRoboToolkit server connected\nApr 01 05:58:06 ubuntu bash[1356]: [teleop_server_node-1] 1970-04-01 05:58:06.259 [ INFO] [PXREARobotSDK] server connect\nApr 01 05:58:06 ubuntu bash[1356]: [teleop_server_node-1] 1970-04-01 05:58:06.279 [ INFO] [PXREARobotSDK] watch server feedback thread start\nApr 01 05:58:32 ubuntu bash[1356]: [teleop_server_node-1] 1970-04-01 05:58:32.572 [ WARN] [hand_state_provider.cpp:229] Waiting for Dex1 hand states\nJun 16 13:02:54 ubuntu bash[1356]: [robot_state_publisher-2] [WARN] [1781586174.006170272] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!\nJun 16 13:27:10 ubuntu bash[1356]: [robot_state_publisher-2] [WARN] [1781587630.009063840] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!\nJun 16 13:30:55 ubuntu bash[1356]: [robot_state_publisher-2] [WARN] [1781587855.006109216] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!\nJun 16 14:06:52 ubuntu bash[1356]: [robot_state_publisher-2] [WARN] [1781590012.008202752] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!"
+        },
+        "xrobotoolkit-pc-service.service": {
+            "active": true,
+            "detail": "active",
+            "rc": 0,
+            "status": "OK",
+            "stderr": "",
+            "stdout": "__SETUP_SERVICE__ name=xrobotoolkit-pc-service.service active=1 active_rc=0 status_rc=0\nactive\n\u25cf xrobotoolkit-pc-service.service - XRoboToolkit PC Service\n     Loaded: loaded (/etc/systemd/system/xrobotoolkit-pc-service.service; enabled; vendor preset: enabled)\n     Active: active (running) since Wed 1970-04-01 05:58:02 CST; 56 years 2 months ago\n    Process: 1299 ExecStartPre=/usr/bin/test -x /opt/apps/xrobotoolkit-pc-service/runService.sh (code=exited, status=0/SUCCESS)\n   Main PID: 1352 (RoboticsService)\n      Tasks: 23 (limit: 18143)\n     Memory: 31.9M\n     CGroup: /system.slice/xrobotoolkit-pc-service.service\n             \u2514\u25001352 ./RoboticsServiceProcess\n\nJun 18 04:29:45 ubuntu systemd[1]: Starting XRoboToolkit PC Service...\nApr 01 05:58:02 ubuntu systemd[1]: Started XRoboToolkit PC Service.\nApr 01 05:58:02 ubuntu runService.sh[1352]: release mode"
+        }
+    },
+    "robot_id": "61",
+    "setup_success": true,
+    "skipped_items": [],
+    "warn_items": [
+        {
+            "detail": "timeout 5 ros2 topic hz /cam_head/compressed_image did not receive messages",
+            "name": "/cam_head/compressed_image",
+            "reason": "\u5934\u90e8\u76f8\u673a\u65e0\u6570\u636e",
+            "status": "WARN",
+            "stderr": "timeout: failed to run command \u2018ros2\u2019: No such file or directory",
+            "stdout": "",
+            "suggestion": "\u68c0\u67e5\u5934\u90e8\u76f8\u673a Type-C \u8fde\u63a5\u6216\u91cd\u542f cos_teleop.service"
+        },
+        {
+            "detail": "timeout 5 ros2 topic hz /cam_wrist_left/compressed_image did not receive messages",
+            "name": "/cam_wrist_left/compressed_image",
+            "reason": "\u5de6\u8155\u76f8\u673a\u65e0\u6570\u636e",
+            "status": "WARN",
+            "stderr": "timeout: failed to run command \u2018ros2\u2019: No such file or directory",
+            "stdout": "",
+            "suggestion": "\u68c0\u67e5\u5de6\u8155\u76f8\u673a Type-C \u8fde\u63a5\u6216\u91cd\u542f cos_teleop.service"
+        },
+        {
+            "detail": "timeout 5 ros2 topic hz /cam_wrist_right/compressed_image did not receive messages",
+            "name": "/cam_wrist_right/compressed_image",
+            "reason": "\u53f3\u8155\u76f8\u673a\u65e0\u6570\u636e",
+            "status": "WARN",
+            "stderr": "timeout: failed to run command \u2018ros2\u2019: No such file or directory",
+            "stdout": "",
+            "suggestion": "\u68c0\u67e5\u53f3\u8155\u76f8\u673a Type-C \u8fde\u63a5\u6216\u91cd\u542f cos_teleop.service"
+        }
+    ],
+    "warnings": []
+}
