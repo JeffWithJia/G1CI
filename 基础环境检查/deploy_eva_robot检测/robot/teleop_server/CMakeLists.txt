@@ -13,16 +13,41 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
+if("$ENV{ROS_DISTRO}" STREQUAL "foxy")
+  add_definitions(-DROS_FOXY)
+endif()
+
+file(READ ${CMAKE_CURRENT_SOURCE_DIR}/package.xml _package_xml)
+string(
+        REGEX MATCH "<version>([^<]+)</version>"
+        _version_match
+        "${_package_xml}"
+)
+set(TELEOP_VERSION "${CMAKE_MATCH_1}")
+
+set(TELEOP_GIT_HASH "" CACHE STRING "Teleop server git hash")
+if(NOT TELEOP_GIT_HASH AND DEFINED ENV{TELEOP_GIT_HASH} AND NOT "$ENV{TELEOP_GIT_HASH}" STREQUAL "")
+  set(TELEOP_GIT_HASH "$ENV{TELEOP_GIT_HASH}")
+endif()
+message(STATUS "agent git hash: ${TELEOP_GIT_HASH} ")
+
+configure_file(
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/version.cpp.in
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/version.cpp
+        @ONLY
+)
+
 # find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(PkgConfig REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(OpenCV REQUIRED)
 find_package(yaml-cpp REQUIRED)
-find_package(cv_bridge REQUIRED)
+find_package(geometry_msgs REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(tf2_ros REQUIRED)
 find_package(unitree_api REQUIRED)
 find_package(unitree_go REQUIRED)
 find_package(unitree_hg REQUIRED)
@@ -30,7 +55,7 @@ find_package(agent REQUIRED)
 find_package(realsense2 QUIET)
 find_package(OpenGL QUIET)
 
-pkg_check_modules(ZMQ REQUIRED libzmq)
+pkg_check_modules(X264 REQUIRED x264)
 pkg_check_modules(JSONCPP REQUIRED jsoncpp)
 if(NOT realsense2_FOUND)
   pkg_check_modules(REALSENSE2 QUIET IMPORTED_TARGET realsense2)
@@ -74,7 +99,10 @@ list(REMOVE_DUPLICATES TELEOP_NODE_RUNTIME_LIBRARY_DIRS)
 add_executable(teleop_server_node
   src/main.cpp
   src/teleop_server.cpp
+  src/version.cpp
+  src/audio/audio_client.cpp
   src/camera/camera_publisher.cpp
+  src/logging/logger.cpp
   src/recording/recording_controller.cpp
   src/joints/joints_publisher.cpp
   src/hands/hand_state_provider.cpp
@@ -82,6 +110,7 @@ add_executable(teleop_server_node
   src/pico/pico_82d_converter.cpp
   src/pico/pico_data_receiver.cpp
   src/pico/pico_teleop_sender.cpp
+  src/pico/pico_video_streamer.cpp
 )
 
 add_executable(pico_82d_convert_dataset
@@ -91,6 +120,7 @@ add_executable(pico_82d_convert_dataset
 
 if(MUJOCO_INCLUDE_DIR AND MUJOCO_LIBRARY AND GLFW_INCLUDE_DIR AND GLFW_LIBRARY AND OpenGL_FOUND)
   add_executable(pico_mujoco_viewer_node
+    src/logging/logger.cpp
     src/sim/pico_mujoco_viewer.cpp
   )
   target_include_directories(pico_mujoco_viewer_node PRIVATE
@@ -126,7 +156,7 @@ set(TELEOP_COMMON_INCLUDE_DIRS
     ${XROBOTOOLKIT_INCLUDE_DIR}
     ${JSONCPP_INCLUDE_DIRS}
     ${OpenCV_INCLUDE_DIRS}
-    ${ZMQ_INCLUDE_DIRS}
+    ${X264_INCLUDE_DIRS}
 )
 
 target_include_directories(teleop_server_node PRIVATE ${TELEOP_COMMON_INCLUDE_DIRS})
@@ -140,7 +170,7 @@ target_link_libraries(teleop_server_node
   ${OpenCV_LIBRARIES}
   ${PXREARobotSDK_LIB}
   ${JSONCPP_LIBRARIES}
-  ${ZMQ_LIBRARIES}
+  ${X264_LIBRARIES}
   yaml-cpp
 )
 
@@ -167,10 +197,11 @@ elseif(REALSENSE2_FOUND)
 endif()
 
 ament_target_dependencies(teleop_server_node
-  cv_bridge
+  geometry_msgs
   rclcpp
   sensor_msgs
   std_msgs
+  tf2_ros
   unitree_api
   unitree_go
   unitree_hg

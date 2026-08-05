@@ -1,0 +1,4 @@
+interface:
+  display_name: "No Stall Progress"
+  short_description: "Require visible progress or handoff when work stalls."
+  default_prompt: "Keep work moving: after 2 minutes without visible output, report status, hand off testing, or continue with the next actionable step."

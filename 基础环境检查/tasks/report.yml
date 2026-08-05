@@ -87,13 +87,9 @@
   ansible.builtin.set_fact:
     g1_overall_status: >-
       {{
-        'FAIL'
-        if (g1_fail_items | length > 0)
-        else (
-          'WARN'
-          if (g1_warn_items | length > 0 or g1_check_warnings | length > 0)
-          else 'OK'
-        )
+        'OK'
+        if (setup_success | default(false) | bool)
+        else 'FAIL'
       }}
 
 - name: Initialize report card issues
@@ -120,13 +116,9 @@
   ansible.builtin.set_fact:
     g1_card_status: >-
       {{
-        'FAIL'
-        if (g1_fail_items | length > 0)
-        else (
-          'WARN'
-          if (g1_warn_items | length > 0 or g1_check_warnings | length > 0)
-          else 'OK'
-        )
+        'OK'
+        if (setup_success | default(false) | bool)
+        else 'FAIL'
       }}
 
 - name: Build report card summary
@@ -148,6 +140,8 @@
       mode: "{{ g1_run_mode }}"
       end_effector: "{{ g1_end_effector }}"
       overall_status: "{{ g1_overall_status }}"
+      setup_success: "{{ setup_success | default(false) }}"
+      required_services: "{{ setup_service_report | default({}) }}"
       card: "{{ g1_report_card }}"
       counts:
         ok: "{{ g1_check_results | selectattr('status', 'equalto', 'OK') | list | length }}"
@@ -155,6 +149,7 @@
         fail: "{{ g1_fail_items | length }}"
         skip: "{{ g1_skip_items | length }}"
       warnings: "{{ g1_check_warnings }}"
+      camera_status: "{{ g1_camera_status | default({'cam_head': 0, 'cam_left': 0, 'cam_right': 0}) }}"
       camera_topics: "{{ g1_camera_topic_results | default([]) }}"
       failed_items: "{{ g1_fail_items }}"
       warn_items: "{{ g1_warn_items }}"

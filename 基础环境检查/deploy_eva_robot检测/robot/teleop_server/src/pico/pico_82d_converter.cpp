@@ -159,7 +159,7 @@ std::array<Eigen::Vector3d, 21> interpolate_pose_axis_angle(
 {
   std::array<Eigen::Vector3d, 21> out;
   for (size_t i = 0; i < out.size(); ++i) {
-    const Eigen::Quaterniond q = Pico82dConverter::slerp_near(
+    const Eigen::Quaterniond q = Pico82dConverter::nlerp_near(
         Pico82dConverter::angle_axis_to_quaternion(from[i]),
         Pico82dConverter::angle_axis_to_quaternion(to[i]),
         alpha);
@@ -183,6 +183,12 @@ Eigen::Quaterniond decompose_swing_axis_angle(
   return Pico82dConverter::normalized(q_twist.conjugate() * q);
 }
 
+double clamp_deadzone(double value, double deadzone, double lo, double hi)
+{
+  const double filtered = std::abs(value) < deadzone ? 0.0 : value;
+  return std::clamp(filtered, lo, hi);
+}
+
 Eigen::Vector3d euler_xyz_from_quaternion(const Eigen::Quaterniond & quat)
 {
   const Eigen::Matrix3d rot = Pico82dConverter::normalized(quat).toRotationMatrix();
@@ -197,7 +203,7 @@ Eigen::Vector3d euler_xyz_from_quaternion(const Eigen::Quaterniond & quat)
         std::atan2(-rot(0, 1), rot(0, 0)));
   }
 
-  return Eigen::Vector3d(std::atan2(rot(2, 1), rot(1, 1)), y, 0.0);
+  return Eigen::Vector3d(std::atan2(rot(1, 0), rot(1, 1)), y, 0.0);
 }
 }  // namespace
 
@@ -252,7 +258,7 @@ std::optional<std::vector<double>> Pico82dConverter::process(
   }
   const auto pose_axis_angle =
       interpolate_pose_axis_angle(prev_.pose_axis_angle, current.pose_axis_angle, alpha);
-  const Eigen::Quaterniond root_quat = slerp_near(prev_.root_quat, current.root_quat, alpha);
+  const Eigen::Quaterniond root_quat = nlerp_near(prev_.root_quat, current.root_quat, alpha);
 
   next_target_ns_ += step_ns;
   prev_ = current;
@@ -317,13 +323,14 @@ std::vector<double> Pico82dConverter::build_pose_82d(
   const Eigen::Vector3d r_wrist_euler =
       euler_xyz_from_quaternion(angle_axis_to_quaternion(r_wrist_aa));
 
+  constexpr double kWristDeadzone = 0.03;
   std::array<double, 6> wrist_6d = {
-      l_elbow_euler.x() + l_wrist_euler.x(),
-      -l_wrist_euler.y(),
-      l_elbow_euler.z() + l_wrist_euler.z(),
-      -(r_elbow_euler.x() + r_wrist_euler.x()),
-      -r_wrist_euler.y(),
-      r_elbow_euler.z() + r_wrist_euler.z(),
+      clamp_deadzone(l_elbow_euler.x() + l_wrist_euler.x(), kWristDeadzone, -0.9, 0.9),
+      clamp_deadzone(l_wrist_euler.y(), kWristDeadzone, -0.8, 0.8),
+      clamp_deadzone(l_elbow_euler.z() + l_wrist_euler.z(), kWristDeadzone, -0.8, 0.8),
+      clamp_deadzone(-(r_elbow_euler.x() + r_wrist_euler.x()), kWristDeadzone, -0.9, 0.9),
+      clamp_deadzone(-r_wrist_euler.y(), kWristDeadzone, -0.8, 0.8),
+      clamp_deadzone(r_elbow_euler.z() + r_wrist_euler.z(), kWristDeadzone, -0.8, 0.8),
   };
 
   std::vector<double> pose_82d;
@@ -387,6 +394,21 @@ Eigen::Quaterniond Pico82dConverter::slerp_near(
     q1.coeffs() *= -1.0;
   }
   return normalized(q0.slerp(alpha, q1));
+}
+
+Eigen::Quaterniond Pico82dConverter::nlerp_near(
+    const Eigen::Quaterniond & from,
+    const Eigen::Quaterniond & to,
+    double alpha)
+{
+  Eigen::Quaterniond q0 = normalized(from);
+  Eigen::Quaterniond q1 = normalized(to);
+  if (q0.dot(q1) < 0.0) {
+    q1.coeffs() *= -1.0;
+  }
+  Eigen::Quaterniond out;
+  out.coeffs() = (1.0 - alpha) * q0.coeffs() + alpha * q1.coeffs();
+  return normalized(out);
 }
 
 }  // namespace teleop_server

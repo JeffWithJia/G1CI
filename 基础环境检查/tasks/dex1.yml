@@ -156,11 +156,16 @@
           dex1_service_final_active | trim == 'active'
         ) and (
           not (
-            (dex1_service_health_journal.stdout | default('')) is search('Available Serial Ports') and
-            (dex1_service_health_journal.stdout | default('')) is search('Detected motors') and
-            (dex1_service_health_journal.stdout | default('')) is search('Side: right') and
-            (dex1_service_health_journal.stdout | default('')) is search('Side: left') and
-            (dex1_service_health_journal.stdout | default('')) is search('Dex1-1 Gripper Server started')
+            (
+              (dex1_service_health_journal.stdout | default('')) is search('Available Serial Ports') and
+              (dex1_service_health_journal.stdout | default('')) is search('Detected motors') and
+              (dex1_service_health_journal.stdout | default('')) is search('Side: right') and
+              (dex1_service_health_journal.stdout | default('')) is search('Side: left') and
+              (dex1_service_health_journal.stdout | default('')) is search('Dex1-1 Gripper Server.*started')
+            ) or (
+              (dex1_service_health_journal.stdout | default('')) is search('No DDS command received on rt/dex1/right/cmd.*motor 0.*publishing state') and
+              (dex1_service_health_journal.stdout | default('')) is search('No DDS command received on rt/dex1/left/cmd.*motor 1.*publishing state')
+            )
           )
         )
       }}
@@ -195,21 +200,33 @@
     g1_check_results: "{{ g1_check_results + [dex1_motor_binding_result] }}"
   vars:
     dex1_health_log: "{{ dex1_service_health_journal_after_restart.stdout | default(dex1_service_health_journal.stdout | default('')) }}"
-    dex1_health_ok: >-
+    dex1_startup_health_ok: >-
       {{
-        dex1_service_final_active | trim == 'active' and
-        dex1_service_enabled.stdout | trim == 'enabled' and
         dex1_health_log is search('Available Serial Ports') and
         dex1_health_log is search('Detected motors') and
         dex1_health_log is search('Side: right') and
         dex1_health_log is search('Side: left') and
-        dex1_health_log is search('Dex1-1 Gripper Server started')
+        dex1_health_log is search('Dex1-1 Gripper Server.*started')
+      }}
+    dex1_runtime_health_ok: >-
+      {{
+        dex1_health_log is search('No DDS command received on rt/dex1/right/cmd.*motor 0.*publishing state') and
+        dex1_health_log is search('No DDS command received on rt/dex1/left/cmd.*motor 1.*publishing state')
+      }}
+    dex1_health_ok: >-
+      {{
+        dex1_service_final_active | trim == 'active' and
+        dex1_service_enabled.stdout | trim == 'enabled' and
+        (
+          dex1_startup_health_ok | bool or
+          dex1_runtime_health_ok | bool
+        )
       }}
     dex1_health_fail: "{{ dex1_service_final_active | trim != 'active' or dex1_service_enabled.stdout | trim != 'enabled' }}"
     dex1_motor_binding_result:
       name: dex1 motor binding
       status: "{{ 'OK' if dex1_health_ok | bool else 'FAIL' if dex1_health_fail | bool else 'WARN' }}"
-      detail: "{{ 'Dex1 left/right motors detected and server started' if dex1_health_ok | bool else dex1_health_log }}"
+      detail: "{{ 'Dex1 left/right motors detected and server started' if dex1_startup_health_ok | bool else 'Dex1 left/right motors publishing state' if dex1_runtime_health_ok | bool else dex1_health_log }}"
       stdout: "{{ dex1_health_log }}"
       stderr: "{{ dex1_service_health_restart.stderr | default('') }}"
       reason: "{{ '' if dex1_health_ok | bool else 'Dex1 服务未正常运行。' if dex1_health_fail | bool else 'Dex1 服务已启动，但未确认左右手电机绑定成功。' }}"

@@ -15,6 +15,7 @@
 #pragma once
 
 #include <atomic>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -22,11 +23,7 @@
 
 #include <rclcpp/rclcpp.hpp>
 
-enum class CompressType
-{
-  NONE_COMPRESS = 0,
-  MJPEG_COMPRESS = 1,
-};
+#include "pico/pico_video_streamer.hpp"
 
 enum class CameraType
 {
@@ -42,10 +39,9 @@ struct CameraInfo
   int image_width;
   int image_height;
   int frame_rate;
-  CompressType compress_type;
   bool flip;
-  bool enable_socket_publish;
-  int socket_publish_port;
+  bool enable_pico_video;
+  teleop_server::PicoVideoStreamerConfig pico_video;
 };
 
 class CameraPublisher
@@ -59,21 +55,25 @@ public:
 
   CameraPublisher & operator=(const CameraPublisher &) = delete;
 
+  void set_pico_video_host(const std::string & host);
+
 private:
-  struct MmapBuffer;
   struct CameraWorker;
 
-  bool init_camera_worker(CameraWorker & worker);
+  enum class InitResult
+  {
+    SUCCESS,
+    RETRYABLE_FAILURE,
+    FATAL_FAILURE,
+  };
 
-  bool open_opencv_capture(CameraWorker & worker);
+  InitResult init_camera_worker(CameraWorker & worker);
 
-  bool init_opencv_capture(CameraWorker & worker);
+  InitResult init_v4l2_capture(CameraWorker & worker);
 
-  bool init_mjpeg_opencv_fallback_capture(CameraWorker & worker);
+  InitResult init_realsense_capture(CameraWorker & worker);
 
-  bool init_mjpeg_capture(CameraWorker & worker);
-
-  bool init_realsense_capture(CameraWorker & worker);
+  void init_pico_video_streamer(CameraWorker & worker);
 
   void cleanup_camera_workers();
 
@@ -83,27 +83,21 @@ private:
 
   void cleanup_realsense(CameraWorker & worker);
 
-  bool init_socket_publisher(CameraWorker & worker);
-
-  void cleanup_socket_publisher(CameraWorker & worker);
-
-  void publish_socket_jpeg(CameraWorker & worker, const std::vector<uint8_t> & jpeg_data);
-
   bool configure_hardware_flip(CameraWorker & worker);
-
-  bool init_v4l2_mjpeg_capture(CameraWorker & worker);
-
-  bool read_direct_mjpeg_frame(CameraWorker & worker, std::vector<uint8_t> & jpeg_data);
 
   void publish_loop(CameraWorker * worker);
 
   void publish_image(CameraWorker & worker);
 
-  void publish_opencv_image(CameraWorker & worker);
-
-  void publish_mjpeg_image(CameraWorker & worker);
+  void publish_v4l2_image(CameraWorker & worker);
 
   void publish_realsense_image(CameraWorker & worker);
+
+  void publish_mjpeg_frame(CameraWorker & worker, const std::uint8_t * data, std::size_t size);
+
+  void publish_bgr_frame(CameraWorker & worker, const cv::Mat & frame);
+
+  std::shared_ptr<teleop_server::PicoVideoStreamer> pico_video_streamer(CameraWorker & worker);
 
   rclcpp::Node & node_;
   std::vector<CameraInfo> camera_infos_;

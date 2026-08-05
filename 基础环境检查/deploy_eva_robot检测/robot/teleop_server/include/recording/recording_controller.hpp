@@ -16,9 +16,17 @@ namespace teleop_server
 class RecordingController
 {
 public:
+  enum class ToggleResult
+  {
+    SERVICE_UNAVAILABLE,
+    STARTED,
+    FINISHED,
+  };
+
+  using ToggleResultCallback = std::function<void(ToggleResult)>;
+
   explicit RecordingController(rclcpp::Node & node);
-  void toggle_recording();
-  void cancel_recording();
+  void toggle_recording(ToggleResultCallback result_callback = {});
 
 private:
   using RecordingControlResponse = agent::srv::RecordingControl::Response::SharedPtr;
@@ -28,14 +36,14 @@ private:
 
   bool acquire_command_slot();
   void release_command_slot();
-  void handle_toggle_recording_command();
-  void handle_cancel_recording_command();
-  void request_task_id_and_start_recording();
+  void handle_toggle_recording_command(ToggleResultCallback result_callback);
+  void request_task_id_and_start_recording(ToggleResultCallback result_callback);
   void send_recording_control_request(
       const std::string & command,
       const std::string & recording_id,
       const std::string & task_id,
-      const std::function<void(const RecordingControlResponse &)> & on_response);
+      const std::function<void(const RecordingControlResponse &)> & on_response,
+      const std::function<void()> & on_failure);
   std::string get_recording_id();
   std::string get_task_id();
 

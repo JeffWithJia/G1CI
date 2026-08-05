@@ -32,12 +32,17 @@ namespace teleop_server {
 class PicoDataReceiver {
 public:
     using PacketCallback = std::function<void(const PicoTeleopPacket &)>;
+    using DeviceIpCallback = std::function<void(const std::string &)>;
 
     struct Config {
         double pose_82d_hz{50.0};
     };
 
-    PicoDataReceiver(rclcpp::Node &node, Config config, PacketCallback packet_callback = {});
+    PicoDataReceiver(
+        rclcpp::Node &node,
+        Config config,
+        PacketCallback packet_callback = {},
+        DeviceIpCallback device_ip_callback = {});
     ~PicoDataReceiver();
 
 private:
@@ -53,7 +58,9 @@ private:
 
     rclcpp::Node &node_;
     Config config_;
+    std::string robot_sn_;
     PacketCallback packet_callback_;
+    DeviceIpCallback device_ip_callback_;
     std::mutex frame_mutex_;
     PicoControllerInput latest_input_;
     int64_t latest_input_timestamp_ns_{0};

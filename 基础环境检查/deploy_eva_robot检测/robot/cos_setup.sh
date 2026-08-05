@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -Eeuo pipefail
 
 ROS_SETUP="/opt/ros/foxy/setup.bash"
 # Use TUNA mirror as primary for China; fall back to GitHub
@@ -7,18 +7,10 @@ ROS_APT_KEY_URL="${ROS_APT_KEY_URL:-https://mirrors.tuna.tsinghua.edu.cn/rosdist
 ROS_APT_KEY_FALLBACK_URL="${ROS_APT_KEY_FALLBACK_URL:-https://raw.githubusercontent.com/ros/rosdistro/master/ros.key}"
 REALSENSE_APT_KEY_URL="${REALSENSE_APT_KEY_URL:-https://librealsense.realsenseai.com/Debian/librealsenseai.asc}"
 REALSENSE_APT_REPO_URL="${REALSENSE_APT_REPO_URL:-https://librealsense.realsenseai.com/Debian/apt-repo}"
-CONDA_ENV_NAME="${CONDA_ENV_NAME:-tv}"
-MINICONDA_DIR="${MINICONDA_DIR:-$HOME/miniconda3}"
 
 # China mirror configuration
-PYPI_MIRROR="https://pypi.tuna.tsinghua.edu.cn/simple"
-CONDA_MIRROR_BASE="https://mirrors.tuna.tsinghua.edu.cn/anaconda"
-MINICONDA_MIRROR="${CONDA_MIRROR_BASE}/miniconda"
 ROS_APT_MIRROR="${ROS_APT_MIRROR:-https://mirrors.tuna.tsinghua.edu.cn/ros2/ubuntu}"
-INSPIRE_SDK_DIR="${INSPIRE_SDK_DIR:-$HOME/inspire_hand_sdk}"
-UNITREE_SDK2_PYTHON_DIR="${UNITREE_SDK2_PYTHON_DIR:-$HOME/unitree_sdk2_python}"
 UNITREE_ROS2_DIR="${UNITREE_ROS2_DIR:-$HOME/unitree_ros2}"
-CYCLONEDDS_HOME_DIR="${CYCLONEDDS_HOME_DIR:-$UNITREE_ROS2_DIR/cyclonedds_ws/install/cyclonedds}"
 COS_WS_DIR="${COS_WS_DIR:-$HOME/cos_ws}"
 APK_DIR="${APK_DIR:-$HOME/apk}"
 TELEOP_TARGET_DIR="$COS_WS_DIR/src/teleop_server"
@@ -28,10 +20,28 @@ log() {
   printf '\n[cos_setup.sh] %s\n' "$*"
 }
 
+error() {
+  if [ -t 2 ] && [ -z "${NO_COLOR:-}" ]; then
+    printf '\n\033[31m[cos_setup.sh] ERROR: %s\033[0m\n' "$*" >&2
+  else
+    printf '\n[cos_setup.sh] ERROR: %s\n' "$*" >&2
+  fi
+}
+
 die() {
-  printf '\n[cos_setup.sh] ERROR: %s\n' "$*" >&2
+  error "$*"
   exit 1
 }
+
+on_error() {
+  local exit_code=$?
+  local line_no=${BASH_LINENO[0]:-unknown}
+  local command=${BASH_COMMAND:-unknown}
+  error "Script failed at line $line_no with exit code $exit_code: $command"
+  exit "$exit_code"
+}
+
+trap on_error ERR
 
 require_command() {
   command -v "$1" >/dev/null 2>&1 || die "Missing required command: $1"
@@ -41,7 +51,7 @@ require_dir() {
   [ -d "$1" ] || die "Required directory is missing: $1"
 }
 
-run_without_conda() {
+run_clean_env() {
   env -i \
     HOME="$HOME" \
     USER="${USER:-}" \
@@ -54,7 +64,7 @@ run_without_conda() {
 }
 
 sudo_apt_update() {
-  sudo apt-get update
+  sudo apt-get update || die "Failed to update apt package index"
 }
 
 download_file() {
@@ -94,7 +104,8 @@ refresh_ros_apt_key() {
 }
 
 install_apt_packages() {
-  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "$@"
+  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "$@" ||
+    die "Failed to install apt packages: $*"
 }
 
 check_user_and_os() {
@@ -122,14 +133,6 @@ detect_deb_arch() {
     amd64) printf 'amd64' ;;
     arm64) printf 'arm64' ;;
     *) die "Unsupported Debian architecture: $(dpkg --print-architecture). Expected amd64 or arm64." ;;
-  esac
-}
-
-detect_miniconda_arch() {
-  case "$(uname -m)" in
-    x86_64) printf 'x86_64' ;;
-    aarch64|arm64) printf 'aarch64' ;;
-    *) die "Unsupported CPU architecture for Miniconda: $(uname -m)." ;;
   esac
 }
 
@@ -175,7 +178,8 @@ install_agent_deb() {
 
   log "Installing ros-foxy-agent from $url"
   curl -fL "$url" -o "$deb"
-  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y "$deb"
+  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y "$deb" ||
+    die "Failed to install ros-foxy-agent package: $deb"
 }
 
 install_system_dependencies() {
@@ -202,7 +206,7 @@ install_system_dependencies() {
     ros-foxy-robot-state-publisher \
     libeigen3-dev \
     libyaml-cpp-dev \
-    libzmq3-dev \
+    libx264-dev \
     libopencv-dev
 
   install_realsense_repo
@@ -233,65 +237,9 @@ install_local_deb_packages() {
       die "Debian package architecture mismatch: $deb is $deb_arch, host is $host_arch"
     fi
 
-    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y "$deb"
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y "$deb" ||
+      die "Failed to install local deb package: $deb"
   done
-}
-
-find_conda_setup() {
-  local conda_base
-  if command -v conda >/dev/null 2>&1; then
-    conda_base="$(conda info --base)"
-    if [ -f "$conda_base/etc/profile.d/conda.sh" ]; then
-      printf '%s\n' "$conda_base/etc/profile.d/conda.sh"
-      return
-    fi
-  fi
-
-  if [ -f "$MINICONDA_DIR/etc/profile.d/conda.sh" ]; then
-    printf '%s\n' "$MINICONDA_DIR/etc/profile.d/conda.sh"
-    return
-  fi
-
-  if [ -f "$HOME/miniforge3/etc/profile.d/conda.sh" ]; then
-    printf '%s\n' "$HOME/miniforge3/etc/profile.d/conda.sh"
-    return
-  fi
-
-  return 1
-}
-
-install_miniconda_if_missing() {
-  if find_conda_setup >/dev/null 2>&1; then
-    log "Conda is already installed"
-    return
-  fi
-
-  local arch installer
-  arch="$(detect_miniconda_arch)"
-  installer="/tmp/Miniconda3-latest-Linux-${arch}.sh"
-
-  if [ -e "$MINICONDA_DIR" ]; then
-    die "$MINICONDA_DIR exists but does not contain conda.sh. Set MINICONDA_DIR or fix that installation."
-  fi
-
-  log "Installing Miniconda to $MINICONDA_DIR (via TUNA mirror)"
-  curl -fL "${MINICONDA_MIRROR}/Miniconda3-latest-Linux-${arch}.sh" -o "$installer"
-  bash "$installer" -b -p "$MINICONDA_DIR"
-}
-
-configure_conda_china_mirrors() {
-  log "Configuring conda to use TUNA mirrors (China)"
-  cat > "$HOME/.condarc" <<EOF
-channels:
-  - defaults
-show_channel_urls: true
-default_channels:
-  - ${CONDA_MIRROR_BASE}/pkgs/main
-  - ${CONDA_MIRROR_BASE}/pkgs/r
-  - ${CONDA_MIRROR_BASE}/pkgs/msys2
-custom_channels:
-  conda-forge: ${CONDA_MIRROR_BASE}/cloud
-EOF
 }
 
 configure_ros_apt_mirror() {
@@ -304,34 +252,10 @@ configure_ros_apt_mirror() {
     | sudo tee "$ros_source_list" >/dev/null
 }
 
-create_conda_env() {
-  local conda_setup
-  conda_setup="$(find_conda_setup)" || die "Conda setup script was not found after Miniconda installation."
-
-  log "Creating or reusing conda env: $CONDA_ENV_NAME"
-  # shellcheck disable=SC1090
-  source "$conda_setup"
-  configure_conda_china_mirrors
-  if ! conda env list | awk '{print $1}' | grep -qx "$CONDA_ENV_NAME"; then
-    conda create -y -n "$CONDA_ENV_NAME" python=3.8 pip
-  fi
-
-  log "Installing Python SDKs into $CONDA_ENV_NAME"
-  require_dir "$INSPIRE_SDK_DIR"
-  require_dir "$UNITREE_SDK2_PYTHON_DIR"
-  require_dir "$CYCLONEDDS_HOME_DIR"
-  conda run -n "$CONDA_ENV_NAME" python -m pip install --upgrade pip -i "$PYPI_MIRROR"
-  CYCLONEDDS_HOME="$CYCLONEDDS_HOME_DIR" \
-    conda run -n "$CONDA_ENV_NAME" python -m pip install -e "$UNITREE_SDK2_PYTHON_DIR" -i "$PYPI_MIRROR"
-  conda run -n "$CONDA_ENV_NAME" python -m pip install numpy pymodbus==3.6.9 pyserial -i "$PYPI_MIRROR"
-  CYCLONEDDS_HOME="$CYCLONEDDS_HOME_DIR" \
-    conda run -n "$CONDA_ENV_NAME" python -m pip install --no-deps -e "$INSPIRE_SDK_DIR" -i "$PYPI_MIRROR"
-}
-
 build_unitree_ros2() {
-  log "Building Unitree ROS2 workspaces outside conda"
+  log "Building Unitree ROS2 workspaces"
   require_dir "$UNITREE_ROS2_DIR"
-  run_without_conda "
+  run_clean_env "
     set -eo pipefail
     cd '$UNITREE_ROS2_DIR/cyclonedds_ws'
     export LD_LIBRARY_PATH=/opt/ros/foxy/lib
@@ -347,14 +271,32 @@ ensure_teleop_sources() {
 }
 
 build_teleop_server() {
-  log "Building teleop_server in $COS_WS_DIR outside conda"
-  run_without_conda "
+  log "Building teleop_server in $COS_WS_DIR"
+  run_clean_env "
     set -eo pipefail
     cd '$COS_WS_DIR'
     source '$ROS_SETUP'
     source '$UNITREE_ROS2_DIR/cyclonedds_ws/install/setup.bash'
     colcon build --packages-select teleop_server
   "
+}
+
+enable_persistent_journal() {
+  local journald_dropin_dir="/etc/systemd/journald.conf.d"
+  local journald_dropin="$journald_dropin_dir/99-coscene-persistent.conf"
+
+  log "Enabling persistent systemd journal"
+  sudo install -d -m 0755 /var/log/journal
+  sudo systemd-tmpfiles --create --prefix /var/log/journal || true
+  sudo install -d -m 0755 "$journald_dropin_dir"
+  sudo tee "$journald_dropin" >/dev/null <<EOF
+[Journal]
+Storage=persistent
+Compress=yes
+SystemMaxUse=1G
+RuntimeMaxUse=256M
+EOF
+  sudo systemctl restart systemd-journald
 }
 
 install_systemd_services() {
@@ -373,15 +315,6 @@ print_next_steps() {
   log "Setup completed"
   cat <<EOF
 
-Conda env:
-  conda activate $CONDA_ENV_NAME
-
-Unitree ROS2:
-  source $UNITREE_ROS2_DIR/setup.sh
-
-Python SDK build env:
-  export CYCLONEDDS_HOME=$CYCLONEDDS_HOME_DIR
-
 teleop_server:
   source $ROS_SETUP
   source $UNITREE_ROS2_DIR/cyclonedds_ws/install/setup.bash
@@ -390,10 +323,9 @@ teleop_server:
 Systemd services:
   sudo systemctl start cos_agent xrobotoolkit-pc-service cos_teleop
   sudo systemctl status cos_agent xrobotoolkit-pc-service cos_teleop
+  journalctl -fu cos_teleop
 
 Deployed source paths:
-  $INSPIRE_SDK_DIR
-  $UNITREE_SDK2_PYTHON_DIR
   $UNITREE_ROS2_DIR
   $TELEOP_TARGET_DIR
   $G1_DESCRIPTION_DIR
@@ -406,9 +338,8 @@ main() {
   check_user_and_os
   install_system_dependencies
   install_local_deb_packages
-  install_miniconda_if_missing
+  enable_persistent_journal
   build_unitree_ros2
-  create_conda_env
   ensure_teleop_sources
   build_teleop_server
   install_systemd_services

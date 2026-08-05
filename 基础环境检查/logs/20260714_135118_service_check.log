@@ -1,0 +1,121 @@
+$ /usr/bin/ansible-playbook -k -K -T 15 -i '/home/jeff/coscene/code/codex/G1CI/基础环境检查/inventory.ini' -e '{"ansible_ssh_common_args": "-o PreferredAuthentications=password -o PubkeyAuthentication=no -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -o ConnectionAttempts=1"}' /tmp/operator_console_service_check.yml --limit g1_robot_062
+cwd=/home/jeff/coscene/code/codex/G1CI/基础环境检查
+
+SSH password: 
+[operator_console] detected SSH password prompt, password sent
+
+BECOME password[defaults to SSH password]: 
+[operator_console] detected BECOME password prompt, sudo password sent
+
+
+PLAY [Operator console service action] *****************************************
+
+TASK [Select services for this robot] ******************************************
+[0;32mok: [g1_robot_062][0m
+
+TASK [检查服务] ********************************************************************
+[0;32mok: [g1_robot_062] => (item=cos_agent.service)[0m
+[0;32mok: [g1_robot_062] => (item=cos_teleop.service)[0m
+[0;32mok: [g1_robot_062] => (item=xrobotoolkit-pc-service.service)[0m
+[0;32mok: [g1_robot_062] => (item=dex1_gripper.service)[0m
+
+TASK [Build service result map] ************************************************
+[0;32mok: [g1_robot_062] => (item=cos_agent.service)[0m
+[0;32mok: [g1_robot_062] => (item=cos_teleop.service)[0m
+[0;32mok: [g1_robot_062] => (item=xrobotoolkit-pc-service.service)[0m
+[0;32mok: [g1_robot_062] => (item=dex1_gripper.service)[0m
+
+TASK [Build service check items] ***********************************************
+[0;32mok: [g1_robot_062][0m
+
+TASK [启动相机频率检查] ****************************************************************
+[0;32mok: [g1_robot_062] => (item=头部相机（/cam_head/compressed_image）)[0m
+[0;32mok: [g1_robot_062] => (item=左腕相机（/cam_wrist_left/compressed_image）)[0m
+[0;32mok: [g1_robot_062] => (item=右腕相机（/cam_wrist_right/compressed_image）)[0m
+
+TASK [等待相机频率检查完成] **************************************************************
+[1;30mFAILED - RETRYING: 等待相机频率检查完成 (20 retries left).[0m
+[1;30mFAILED - RETRYING: 等待相机频率检查完成 (19 retries left).[0m
+[1;30mFAILED - RETRYING: 等待相机频率检查完成 (18 retries left).[0m
+[1;30mFAILED - RETRYING: 等待相机频率检查完成 (17 retries left).[0m
+[1;30mFAILED - RETRYING: 等待相机频率检查完成 (16 retries left).[0m
+[1;30mFAILED - RETRYING: 等待相机频率检查完成 (15 retries left).[0m
+[0;32mok: [g1_robot_062] => (item=头部相机（/cam_head/compressed_image）)[0m
+[1;30mFAILED - RETRYING: 等待相机频率检查完成 (20 retries left).[0m
+[0;32mok: [g1_robot_062] => (item=左腕相机（/cam_wrist_left/compressed_image）)[0m
+[0;32mok: [g1_robot_062] => (item=右腕相机（/cam_wrist_right/compressed_image）)[0m
+
+TASK [初始化相机频率原始结果] *************************************************************
+[0;32mok: [g1_robot_062][0m
+
+TASK [整理相机频率并发结果] **************************************************************
+[0;32mok: [g1_robot_062] => (item=头部相机)[0m
+[0;32mok: [g1_robot_062] => (item=左腕相机)[0m
+[0;32mok: [g1_robot_062] => (item=右腕相机)[0m
+
+TASK [初始化相机频率结果] ***************************************************************
+[0;32mok: [g1_robot_062][0m
+
+TASK [记录相机频率状态] ****************************************************************
+[0;32mok: [g1_robot_062] => (item={'item': {'topic': '/cam_head/compressed_image', 'label': '头部相机', 'device': '/dev/cam_head'}, 'stdout': 'average rate: 29.971\n\tmin: 0.021s max: 0.044s std dev: 0.00319s window: 31\naverage rate: 29.923\n\tmin: 0.021s max: 0.044s std dev: 0.00282s window: 61\naverage rate: 29.980\n\tmin: 0.021s max: 0.044s std dev: 0.00253s window: 92\naverage rate: 29.978\n\tmin: 0.021s max: 0.044s std dev: 0.00233s window: 122\naverage rate: 29.975\n\tmin: 0.021s max: 0.044s std dev: 0.00228s window: 152\naverage rate: 29.978\n\tmin: 0.021s max: 0.044s std dev: 0.00221s window: 183', 'stderr': '', 'rc': '0'})[0m
+[0;32mok: [g1_robot_062] => (item={'item': {'topic': '/cam_wrist_left/compressed_image', 'label': '左腕相机', 'device': '/dev/cam_wrist_left'}, 'stdout': 'average rate: 30.002\n\tmin: 0.033s max: 0.034s std dev: 0.00015s window: 32\naverage rate: 30.000\n\tmin: 0.033s max: 0.034s std dev: 0.00014s window: 63\naverage rate: 30.001\n\tmin: 0.033s max: 0.034s std dev: 0.00013s window: 94\naverage rate: 30.001\n\tmin: 0.033s max: 0.034s std dev: 0.00013s window: 125\naverage rate: 30.001\n\tmin: 0.033s max: 0.034s std dev: 0.00014s window: 156\naverage rate: 30.000\n\tmin: 0.031s max: 0.035s std dev: 0.00025s window: 186', 'stderr': '', 'rc': '0'})[0m
+[0;32mok: [g1_robot_062] => (item={'item': {'topic': '/cam_wrist_right/compressed_image', 'label': '右腕相机', 'device': '/dev/cam_wrist_right'}, 'stdout': 'average rate: 30.003\n\tmin: 0.032s max: 0.035s std dev: 0.00033s window: 31\naverage rate: 29.999\n\tmin: 0.032s max: 0.035s std dev: 0.00026s window: 61\naverage rate: 30.001\n\tmin: 0.032s max: 0.035s std dev: 0.00024s window: 92\naverage rate: 29.999\n\tmin: 0.032s max: 0.035s std dev: 0.00023s window: 122\naverage rate: 30.000\n\tmin: 0.032s max: 0.035s std dev: 0.00024s window: 153\naverage rate: 30.000\n\tmin: 0.030s max: 0.036s std dev: 0.00039s window: 184', 'stderr': '', 'rc': '0'})[0m
+
+TASK [Build structured camera status map] **************************************
+[0;32mok: [g1_robot_062] => (item={'topic': '/cam_head/compressed_image', 'label': '头部相机', 'status': 'OK', 'rate_hz': 29.971})[0m
+[0;32mok: [g1_robot_062] => (item={'topic': '/cam_wrist_left/compressed_image', 'label': '左腕相机', 'status': 'OK', 'rate_hz': 30.002})[0m
+[0;32mok: [g1_robot_062] => (item={'topic': '/cam_wrist_right/compressed_image', 'label': '右腕相机', 'status': 'OK', 'rate_hz': 30.003})[0m
+
+TASK [初始化标准化相机频率结果] ************************************************************
+[0;32mok: [g1_robot_062][0m
+
+TASK [标准化相机频率结果] ***************************************************************
+[0;32mok: [g1_robot_062] => (item={'topic': '/cam_head/compressed_image', 'label': '头部相机', 'device': '/dev/cam_head'})[0m
+[0;32mok: [g1_robot_062] => (item={'topic': '/cam_wrist_left/compressed_image', 'label': '左腕相机', 'device': '/dev/cam_wrist_left'})[0m
+[0;32mok: [g1_robot_062] => (item={'topic': '/cam_wrist_right/compressed_image', 'label': '右腕相机', 'device': '/dev/cam_wrist_right'})[0m
+
+TASK [替换为标准化相机频率结果] ************************************************************
+[0;32mok: [g1_robot_062][0m
+
+TASK [输出相机频率检查结果] **************************************************************
+[0;32mok: [g1_robot_062] => (item=头部相机（/cam_head/compressed_image）) => {[0m
+[0;32m    "msg": "__CAMERA_TOPIC_STATUS__ status=OK topic=/cam_head/compressed_image rate_hz=29.971"[0m
+[0;32m}[0m
+[0;32mok: [g1_robot_062] => (item=左腕相机（/cam_wrist_left/compressed_image）) => {[0m
+[0;32m    "msg": "__CAMERA_TOPIC_STATUS__ status=OK topic=/cam_wrist_left/compressed_image rate_hz=30.002"[0m
+[0;32m}[0m
+[0;32mok: [g1_robot_062] => (item=右腕相机（/cam_wrist_right/compressed_image）) => {[0m
+[0;32m    "msg": "__CAMERA_TOPIC_STATUS__ status=OK topic=/cam_wrist_right/compressed_image rate_hz=30.003"[0m
+[0;32m}[0m
+
+TASK [Build structured camera status map] **************************************
+[0;32mok: [g1_robot_062] => (item={'topic': '/cam_head/compressed_image', 'label': '头部相机', 'status': 'OK', 'rate_hz': 29.971})[0m
+[0;32mok: [g1_robot_062] => (item={'topic': '/cam_wrist_left/compressed_image', 'label': '左腕相机', 'status': 'OK', 'rate_hz': 30.002})[0m
+[0;32mok: [g1_robot_062] => (item={'topic': '/cam_wrist_right/compressed_image', 'label': '右腕相机', 'status': 'OK', 'rate_hz': 30.003})[0m
+
+TASK [Initialize service issue lists] ******************************************
+[0;32mok: [g1_robot_062][0m
+
+TASK [Build service issue lists] ***********************************************
+[0;32mok: [g1_robot_062][0m
+
+TASK [Evaluate missing cameras] ************************************************
+[0;32mok: [g1_robot_062][0m
+
+TASK [Build service subsystem statuses] ****************************************
+[0;32mok: [g1_robot_062][0m
+
+TASK [Build service final report] **********************************************
+[0;32mok: [g1_robot_062][0m
+
+TASK [Ensure report directory exists] ******************************************
+[0;32mok: [g1_robot_062][0m
+
+TASK [Write service aggregate report] ******************************************
+[0;33mchanged: [g1_robot_062][0m
+
+PLAY RECAP *********************************************************************
+[0;33mg1_robot_062[0m               : [0;32mok=23  [0m [0;33mchanged=1   [0m unreachable=0    failed=0    skipped=0    rescued=0    ignored=0   
+
+
+returncode=0

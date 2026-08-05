@@ -14,6 +14,8 @@
 
 #include "sim/pico_mujoco_viewer.hpp"
 
+#include "logging/logger.hpp"
+
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -127,7 +129,7 @@ PicoMujocoViewer::PicoMujocoViewer() : Node("pico_mujoco_viewer")
   viewer_timer_ =
       create_wall_timer(std::chrono::milliseconds(16), [this]() { run_viewer_loop(); });
 
-  RCLCPP_INFO(get_logger(), "Pico MuJoCo viewer subscribes to %s", pose_topic.c_str());
+  TELEOP_LOG_INFO("Pico MuJoCo viewer subscribes to %s", pose_topic.c_str());
 }
 
 PicoMujocoViewer::~PicoMujocoViewer()
@@ -203,10 +205,7 @@ void PicoMujocoViewer::on_pose_message(const std_msgs::msg::String::SharedPtr ms
     ++latest_sequence_;
     has_latest_joints_ = true;
   } catch (const std::exception & e) {
-    RCLCPP_WARN_THROTTLE(
-        get_logger(),
-        *get_clock(),
-        2000,
+    TELEOP_LOG_WARN_THROTTLE(2000,
         "Failed to parse Pico 82D message for MuJoCo viewer: %s",
         e.what());
   }
@@ -313,9 +312,7 @@ int main(int argc, char ** argv)
   try {
     rclcpp::spin(std::make_shared<teleop_server::PicoMujocoViewer>());
   } catch (const std::exception & e) {
-    RCLCPP_ERROR(
-        rclcpp::get_logger("pico_mujoco_viewer_main"),
-        "Failed to start Pico MuJoCo viewer: %s",
+    TELEOP_LOG_ERROR("Failed to start Pico MuJoCo viewer: %s",
         e.what());
     rclcpp::shutdown();
     return 1;

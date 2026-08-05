@@ -14,6 +14,8 @@
 
 #include "pico/pico_teleop_sender.hpp"
 
+#include "logging/logger.hpp"
+
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -21,6 +23,7 @@
 #include <sstream>
 #include <utility>
 
+#include <geometry_msgs/msg/transform_stamped.hpp>
 #include <json/json.h>
 
 namespace teleop_server
@@ -69,6 +72,15 @@ Json::Value axis_array(const std::array<double, 2> & axis)
   return array;
 }
 
+Json::Value vector3_array(const std::array<double, 3> & value)
+{
+  Json::Value array(Json::arrayValue);
+  array.append(value[0]);
+  array.append(value[1]);
+  array.append(value[2]);
+  return array;
+}
+
 std::string compact_json(const Json::Value & root)
 {
   Json::StreamWriterBuilder builder;
@@ -95,29 +107,61 @@ std::string velocity_parameter(double vx, double vy, double vyaw, double duratio
   return compact_json(root);
 }
 
-double quat_wxyz_to_yaw(const std::vector<double> & pose_82d)
+struct RootQuat
+{
+  double w{1.0};
+  double x{0.0};
+  double y{0.0};
+  double z{0.0};
+};
+
+RootQuat sanitize_quat(const RootQuat & quat)
+{
+  const double norm = std::sqrt(
+      quat.w * quat.w + quat.x * quat.x + quat.y * quat.y + quat.z * quat.z);
+  if (!std::isfinite(norm) || norm < 1.0e-8) {
+    return {};
+  }
+  return {quat.w / norm, quat.x / norm, quat.y / norm, quat.z / norm};
+}
+
+RootQuat conjugate(const RootQuat & quat)
+{
+  return {quat.w, -quat.x, -quat.y, -quat.z};
+}
+
+RootQuat multiply(const RootQuat & a, const RootQuat & b)
+{
+  return {
+      a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z,
+      a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
+      a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
+      a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w};
+}
+
+RootQuat root_quat_from_pose(const std::vector<double> & pose_82d)
 {
   if (pose_82d.size() < 76) {
-    return 0.0;
+    return {};
   }
-  double w = pose_82d[72];
-  double x = pose_82d[73];
-  double y = pose_82d[74];
-  double z = pose_82d[75];
-  const double norm = std::sqrt(w * w + x * x + y * y + z * z);
-  if (!std::isfinite(norm) || norm < 1.0e-8) {
-    return 0.0;
-  }
-  w /= norm;
-  x /= norm;
-  y /= norm;
-  z /= norm;
-  return std::atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z));
+  return sanitize_quat({pose_82d[72], pose_82d[73], pose_82d[74], pose_82d[75]});
+}
+
+double quat_wxyz_to_yaw(const std::vector<double> & pose_82d)
+{
+  const RootQuat q = root_quat_from_pose(pose_82d);
+  return std::atan2(
+      2.0 * (q.w * q.z + q.x * q.y),
+      1.0 - 2.0 * (q.y * q.y + q.z * q.z));
 }
 
 double wrap_pi(double angle)
 {
-  return std::remainder(angle, 2.0 * M_PI);
+  double wrapped = std::fmod(angle + M_PI, 2.0 * M_PI);
+  if (wrapped < 0.0) {
+    wrapped += 2.0 * M_PI;
+  }
+  return wrapped - M_PI;
 }
 
 double clipped_ratio(double value)
@@ -128,6 +172,14 @@ double clipped_ratio(double value)
 double with_deadzone(double value, double deadzone)
 {
   return std::abs(value) < deadzone ? 0.0 : value;
+}
+
+// VR joystick axes are nominally normalized to [-1, 1]. Reject non-finite values
+// (NaN/Inf would propagate to a robot velocity command) and clamp out-of-range input
+// so a malformed packet cannot command an unbounded velocity on a real robot.
+double sanitize_unit_axis(double value)
+{
+  return std::isfinite(value) ? std::clamp(value, -1.0, 1.0) : 0.0;
 }
 
 std::vector<int16_t> interpolate_inspire_pose(
@@ -204,10 +256,42 @@ void set_output_yaw(std::vector<double> * pose_82d, double yaw)
     return;
   }
   const double half = 0.5 * yaw;
-  (*pose_82d)[72] = std::cos(half);
-  (*pose_82d)[73] = 0.0;
-  (*pose_82d)[74] = 0.0;
-  (*pose_82d)[75] = std::sin(half);
+  const RootQuat q = root_quat_from_pose(*pose_82d);
+  const RootQuat q_twist = sanitize_quat({q.w, 0.0, 0.0, q.z});
+  const RootQuat q_swing = multiply(conjugate(q_twist), q);
+  const RootQuat q_output_yaw{std::cos(half), 0.0, 0.0, std::sin(half)};
+  const RootQuat q_result = sanitize_quat(multiply(q_output_yaw, q_swing));
+  (*pose_82d)[72] = q_result.w;
+  (*pose_82d)[73] = q_result.x;
+  (*pose_82d)[74] = q_result.y;
+  (*pose_82d)[75] = q_result.z;
+}
+
+void set_root_orientation(
+    const PicoTeleopPacket & packet,
+    geometry_msgs::msg::TransformStamped * transform)
+{
+  if (transform == nullptr || !packet.has_pose_82d || packet.pose_82d.size() < 76) {
+    return;
+  }
+
+  double w = packet.pose_82d[72];
+  double x = packet.pose_82d[73];
+  double y = packet.pose_82d[74];
+  double z = packet.pose_82d[75];
+  const double norm = std::sqrt(w * w + x * x + y * y + z * z);
+  if (!std::isfinite(norm) || norm < 1.0e-8) {
+    return;
+  }
+
+  w /= norm;
+  x /= norm;
+  y /= norm;
+  z /= norm;
+  transform->transform.rotation.x = x;
+  transform->transform.rotation.y = y;
+  transform->transform.rotation.z = z;
+  transform->transform.rotation.w = w;
 }
 }  // namespace
 
@@ -215,15 +299,17 @@ PicoTeleopSender::PicoTeleopSender(
     rclcpp::Node & node,
     Config config,
     HandProviderConfig hand_config,
-    RecordingToggleCallback recording_toggle_callback)
+    RecordingToggleCallback recording_toggle_callback,
+    VoicePromptCallback voice_prompt_callback)
   : node_(node),
     config_(std::move(config)),
     hand_config_(std::move(hand_config)),
     recording_toggle_callback_(std::move(recording_toggle_callback)),
+    voice_prompt_callback_(std::move(voice_prompt_callback)),
     current_fsm_mode_(config_.locomotion_fsm_id)
 {
   if (!config_.enable) {
-    RCLCPP_INFO(node_.get_logger(), "PicoTeleopSender disabled.");
+    TELEOP_LOG_INFO("PicoTeleopSender disabled.");
     return;
   }
 
@@ -233,6 +319,7 @@ PicoTeleopSender::PicoTeleopSender(
   teleop_cmd_pub_ = node_.create_publisher<std_msgs::msg::String>(config_.teleop_cmd_topic, 10);
   sport_request_pub_ =
       node_.create_publisher<unitree_api::msg::Request>(config_.sport_request_topic, 10);
+  tf_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(node_);
   const auto hand_qos = rclcpp::QoS(10).best_effort().durability_volatile();
   switch (hand_config_.type) {
     case HandType::INSPIRE:
@@ -276,9 +363,7 @@ PicoTeleopSender::PicoTeleopSender(
       break;
   }
 
-  RCLCPP_INFO(
-      node_.get_logger(),
-      "PicoTeleopSender enabled. packet_topic=%s teleop_cmd_topic=%s "
+  TELEOP_LOG_INFO("PicoTeleopSender enabled. packet_topic=%s teleop_cmd_topic=%s "
       "sport_request_topic=%s teleop=%d locomotion=%d hand_type=%s",
       config_.packet_topic.c_str(),
       config_.teleop_cmd_topic.c_str(),
@@ -296,25 +381,26 @@ void PicoTeleopSender::process_packet(const PicoTeleopPacket & packet)
 
   const double dt_s = compute_dt_s(packet);
   handle_vr_input(packet);
+  publish_pelvis_tf(packet);
 
   publish_hand_command(packet);
 
   if (current_fsm_mode_ == config_.locomotion_fsm_id) {
-    const double vx = apply_deadzone(packet.input.axis_l[1] * kLocomotionVxScale, kAxisDeadzone);
+    const double vx = apply_deadzone(
+        sanitize_unit_axis(packet.input.axis_l[1]) * kLocomotionVxScale,
+        kAxisDeadzone);
     const double vy = apply_deadzone(
-        -packet.input.axis_l[0] * kLocomotionVyScale,
+        -sanitize_unit_axis(packet.input.axis_l[0]) * kLocomotionVyScale,
         kAxisDeadzone);
     const double vyaw = apply_deadzone(
-        -packet.input.axis_r[0] * kLocomotionVyawScale,
+        -sanitize_unit_axis(packet.input.axis_r[0]) * kLocomotionVyawScale,
         kAxisDeadzone);
     publish_velocity_request(vx, vy, vyaw);
   } else if (current_fsm_mode_ == config_.teleop_fsm_id) {
     publish_pico_smpl_command(packet);
     if (!packet.has_pose_82d && !teleop_inference_warning_printed_) {
       teleop_inference_warning_printed_ = true;
-      RCLCPP_WARN(
-          node_.get_logger(),
-          "Pico teleop mode is active, but no 82D pose is available yet.");
+      TELEOP_LOG_WARN("Pico teleop mode is active, but no 82D pose is available yet.");
     }
   }
 
@@ -334,12 +420,27 @@ void PicoTeleopSender::handle_vr_input(const PicoTeleopPacket & packet)
     } else {
       yaw_output_offset_ = last_output_yaw_;
     }
-    RCLCPP_INFO(node_.get_logger(), "Pico Y: %s motion tracking", is_running_ ? "resume" : "pause");
+    TELEOP_LOG_INFO("Pico Y: %s motion tracking", is_running_ ? "resume" : "pause");
+    play_voice_prompt(is_running_ ? "恢复运动追踪" : "暂停运动跟踪");
   }
   y_button_pressed_last_frame_ = y_button_current_state;
 
   const bool x_button_current_state = packet.input.X;
   if (x_button_current_state && !x_button_pressed_last_frame_) {
+    if (packet.has_pelvis_position) {
+      odom_ground_anchor_ = {
+          packet.pelvis_position[0],
+          packet.pelvis_position[1],
+          0.0,
+      };
+      has_odom_ground_anchor_ = true;
+      TELEOP_LOG_INFO("Pico X: reset odom anchor at pelvis ground projection x=%.3f y=%.3f",
+          odom_ground_anchor_[0],
+          odom_ground_anchor_[1]);
+    } else {
+      TELEOP_LOG_WARN("Pico X: cannot reset odom anchor because no pelvis position is available yet.");
+    }
+
     if (current_fsm_mode_ == config_.teleop_fsm_id) {
       current_fsm_mode_ = config_.locomotion_fsm_id;
       has_yaw_anchor_ = false;
@@ -355,7 +456,7 @@ void PicoTeleopSender::handle_vr_input(const PicoTeleopPacket & packet)
       publish_hand_mode_default_command();
     }
     last_consumed_pose_sequence_ = packet.pose_sequence;
-    RCLCPP_INFO(node_.get_logger(), "Pico X: switch FSM to %d", current_fsm_mode_);
+    TELEOP_LOG_INFO("Pico X: switch FSM to %d", current_fsm_mode_);
     publish_fsm_request(current_fsm_mode_);
   }
   x_button_pressed_last_frame_ = x_button_current_state;
@@ -371,6 +472,25 @@ void PicoTeleopSender::handle_vr_input(const PicoTeleopPacket & packet)
   a_button_pressed_last_frame_ = record_button_current_state;
 }
 
+void PicoTeleopSender::publish_pelvis_tf(const PicoTeleopPacket & packet)
+{
+  if (!tf_broadcaster_ || !has_odom_ground_anchor_ || !packet.has_pelvis_position) {
+    return;
+  }
+
+  geometry_msgs::msg::TransformStamped transform;
+  transform.header.stamp = node_.get_clock()->now();
+  transform.header.frame_id = "odom";
+  transform.child_frame_id = "pelvis";
+  transform.transform.translation.x = packet.pelvis_position[0] - odom_ground_anchor_[0];
+  transform.transform.translation.y = packet.pelvis_position[1] - odom_ground_anchor_[1];
+  transform.transform.translation.z = packet.pelvis_position[2];
+  transform.transform.rotation.w = 1.0;
+  set_root_orientation(packet, &transform);
+
+  tf_broadcaster_->sendTransform(transform);
+}
+
 void PicoTeleopSender::publish_observation_packet(const PicoTeleopPacket & packet, double dt_s)
 {
   if (!packet_pub_) {
@@ -384,6 +504,8 @@ void PicoTeleopSender::publish_observation_packet(const PicoTeleopPacket & packe
   root["dt_s"] = dt_s;
   root["pose_82d"] = double_array(packet.pose_82d);
   root["has_pose_82d"] = packet.has_pose_82d;
+  root["pelvis_position"] = vector3_array(packet.pelvis_position);
+  root["has_pelvis_position"] = packet.has_pelvis_position;
   root["pose_sequence"] = static_cast<Json::Int64>(packet.pose_sequence);
 
   Json::Value input(Json::objectValue);
@@ -424,9 +546,7 @@ void PicoTeleopSender::publish_pico_smpl_command(const PicoTeleopPacket & packet
       has_yaw_anchor_ = true;
       yaw_anchor_ = raw_yaw;
       yaw_rel_unwrapped_ = 0.0;
-      RCLCPP_INFO(
-          node_.get_logger(),
-          "Pico yaw anchor: raw=%.2f deg offset=%.2f deg",
+      TELEOP_LOG_INFO("Pico yaw anchor: raw=%.2f deg offset=%.2f deg",
           raw_yaw * 180.0 / M_PI,
           yaw_output_offset_ * 180.0 / M_PI);
     } else {
@@ -600,9 +720,7 @@ void PicoTeleopSender::update_dex1_tau_calibration_locked()
     dex1_left_tau_filtered_ = 0.0;
     dex1_right_tau_filtered_ = 0.0;
     dex1_tau_calibrated_ = true;
-    RCLCPP_INFO(
-        node_.get_logger(),
-        "Dex1 torque zero calibrated: left=%.3f right=%.3f samples=%ld",
+    TELEOP_LOG_INFO("Dex1 torque zero calibrated: left=%.3f right=%.3f samples=%ld",
         dex1_tau0_left_,
         dex1_tau0_right_,
         static_cast<long>(dex1_tau_calibration_samples_));
@@ -684,16 +802,21 @@ void PicoTeleopSender::request_recording_toggle()
 {
   ++recording_toggle_requests_;
   if (!recording_toggle_callback_) {
-    RCLCPP_WARN_THROTTLE(
-        node_.get_logger(),
-        *node_.get_clock(),
-        2000,
+    TELEOP_LOG_WARN_THROTTLE(2000,
         "Pico A recording toggle ignored: no recording callback configured");
+    play_voice_prompt("服务不可用");
     return;
   }
 
-  RCLCPP_INFO(node_.get_logger(), "Pico A: toggle recording via RecordingController");
+  TELEOP_LOG_INFO("Pico A: toggle recording via RecordingController");
   recording_toggle_callback_();
+}
+
+void PicoTeleopSender::play_voice_prompt(const std::string & text)
+{
+  if (voice_prompt_callback_) {
+    voice_prompt_callback_(text);
+  }
 }
 
 void PicoTeleopSender::publish_fsm_request(int fsm_id)

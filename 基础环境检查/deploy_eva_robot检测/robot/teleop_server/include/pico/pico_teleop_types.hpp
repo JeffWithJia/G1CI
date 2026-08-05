@@ -38,12 +38,14 @@ struct PicoControllerInput
 struct PicoTeleopPacket
 {
   std::vector<double> pose_82d;
+  std::array<double, 3> pelvis_position{0.0, 0.0, 0.0};
   PicoControllerInput input;
   int64_t body_timestamp_ns{0};
   int64_t input_timestamp_ns{0};
   int64_t pose_sequence{0};
   bool has_controller_input{false};
   bool has_pose_82d{false};
+  bool has_pelvis_position{false};
 };
 
 }  // namespace teleop_server

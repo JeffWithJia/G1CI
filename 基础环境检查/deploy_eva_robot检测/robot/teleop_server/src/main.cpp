@@ -13,8 +13,10 @@
 // limitations under the License.
 
 #include "teleop_server.hpp"
+#include "version.hpp"
 
-#include <iostream>
+#include "logging/logger.hpp"
+
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -39,23 +41,6 @@ CameraType parse_camera_type(const YAML::Node & node)
     }
   }
   throw std::invalid_argument("camera camera_type must be V4L2 or REALSENSE");
-}
-
-CompressType parse_compress_type(const YAML::Node & node)
-{
-  if (!node) {
-    throw std::invalid_argument("camera compress_type is required");
-  }
-  if (node.IsScalar()) {
-    const std::string value = node.as<std::string>();
-    if (value == "NONE_COMPRESS") {
-      return CompressType::NONE_COMPRESS;
-    }
-    if (value == "MJPEG_COMPRESS") {
-      return CompressType::MJPEG_COMPRESS;
-    }
-  }
-  throw std::invalid_argument("camera compress_type must be NONE_COMPRESS or MJPEG_COMPRESS");
 }
 
 DEVICE_TYPE parse_device_type(const YAML::Node & node)
@@ -98,11 +83,31 @@ teleop_server::HandType parse_hand_type(const YAML::Node & node)
   throw std::invalid_argument("joints hand_type must be one of none, inspire, dex1, brainco");
 }
 
-std::vector<CameraInfo> load_camera_infos(const YAML::Node & cameras_node)
+teleop_server::PicoVideoStreamerConfig load_pico_video_config(const YAML::Node & root)
 {
+  teleop_server::PicoVideoStreamerConfig config;
+  const auto pico_node = root["pico"];
+  if (!pico_node || !pico_node.IsMap()) {
+    return config;
+  }
+
+  const auto video_node = pico_node["video"];
+  if (!video_node || !video_node.IsMap()) {
+    return config;
+  }
+
+  config.drop_old = video_node["drop_old"].as<bool>(config.drop_old);
+  return config;
+}
+
+std::vector<CameraInfo> load_camera_infos(const YAML::Node & root)
+{
+  const auto cameras_node = root["cameras"];
   if (!cameras_node || !cameras_node.IsSequence() || cameras_node.size() == 0) {
     throw std::invalid_argument("cameras must be a non-empty sequence");
   }
+
+  const teleop_server::PicoVideoStreamerConfig pico_video_config = load_pico_video_config(root);
 
   std::vector<CameraInfo> camera_infos;
   camera_infos.reserve(cameras_node.size());
@@ -114,10 +119,9 @@ std::vector<CameraInfo> load_camera_infos(const YAML::Node & cameras_node)
     camera_info.image_width = camera_node["image_width"].as<int>();
     camera_info.image_height = camera_node["image_height"].as<int>();
     camera_info.frame_rate = camera_node["frame_rate"].as<int>();
-    camera_info.compress_type = parse_compress_type(camera_node["compress_type"]);
     camera_info.flip = camera_node["flip"] ? camera_node["flip"].as<bool>() : false;
-    camera_info.enable_socket_publish = camera_node["enable_socket_publish"].as<bool>();
-    camera_info.socket_publish_port = camera_node["socket_publish_port"].as<int>();
+    camera_info.enable_pico_video = camera_node["enable_pico_video"].as<bool>(false);
+    camera_info.pico_video = pico_video_config;
     camera_infos.push_back(std::move(camera_info));
   }
   return camera_infos;
@@ -251,6 +255,12 @@ teleop_server::PicoTeleopSender::Config load_pico_teleop_config(const YAML::Node
 
 int main(int argc, char * argv[])
 {
+  const std::string start_info = "GIT HASH: %s\033[94m"
+    "\n╔═════════════════════════════════════════════════════════════════════════╗"
+    "\n║                  Teleop Server Started - version: %s                 ║"
+    "\n╚═════════════════════════════════════════════════════════════════════════╝\033[0m";
+  TELEOP_LOG_INFO(start_info.c_str(), teleop_server::TELEOP_GIT_HASH, teleop_server::TELEOP_VERSION);
+
   std::vector<CameraInfo> camera_infos;
   DEVICE_TYPE device_type;
   JointsPublisherConfig joints_config;
@@ -265,13 +275,13 @@ int main(int argc, char * argv[])
 
     const std::string config_path = non_ros_args[1];
     const YAML::Node config = YAML::LoadFile(config_path);
-    camera_infos = load_camera_infos(config["cameras"]);
+    camera_infos = load_camera_infos(config);
     device_type = parse_device_type(config["device_type"]);
     joints_config = load_joints_config(config["joints"]);
     pico_config = load_pico_config(config);
     pico_teleop_config = load_pico_teleop_config(config);
   } catch (const std::exception & e) {
-    std::cerr << "Failed to load teleop_server config: " << e.what() << '\n';
+    TELEOP_LOG_ERROR("Failed to load teleop_server config: %s", e.what());
     return 1;
   }
 
@@ -286,10 +296,7 @@ int main(int argc, char * argv[])
         joints_config.hand_provider);
     rclcpp::spin(std::move(node));
   } catch (const std::exception & e) {
-    RCLCPP_ERROR(
-        rclcpp::get_logger("teleop_server_main"),
-        "Failed to start teleop_server: %s",
-        e.what());
+    TELEOP_LOG_ERROR("Failed to start teleop_server: %s", e.what());
     rclcpp::shutdown();
     return 1;
   }

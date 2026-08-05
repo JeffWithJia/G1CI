@@ -1,2 +1,4 @@
 .idea
 deb_out/
+
+version.cpp

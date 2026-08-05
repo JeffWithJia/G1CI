@@ -14,18 +14,27 @@
 
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include <rclcpp/node.hpp>
 #include <rclcpp/publisher.hpp>
 #include <rclcpp/subscription.hpp>
 #include <std_msgs/msg/int16_multi_array.hpp>
 #include <std_msgs/msg/string.hpp>
+#ifdef ROS_FOXY
+#include <tf2_ros/transform_broadcaster.h>
+#else
+#include <tf2_ros/transform_broadcaster.hpp>
+#endif
+
 #include <unitree_api/msg/request.hpp>
 #include <unitree_go/msg/motor_cmds.hpp>
 #include <unitree_go/msg/motor_states.hpp>
@@ -51,17 +60,20 @@ public:
   };
 
   using RecordingToggleCallback = std::function<void()>;
+  using VoicePromptCallback = std::function<void(const std::string &)>;
 
   PicoTeleopSender(
       rclcpp::Node & node,
       Config config,
       HandProviderConfig hand_config,
-      RecordingToggleCallback recording_toggle_callback = {});
+      RecordingToggleCallback recording_toggle_callback = {},
+      VoicePromptCallback voice_prompt_callback = {});
 
   void process_packet(const PicoTeleopPacket & packet);
 
 private:
   void handle_vr_input(const PicoTeleopPacket & packet);
+  void publish_pelvis_tf(const PicoTeleopPacket & packet);
   void publish_observation_packet(const PicoTeleopPacket & packet, double dt_s);
   void publish_pico_smpl_command(const PicoTeleopPacket & packet);
   void publish_hand_command(const PicoTeleopPacket & packet);
@@ -77,6 +89,7 @@ private:
       double left_desired,
       double right_desired);
   void request_recording_toggle();
+  void play_voice_prompt(const std::string & text);
   void publish_fsm_request(int fsm_id);
   void publish_velocity_request(double vx, double vy, double vyaw);
   unitree_api::msg::Request make_sport_request(int64_t api_id, const std::string & parameter);
@@ -88,6 +101,7 @@ private:
   Config config_;
   HandProviderConfig hand_config_;
   RecordingToggleCallback recording_toggle_callback_;
+  VoicePromptCallback voice_prompt_callback_;
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr packet_pub_;
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr teleop_cmd_pub_;
   rclcpp::Publisher<unitree_api::msg::Request>::SharedPtr sport_request_pub_;
@@ -97,6 +111,7 @@ private:
   rclcpp::Publisher<unitree_go::msg::MotorCmds>::SharedPtr right_motor_cmd_pub_;
   rclcpp::Subscription<unitree_go::msg::MotorStates>::SharedPtr dex1_left_state_sub_;
   rclcpp::Subscription<unitree_go::msg::MotorStates>::SharedPtr dex1_right_state_sub_;
+  std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
 
   bool is_running_{true};
   bool y_button_pressed_last_frame_{false};
@@ -115,6 +130,8 @@ private:
   int64_t last_body_timestamp_ns_{0};
   int64_t request_sequence_{0};
   int64_t recording_toggle_requests_{0};
+  std::array<double, 3> odom_ground_anchor_{0.0, 0.0, 0.0};
+  bool has_odom_ground_anchor_{false};
 
   std::mutex dex1_state_mutex_;
   bool dex1_has_left_state_{false};

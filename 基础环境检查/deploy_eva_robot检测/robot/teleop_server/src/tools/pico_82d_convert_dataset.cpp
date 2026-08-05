@@ -141,12 +141,10 @@ std::vector<Eigen::Isometry3d> body_poses_from_record(const Json::Value & record
   poses.reserve(kExpectedBodyJointCount);
   for (int i = 0; i < kExpectedBodyJointCount; ++i) {
     const auto & values = body[i];
-    Eigen::Quaterniond quat(values[6], values[3], values[4], values[5]);
-    if (quat.norm() <= 1.0e-9) {
-      quat = Eigen::Quaterniond::Identity();
-    } else {
-      quat.normalize();
-    }
+    // Use the shared, finite-safe normalize so this offline path matches the live
+    // receiver path exactly (online/offline divergence would corrupt train/inference parity).
+    const Eigen::Quaterniond quat = teleop_server::Pico82dConverter::normalized(
+        Eigen::Quaterniond(values[6], values[3], values[4], values[5]));
     Eigen::Isometry3d pose = Eigen::Isometry3d::Identity();
     pose.translation() = Eigen::Vector3d(values[0], values[1], values[2]);
     pose.linear() = quat.toRotationMatrix();

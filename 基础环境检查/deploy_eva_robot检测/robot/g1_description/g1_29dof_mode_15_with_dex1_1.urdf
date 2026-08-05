@@ -1048,12 +1048,12 @@
       </geometry>
     </collision>
   </link>
-  <joint name="left_gripper_joint" type="prismatic">
+  <joint name="left_dex1_finger_joint_1" type="prismatic">
     <origin xyz="0 0 0" rpy="0 0 0"/>
     <parent link="left_dex1_base_link"/>
     <child link="left_dex1_finger_link_1"/>
     <axis xyz="0 -1 0"/>
-    <limit lower="0" upper="5.5" effort="20" velocity="0.2"/>
+    <limit lower="-0.02" upper="0.0245" effort="20" velocity="0.2"/>
   </joint>
   <link name="left_dex1_finger_link_2">
     <inertial>
@@ -1077,12 +1077,12 @@
       </geometry>
     </collision>
   </link>
-  <joint name="left_gripper_mimic_joint" type="prismatic">
+  <joint name="left_dex1_finger_joint_2" type="prismatic">
     <origin xyz="0 0 0" rpy="0 0 0"/>
     <parent link="left_dex1_base_link"/>
     <child link="left_dex1_finger_link_2"/>
     <axis xyz="0 1 0"/>
-    <limit lower="0" upper="5.5" effort="20" velocity="0.2"/>
+    <limit lower="-0.02" upper="0.0245" effort="20" velocity="0.2"/>
     <mimic joint="left_dex1_finger_joint_1" multiplier="1" offset="0"/>
   </joint>
 
@@ -1135,12 +1135,12 @@
       </geometry>
     </collision>
   </link>
-  <joint name="right_gripper_joint" type="prismatic">
+  <joint name="right_dex1_finger_joint_1" type="prismatic">
     <origin xyz="0 0 0" rpy="0 0 0"/>
     <parent link="right_dex1_base_link"/>
     <child link="right_dex1_finger_link_1"/>
     <axis xyz="0 -1 0"/>
-    <limit lower="0" upper="5.5" effort="20" velocity="0.2"/>
+    <limit lower="-0.02" upper="0.0245" effort="20" velocity="0.2"/>
   </joint>
   <link name="right_dex1_finger_link_2">
     <inertial>
@@ -1164,12 +1164,12 @@
       </geometry>
     </collision>
   </link>
-  <joint name="right_gripper_mimic_joint" type="prismatic">
+  <joint name="right_dex1_finger_joint_2" type="prismatic">
     <origin xyz="0 0 0" rpy="0 0 0"/>
     <parent link="right_dex1_base_link"/>
     <child link="right_dex1_finger_link_2"/>
     <axis xyz="0 1 0"/>
-    <limit lower="0" upper="5.5" effort="20" velocity="0.2"/>
+    <limit lower="-0.02" upper="0.0245" effort="20" velocity="0.2"/>
     <mimic joint="right_dex1_finger_joint_1" multiplier="1" offset="0"/>
   </joint>
 </robot>

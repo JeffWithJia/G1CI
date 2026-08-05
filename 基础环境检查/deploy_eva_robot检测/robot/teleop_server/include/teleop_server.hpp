@@ -14,10 +14,17 @@
 
 #pragma once
 
-#include <rclcpp/rclcpp.hpp>
+#include <condition_variable>
+#include <deque>
 #include <memory>
+#include <mutex>
+#include <string>
+#include <thread>
 #include <vector>
 
+#include <rclcpp/rclcpp.hpp>
+
+#include "audio/audio_client.hpp"
 #include "camera/camera_publisher.hpp"
 #include "joints/joints_publisher.h"
 #include "pico/pico_data_receiver.hpp"
@@ -35,13 +42,23 @@ public:
       JointsPublisherConfig joints_config,
       PicoDataReceiver::Config pico_config,
       PicoTeleopSender::Config pico_teleop_config,
-      teleop_server::HandProviderConfig hand_config);
+      HandProviderConfig hand_config);
+  ~TeleopServer() override;
 
 private:
+  void enqueue_tts(std::string text);
+  void tts_worker_loop();
+
   std::unique_ptr<CameraPublisher> camera_publisher_;
   std::unique_ptr<JointsPublisher> joints_publisher_;
   std::unique_ptr<RecordingController> recording_controller_;
   std::unique_ptr<PicoTeleopSender> pico_teleop_sender_;
   std::unique_ptr<PicoDataReceiver> pico_data_receiver_;
+  std::unique_ptr<AudioClient> audio_client_;
+  std::mutex tts_mutex_;
+  std::condition_variable tts_cv_;
+  std::deque<std::string> tts_queue_;
+  std::thread tts_thread_;
+  bool tts_stop_{false};
 };
 }  // namespace teleop_server

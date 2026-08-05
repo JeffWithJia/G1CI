@@ -2,18 +2,21 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>teleop_server</name>
-  <version>0.0.0</version>
-  <description>TODO: Package description</description>
-  <maintainer email="fei.gao@coscene.io">fei</maintainer>
+  <version>0.0.2</version>
+  <description>ROS 2 teleoperation server for robot cameras, joint state publishing,
+    Pico VR pose/input handling, and hand/recording control.
+  </description>
+  <maintainer email="coscene@coscene.io">fei</maintainer>
   <license>Apache-2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
-  <depend>cv_bridge</depend>
+  <depend>geometry_msgs</depend>
   <depend>opencv</depend>
   <depend>rclcpp</depend>
   <depend>sensor_msgs</depend>
   <depend>std_msgs</depend>
+  <depend>tf2_ros</depend>
   <depend>agent</depend>
   <depend>unitree_api</depend>
   <depend>unitree_go</depend>
@@ -28,9 +31,8 @@
   <exec_depend>robot_state_publisher</exec_depend>
   <build_depend>pkg-config</build_depend>
   <build_depend>libjsoncpp-dev</build_depend>
-  <build_depend>libzmq3-dev</build_depend>
+  <build_depend>libx264-dev</build_depend>
   <exec_depend>libjsoncpp25</exec_depend>
-  <exec_depend>libzmq5</exec_depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>

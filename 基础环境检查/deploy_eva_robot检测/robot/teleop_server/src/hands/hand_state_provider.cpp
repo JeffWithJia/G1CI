@@ -15,6 +15,7 @@
 #include "hands/hand_state_provider.hpp"
 
 #include "hands/modbus_tcp_reader.hpp"
+#include "logging/logger.hpp"
 
 #include <algorithm>
 #include <array>
@@ -97,18 +98,14 @@ public:
       right_reader_(
           config_.right_ip,
           static_cast<uint16_t>(config_.port),
-          static_cast<uint8_t>(config_.device_id),
-          node_.get_logger()),
+          static_cast<uint8_t>(config_.device_id)),
       left_reader_(
           config_.left_ip,
           static_cast<uint16_t>(config_.port),
-          static_cast<uint8_t>(config_.device_id),
-          node_.get_logger())
+          static_cast<uint8_t>(config_.device_id))
   {
     if (config_.angle_count != static_cast<int>(kInspireJointUpperLimits.size())) {
-      RCLCPP_WARN(
-          node_.get_logger(),
-          "Inspire angle_count is %d, expected 6. Joint names still describe the standard "
+      TELEOP_LOG_WARN("Inspire angle_count is %d, expected 6. Joint names still describe the standard "
           "6-DoF hand.",
           config_.angle_count);
     }
@@ -121,10 +118,7 @@ public:
   bool update(HandStateData & state) override
   {
     if (config_.angle_count <= 0) {
-      RCLCPP_ERROR_THROTTLE(
-          node_.get_logger(),
-          *node_.get_clock(),
-          2000,
+      TELEOP_LOG_ERROR_THROTTLE(2000,
           "inspire angle_count must be > 0");
       return false;
     }
@@ -147,10 +141,7 @@ public:
 
     if (right_angles.size() != kInspireJointUpperLimits.size() ||
         left_angles.size() != kInspireJointUpperLimits.size()) {
-      RCLCPP_WARN_THROTTLE(
-          node_.get_logger(),
-          *node_.get_clock(),
-          2000,
+      TELEOP_LOG_WARN_THROTTLE(2000,
           "Unexpected Inspire register count: left=%zu right=%zu expected=6",
           left_angles.size(),
           right_angles.size());
@@ -214,9 +205,7 @@ public:
           right_state_ = msg;
         });
 
-    RCLCPP_INFO(
-        node_.get_logger(),
-        "%s hand state provider listening on %s and %s",
+    TELEOP_LOG_INFO("%s hand state provider listening on %s and %s",
         log_name_.c_str(),
         config.left_state_topic.c_str(),
         config.right_state_topic.c_str());
@@ -237,21 +226,13 @@ public:
     }
 
     if (left_state == nullptr || right_state == nullptr) {
-      RCLCPP_WARN_THROTTLE(
-          node_.get_logger(),
-          *node_.get_clock(),
-          2000,
-          "Waiting for %s hand states",
-          log_name_.c_str());
+      TELEOP_LOG_WARN_THROTTLE(2000, "Waiting for %s hand states", log_name_.c_str());
       return false;
     }
 
     if (left_state->states.size() < motors_per_hand_ ||
         right_state->states.size() < motors_per_hand_) {
-      RCLCPP_WARN_THROTTLE(
-          node_.get_logger(),
-          *node_.get_clock(),
-          2000,
+      TELEOP_LOG_WARN_THROTTLE(2000,
           "Unexpected %s hand state size: left=%zu right=%zu expected>=%zu",
           log_name_.c_str(),
           left_state->states.size(),
@@ -265,16 +246,27 @@ public:
     state.effort.assign(joint_count(), 0.0);
 
     for (size_t i = 0; i < motors_per_hand_; ++i) {
-      state.position[i] = left_state->states[i].q;
+      double l_pos=left_state->states[i].q;
+      double r_pos=right_state->states[i].q;
+      if (log_name_ == "Dex1") {
+        l_pos = map_dex1_value(l_pos);
+        r_pos = map_dex1_value(r_pos);
+      }
+
+      state.position[i] = l_pos;
       state.velocity[i] = left_state->states[i].dq;
       state.effort[i] = left_state->states[i].tau_est;
 
       const size_t right_index = motors_per_hand_ + i;
-      state.position[right_index] = right_state->states[i].q;
+      state.position[right_index] = r_pos;
       state.velocity[right_index] = right_state->states[i].dq;
       state.effort[right_index] = right_state->states[i].tau_est;
     }
     return true;
+  }
+
+  static inline double map_dex1_value(double x) {
+    return -0.02 + 0.00809090909090909 * x;
   }
 
 private:

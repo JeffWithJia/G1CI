@@ -44,6 +44,9 @@ public:
   static Eigen::Quaterniond
   slerp_near(const Eigen::Quaterniond & from, const Eigen::Quaterniond & to, double alpha);
 
+  static Eigen::Quaterniond
+  nlerp_near(const Eigen::Quaterniond & from, const Eigen::Quaterniond & to, double alpha);
+
 private:
   struct SmplData
   {

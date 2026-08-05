@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import argparse
+import ast
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import ipaddress
 import json
 import mimetypes
@@ -39,10 +41,19 @@ ROOT_LOGS_DIR = ROOT_DIR / "logs"
 LATEST_SUMMARY_PATH = ROOT_REPORTS_DIR / "latest_summary.json"
 
 STATUS_ORDER = {"FAIL": 4, "UNREACHABLE": 4, "WARN": 3, "NO_REPORT": 2, "SKIP": 1, "OK": 0}
+CAMERA_TOPIC_MIN_RATE_HZ = 29.0
 COS_REQUIRED_SERVICES = ("cos_agent", "xrobotoolkit-pc-service", "cos_teleop")
 COS_ACTIVE_SERVICES = ("cos_agent", "cos_teleop")
 COS_XROBOT_SERVICE = "xrobotoolkit-pc-service"
-SERVICE_ACTIONS = {"service_check", "service_restart"}
+CAMERA_CHECK_ACTION = "camera_check"
+SERVICE_ACTIONS = {"service_check", "service_restart", CAMERA_CHECK_ACTION}
+CAMERA_BINDING_RULE_PATH = "/etc/udev/rules.d/99-usb-cameras.rules"
+CAMERA_BINDING_PROPERTY_KEYS = ("DEVNAME", "ID_PATH", "ID_V4L_PRODUCT", "ID_SERIAL")
+DEPLOY_ACTION = "deploy_to_robot"
+DEPLOY_SETUP_AGENT_ACTION = "deploy_setup_agent"
+HAND_TEST_ACTION = "hand_test"
+HAND_TEST_SIDES = {"left", "right"}
+HAND_TEST_SIDE_LABELS = {"left": "左手", "right": "右手"}
 RESTARTABLE_SERVICES = {
     "dex1_gripper.service": "Dex1 灵巧手服务",
     "brainco_hand.service": "Brainco 灵巧手服务",
@@ -57,9 +68,29 @@ SERVICE_CHECK_NAMES = [
     "dex1_gripper.service",
     "brainco_hand.service",
 ]
+SERVICE_DETAIL_BASE_NAMES = [
+    "cos_agent.service",
+    "cos_teleop.service",
+    "xrobotoolkit-pc-service.service",
+]
+SERVICE_DETAIL_HAND_NAMES = {
+    "dex1": "dex1_gripper.service",
+    "brainco": "brainco_hand.service",
+}
+NETWORK_STATUS_REFRESH_SECONDS = 3.0
+NETWORK_STATUS_TIMEOUT_SECONDS = 1.5
+NETWORK_STATUS_MAX_WORKERS = 16
+HEARTBEAT_ONLINE_SECONDS = 10.0
+HEARTBEAT_STALE_SECONDS = 30.0
+HEARTBEAT_PATHS = {"/api/robot/heartbeat", "/api/robots/heartbeat"}
+SERVICE_DETAIL_REFRESH_SECONDS = 7.0
+SERVICE_QUERY_TIMEOUT_SECONDS = 20.0
+SERVICE_DETAIL_STATUS_TTL_SECONDS = 30.0
+REPORT_BUSINESS_FRESH_SECONDS = 300.0
+REFRESH_STATUS_MAX_WORKERS = 16
+# RealSense frame wait timeout can appear while Pico video waits for device readiness;
+# camera health is still verified by topic frequency checks.
 COS_TELEOP_CAMERA_WARNING_RE = re.compile(
-    r"RealSense camera\[0\] frame wait timed out|"
-    r"frame wait timed out|"
     r"Failed to read direct MJPEG frame|"
     r"Failed to open V4L2 device|"
     r"Failed to initialize V4L2|"
@@ -67,6 +98,7 @@ COS_TELEOP_CAMERA_WARNING_RE = re.compile(
     r"No such file or directory",
     re.IGNORECASE,
 )
+ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 INVENTORY_VARS = [
     "ansible_user=unitree",
     "ansible_python_interpreter=/usr/bin/python3",
@@ -76,6 +108,7 @@ END_EFFECTORS = {"dex1", "brainco", "none"}
 PASSWORD_PROMPTS = [
     r"(?im)^SSH password.*:",
     r"(?im)^ssh password.*:",
+    r"(?im)[^\r\n]*@[^:\r\n]+['’]s password\s*:",
     r"(?im)^BECOME password.*:",
     r"(?im)^become password.*:",
     r"(?im)^\[sudo\] password.*:",
@@ -85,12 +118,12 @@ PASSWORD_PROMPTS = [
     pexpect.TIMEOUT,
     pexpect.EOF,
 ]
-SSH_PROMPT_INDEXES = {0, 1}
-BECOME_PROMPT_INDEXES = {2, 3, 4, 5}
-GENERIC_PASSWORD_PROMPT_INDEX = 6
-HOST_KEY_PROMPT_INDEX = 7
-TIMEOUT_PROMPT_INDEX = 8
-EOF_PROMPT_INDEX = 9
+SSH_PROMPT_INDEXES = {0, 1, 2}
+BECOME_PROMPT_INDEXES = {3, 4, 5, 6}
+GENERIC_PASSWORD_PROMPT_INDEX = 7
+HOST_KEY_PROMPT_INDEX = 8
+TIMEOUT_PROMPT_INDEX = 9
+EOF_PROMPT_INDEX = 10
 MAX_PASSWORD_PROMPT_ATTEMPTS = 2
 
 ERROR_RULES = [
@@ -125,6 +158,11 @@ ERROR_RULES = [
         ["Missing sudo password", "Incorrect sudo password", "BECOME password"],
     ),
     (
+        "软件包降级被拒绝。",
+        "安装本地 deb 包时触发了降级保护。由于官方 cos_setup.sh 暂不支持自动降级，请联系工程师手动清理旧版本包。",
+        ["Packages were downgraded and -y was used without --allow-downgrades", "allow-downgrades"],
+    ),
+    (
         "cos_setup.sh 不存在，请先部署 robot 文件。",
         "请先执行 robot 文件部署步骤，确保 /home/unitree/cos_setup.sh 已经存在。",
         ["cos_setup.sh not found", "No such file or directory", "/home/unitree/cos_setup.sh"],
@@ -133,6 +171,11 @@ ERROR_RULES = [
         "机器人安装依赖失败，可能是网络或软件源问题。",
         "请检查机器人联网状态、DNS、系统时间和软件源。",
         ["Unable to locate package", "Temporary failure resolving", "Could not resolve", "apt update failed", "Failed to fetch", "pip install failed", "Read timed out", "HTTPSConnectionPool", "Could not find a version", "No matching distribution", "certificate verify failed"],
+    ),
+    (
+        "机器人正在执行其它 apt/dpkg 安装任务，软件包锁被占用。",
+        "请等待机器人上的 apt-get / dpkg / unattended-upgrades 结束后重试；如果长时间不释放，请联系工程师确认占锁进程是否卡住。",
+        ["Could not get lock", "Failed to lock apt", "apt/dpkg lock", "软件包锁被占用", "软件包锁超时未释放"],
     ),
     (
         "机器人系统时间不正确，导致 HTTPS 证书校验失败。",
@@ -156,6 +199,44 @@ ERROR_RULES = [
     ),
 ]
 
+AGENT_DIAGNOSIS_RULES = [
+    {
+        "id": "missing_cos_setup",
+        "keywords": ["cos_setup.sh not found", "remote cos_setup.sh not found", "/home/unitree/cos_setup.sh"],
+        "reason": "机器人上缺少 /home/unitree/cos_setup.sh，通常是 robot 文件未成功部署或被覆盖。",
+        "suggestion": "agent 会先尝试重新部署 robot 文件，再重新执行 cos_setup.sh。",
+        "repair_action": "redeploy_and_retry_cos_setup",
+    },
+    {
+        "id": "apt_lock",
+        "keywords": ["Could not get lock", "Failed to lock apt", "apt/dpkg lock", "软件包锁被占用", "软件包锁超时未释放"],
+        "reason": "机器人正在执行其它 apt/dpkg 安装任务，软件包锁被占用。",
+        "suggestion": "请等待机器人上的 apt-get / dpkg / unattended-upgrades 结束后重试；如果长时间不释放，请联系工程师确认占锁进程。",
+        "repair_action": "",
+    },
+    {
+        "id": "realsense",
+        "keywords": ["pyrealsense", "librealsense", "RealSense", "GLIBC", "GLIBCXX"],
+        "reason": "RealSense / pyrealsense 相关依赖异常，可能是 apt 源、librealsense 包或二进制兼容问题。",
+        "suggestion": "batch_cos_setup.yml 已包含一次清理 librealsense 后重试的逻辑；如果仍失败，请查看 cos_setup first_attempt / retry_attempt 日志。",
+        "repair_action": "",
+    },
+    {
+        "id": "local_deb",
+        "keywords": ["No .deb packages found", "Failed to install local deb package", "/home/unitree/apk", "allow-downgrades"],
+        "reason": "机器人本地 deb 包缺失、架构不匹配或触发降级保护。",
+        "suggestion": "请确认 deploy 阶段已把 apk 目录同步到机器人，并检查 /home/unitree/apk 下 deb 包版本和架构。",
+        "repair_action": "",
+    },
+    {
+        "id": "service_failed",
+        "keywords": ["service is not active", "systemctl", "inactive", "failed", "cos_agent", "cos_teleop", "xrobotoolkit-pc-service"],
+        "reason": "cos_setup 执行后关键服务未达到预期状态。",
+        "suggestion": "请查看 systemctl status 和 journalctl 日志；必要时先执行服务重启，再重新执行 cos_setup。",
+        "repair_action": "",
+    },
+]
+
 CURRENT_JOB: dict[str, Any] = {
     "running": False,
     "action": "",
@@ -171,8 +252,303 @@ CURRENT_JOB: dict[str, Any] = {
     "duration_seconds": None,
     "report_file": "",
     "phase": "idle",
+    "stages": [],
+    "current_stage": "",
+    "current_task": "",
+    "current_command": "",
+    "cancellable": False,
+    "cancel_requested": False,
+    "robot_label": "",
+    "hand_type": "",
+    "hand_side": "",
+    "hand_side_cn": "",
 }
 JOB_LOCK = threading.Lock()
+PROCESS_LOCK = threading.Lock()
+REFRESH_LOCK = threading.Lock()
+CURRENT_PROCESS: dict[str, Any] = {"child": None}
+ROBOT_STATUS_LOCK = threading.Lock()
+ROBOT_NETWORK_STATUS: dict[str, dict[str, Any]] = {}
+ROBOT_HEARTBEATS: dict[str, dict[str, Any]] = {}
+ROBOT_SERVICE_STATUS: dict[str, dict[str, Any]] = {}
+LATEST_REPORT_BUSINESS_CACHE: dict[str, Any] = {"signature": None, "robot_signature": None, "reports": {}}
+
+STANDARD_STAGE_TEMPLATE = [
+    ("connect", "连接机器人"),
+    ("collect", "收集系统信息"),
+    ("services", "检查服务"),
+    ("ros2", "检查相机帧率"),
+    ("hardware", "检查硬件"),
+    ("report", "生成报告"),
+]
+TASK_STAGE_TEMPLATES = {
+    "check": STANDARD_STAGE_TEMPLATE,
+    "install": STANDARD_STAGE_TEMPLATE,
+    "cos_setup": [
+        ("connect", "连接机器人"),
+        ("collect", "收集系统信息"),
+        ("services", "安装并检查服务"),
+        ("hardware", "检查硬件依赖"),
+        ("report", "生成报告"),
+    ],
+    "service_check": [
+        ("connect", "连接机器人"),
+        ("services", "检查服务"),
+        ("ros2", "检查相机帧率"),
+        ("report", "生成报告"),
+    ],
+    CAMERA_CHECK_ACTION: [
+        ("connect", "连接机器人"),
+        ("ros2", "检查相机帧率"),
+        ("report", "生成报告"),
+    ],
+    "service_restart": [
+        ("connect", "连接机器人"),
+        ("services", "重启并检查服务"),
+        ("report", "生成报告"),
+    ],
+    DEPLOY_ACTION: [
+        ("connect", "连接机器人"),
+        ("deploy", "部署文件"),
+        ("report", "生成报告"),
+    ],
+    DEPLOY_SETUP_AGENT_ACTION: [
+        ("connect", "连接机器人"),
+        ("deploy", "部署 robot 文件"),
+        ("services", "执行 cos_setup / 服务检查"),
+        ("report", "生成报告"),
+    ],
+    HAND_TEST_ACTION: [
+        ("connect", "连接机器人"),
+        ("hardware", "检查硬件动作"),
+        ("report", "生成报告"),
+    ],
+}
+
+
+def stage_timestamp() -> str:
+    return datetime.now().astimezone().isoformat(timespec="seconds")
+
+
+def make_job_stages(action: str) -> list[dict[str, Any]]:
+    template = TASK_STAGE_TEMPLATES.get(action, STANDARD_STAGE_TEMPLATE)
+    return [
+        {
+            "id": stage_id,
+            "label": label,
+            "status": "pending",
+            "started_at": "",
+            "finished_at": "",
+            "elapsed_seconds": 0.0,
+            "task": "",
+            "command": "",
+            "items": [],
+        }
+        for stage_id, label in template
+    ]
+
+
+def stage_index_locked(stage_id: str) -> int | None:
+    stages = CURRENT_JOB.get("stages")
+    if not isinstance(stages, list):
+        return None
+    for index, stage in enumerate(stages):
+        if isinstance(stage, dict) and stage.get("id") == stage_id:
+            return index
+    return None
+
+
+def candidate_stage_locked(*stage_ids: str) -> str:
+    for stage_id in stage_ids:
+        if stage_id and stage_index_locked(stage_id) is not None:
+            return stage_id
+    return ""
+
+
+def first_pending_stage_locked() -> str:
+    stages = CURRENT_JOB.get("stages")
+    if not isinstance(stages, list):
+        return ""
+    for stage in stages:
+        if isinstance(stage, dict) and stage.get("status") == "pending":
+            return str(stage.get("id") or "")
+    return ""
+
+
+def task_stage_from_text(text: str) -> str:
+    value = str(text or "").lower()
+    if not value:
+        return ""
+    if any(keyword in value for keyword in ("report", "summary", "json", "报告", "汇总")):
+        return "report"
+    if any(keyword in value for keyword in ("ros2", "topic", "camera topic", "camera frequency", "topic frequency", "/cam_", "摄像头 topic", "相机频率", "相机帧率")):
+        return "ros2"
+    if any(keyword in value for keyword in ("service", "systemd", "journal", "cos_agent", "cos_teleop", "xrobotoolkit", "服务")):
+        return "services"
+    if any(keyword in value for keyword in ("dex1", "brainco", "hand", "gripper", "camera", "realsense", "udev", "hardware", "硬件", "相机", "手")):
+        return "hardware"
+    if any(keyword in value for keyword in ("deploy", "rsync", "sync", "copy", "部署", "同步")):
+        return "deploy"
+    if any(keyword in value for keyword in ("fact", "environment", "dependency", "python", "conda", "apt", "ubuntu", "debian", "time", "环境", "依赖")):
+        return "collect"
+    return ""
+
+
+def stage_id_for_job_update_locked(updates: dict[str, Any], explicit_stage_id: str) -> str:
+    action = str(updates.get("action") or CURRENT_JOB.get("action") or "")
+    phase = str(updates.get("phase") or CURRENT_JOB.get("phase") or "")
+    message = str(updates.get("message") or CURRENT_JOB.get("message") or "")
+    task = str(updates.get("current_task") or message)
+    mapped = explicit_stage_id or task_stage_from_text(task)
+    if mapped:
+        mapped = candidate_stage_locked(mapped)
+        if mapped:
+            return mapped
+    if phase == "precheck":
+        return candidate_stage_locked("connect")
+    if phase == "starting":
+        return candidate_stage_locked("collect", "deploy", "services", "hardware") or first_pending_stage_locked()
+    if phase == "reporting":
+        return candidate_stage_locked("report")
+    if phase == "cancelling":
+        return candidate_stage_locked("hardware", "services")
+    if phase == "running":
+        if action == DEPLOY_ACTION:
+            return candidate_stage_locked("deploy")
+        return candidate_stage_locked("collect", "services", "hardware", "deploy") or first_pending_stage_locked()
+    return ""
+
+
+def finish_stage_locked(stage: dict[str, Any], status: str, now_epoch: float) -> None:
+    started_epoch = float(stage.get("_started_epoch") or now_epoch)
+    stage["status"] = status
+    stage["finished_at"] = stage_timestamp()
+    stage["elapsed_seconds"] = round(max(0.0, now_epoch - started_epoch), 1)
+
+
+def update_job_stage_locked(stage_id: str, task: str = "", command: str = "") -> None:
+    stages = CURRENT_JOB.get("stages")
+    if not isinstance(stages, list):
+        return
+    index = stage_index_locked(stage_id)
+    if index is None:
+        return
+    now_epoch = time.time()
+    for before in stages[:index]:
+        if before.get("status") == "running":
+            finish_stage_locked(before, "completed", now_epoch)
+        elif before.get("status") == "pending":
+            before.update(
+                {
+                    "status": "completed",
+                    "started_at": stage_timestamp(),
+                    "finished_at": stage_timestamp(),
+                    "elapsed_seconds": 0.0,
+                }
+            )
+    for offset, stage in enumerate(stages):
+        if offset != index and stage.get("status") == "running":
+            finish_stage_locked(stage, "completed", now_epoch)
+    stage = stages[index]
+    if stage.get("status") == "pending":
+        stage["status"] = "running"
+        stage["started_at"] = stage_timestamp()
+        stage["_started_epoch"] = now_epoch
+        stage["finished_at"] = ""
+        stage["elapsed_seconds"] = 0.0
+    if task:
+        stage["task"] = task
+        CURRENT_JOB["current_task"] = task
+    if command:
+        stage["command"] = command
+        CURRENT_JOB["current_command"] = command
+    CURRENT_JOB["current_stage"] = stage_id
+
+
+def merge_job_stage_items_locked(stage_id: str, items: list[dict[str, Any]]) -> None:
+    if not items:
+        return
+    stages = CURRENT_JOB.get("stages")
+    if not isinstance(stages, list):
+        return
+    index = stage_index_locked(stage_id)
+    if index is None:
+        return
+    stage = stages[index]
+    existing_items = stage.get("items")
+    if not isinstance(existing_items, list):
+        existing_items = []
+        stage["items"] = existing_items
+    existing_keys = {
+        str(item.get("key") or item.get("label") or ""): offset
+        for offset, item in enumerate(existing_items)
+        if isinstance(item, dict)
+    }
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        label = str(item.get("label") or "").strip()
+        if not label:
+            continue
+        key = str(item.get("key") or label)
+        normalized = {
+            "key": key,
+            "label": label,
+            "status": str(item.get("status") or "done"),
+        }
+        if key in existing_keys:
+            existing_items[existing_keys[key]].update(normalized)
+        else:
+            existing_keys[key] = len(existing_items)
+            existing_items.append(normalized)
+    if stage_id == "ros2" and any(
+        str(item.get("status") or "").lower() in {"failed", "warn"}
+        for item in existing_items
+        if isinstance(item, dict)
+    ):
+        now_epoch = time.time()
+        if stage.get("status") in {"pending", "running", "completed"}:
+            if not stage.get("_started_epoch"):
+                stage["_started_epoch"] = now_epoch
+                stage["started_at"] = stage_timestamp()
+            finish_stage_locked(stage, "failed", now_epoch)
+        stage["task"] = "相机帧率异常"
+
+
+def merge_job_stage_items_by_stage_locked(stage_items: dict[str, Any]) -> None:
+    for stage_id, items in stage_items.items():
+        if isinstance(stage_id, str) and isinstance(items, list):
+            merge_job_stage_items_locked(stage_id, items)
+
+
+def finalize_job_stages_locked(final_phase: str) -> None:
+    stages = CURRENT_JOB.get("stages")
+    if not isinstance(stages, list):
+        return
+    now_epoch = time.time()
+    failed = final_phase == "fail"
+    for stage in stages:
+        if not isinstance(stage, dict):
+            continue
+        if stage.get("status") == "running":
+            finish_stage_locked(stage, "failed" if failed else "completed", now_epoch)
+        elif stage.get("status") == "pending" and not failed:
+            stage["status"] = "skipped"
+
+
+def job_payload_locked() -> dict[str, Any]:
+    now_epoch = time.time()
+    payload = dict(CURRENT_JOB)
+    stages = []
+    for stage in CURRENT_JOB.get("stages", []):
+        if not isinstance(stage, dict):
+            continue
+        item = {key: value for key, value in stage.items() if not key.startswith("_")}
+        if stage.get("status") == "running" and stage.get("_started_epoch"):
+            item["elapsed_seconds"] = round(max(0.0, now_epoch - float(stage["_started_epoch"])), 1)
+        stages.append(item)
+    payload["stages"] = stages
+    return payload
 
 
 def load_yaml(path: Path, default: dict[str, Any]) -> dict[str, Any]:
@@ -242,23 +618,60 @@ def file_status(label: str, path: Path) -> dict[str, Any]:
     }
 
 
+def executable_file_status(label: str, path: Path) -> dict[str, Any]:
+    exists = path.exists()
+    executable = exists and os.access(path, os.X_OK)
+    return {
+        "name": label,
+        "path": str(path.relative_to(ROOT_DIR) if path.is_relative_to(ROOT_DIR) else path),
+        "ok": executable,
+        "status": "OK" if executable else "MISSING" if not exists else "NOT_EXECUTABLE",
+        "status_cn": "正常" if executable else "缺失" if not exists else "不可执行",
+    }
+
+
+def dependency_payload(checks: list[dict[str, Any]]) -> dict[str, Any]:
+    missing = [item for item in checks if not item["ok"]]
+    missing_names = "、".join(str(item["name"]) for item in missing)
+    reason = f"控制电脑缺少必要依赖：{missing_names}" if missing else ""
+    suggestion = (
+        "请在控制电脑安装缺失依赖后重试。常用命令：\n"
+        "sudo apt update\n"
+        "sudo apt install -y ansible sshpass rsync openssh-client"
+        if missing
+        else ""
+    )
+    return {"ok": not missing, "checks": checks, "reason": reason, "suggestion": suggestion}
+
+
+def deploy_setup_agent_dependency_status() -> dict[str, Any]:
+    checks = [
+        executable_status("ssh"),
+        executable_status("rsync"),
+        executable_status("sshpass"),
+        executable_status("ansible-playbook", ansible_playbook_configured_path()),
+        executable_status("python3"),
+        file_status("inventory.ini", inventory_path()),
+        executable_file_status("deploy_to_robot.sh", ROOT_DIR / "deploy_eva_robot检测" / "robot" / "deploy_to_robot.sh"),
+        file_status("batch_cos_setup.yml", resolve_root_path(str(cfg("ansible", "cos_setup_playbook", default="deploy_eva_robot检测/batch_cos_setup.yml")))),
+    ]
+    return dependency_payload(checks)
+
+
 def local_dependency_status() -> dict[str, Any]:
     ansible_status = executable_status("ansible-playbook", ansible_playbook_configured_path())
     checks = [
-        ansible_status,
+        executable_status("ssh"),
+        executable_status("rsync"),
         executable_status("sshpass"),
+        ansible_status,
         executable_status("python3"),
         file_status("inventory.ini", inventory_path()),
         file_status("check_base_env.yml", resolve_root_path(str(cfg("ansible", "check_playbook", default="check_base_env.yml")))),
+        executable_file_status("deploy_to_robot.sh", ROOT_DIR / "deploy_eva_robot检测" / "robot" / "deploy_to_robot.sh"),
         file_status("batch_cos_setup.yml", resolve_root_path(str(cfg("ansible", "cos_setup_playbook", default="deploy_eva_robot检测/batch_cos_setup.yml")))),
     ]
-    missing = [item for item in checks if not item["ok"]]
-    return {
-        "ok": not missing,
-        "checks": checks,
-        "reason": "控制电脑没有找到 ansible-playbook 命令。" if not ansible_status["ok"] else "",
-        "suggestion": "请在控制电脑安装 Ansible 和 sshpass：\nsudo apt update\nsudo apt install -y ansible sshpass" if not ansible_status["ok"] else "",
-    }
+    return dependency_payload(checks)
 
 
 def ansible_playbook_executable() -> str:
@@ -270,6 +683,12 @@ def ensure_ansible_available() -> None:
     status = executable_status("ansible-playbook", ansible_playbook_configured_path())
     if not status["ok"]:
         raise ValueError("控制电脑缺少 ansible-playbook")
+
+
+def ensure_deploy_setup_agent_available() -> None:
+    status = deploy_setup_agent_dependency_status()
+    if not status["ok"]:
+        raise ValueError(status["reason"] or "控制电脑缺少必要依赖")
 
 
 def read_json_file(path: Path) -> Any:
@@ -342,6 +761,524 @@ def parse_inventory(path: Path | None = None) -> list[dict[str, str]]:
                     robot["robot_id"] = str(int(match.group(1)))
             robots.append(robot)
     return robots
+
+
+def now_iso() -> str:
+    return datetime.now().astimezone().isoformat(timespec="seconds")
+
+
+def find_inventory_robot(identifier: Any, robots: list[dict[str, str]] | None = None) -> dict[str, str] | None:
+    text = str(identifier or "").strip()
+    if not text:
+        return None
+    robots = robots or parse_inventory()
+    normalized_id = ""
+    try:
+        normalized_id = normalize_robot_id(text)
+    except ValueError:
+        match = re.fullmatch(r"g1_robot_(\d+)", text)
+        normalized_id = str(int(match.group(1))) if match else ""
+    for robot in robots:
+        if text in {robot.get("inventory_hostname", ""), robot.get("ansible_host", "")}:
+            return robot
+        if normalized_id and robot.get("robot_id") == normalized_id:
+            return robot
+    return None
+
+
+def default_network_status(robot: dict[str, str]) -> dict[str, Any]:
+    return {
+        "inventory_hostname": robot.get("inventory_hostname", ""),
+        "robot_id": robot.get("robot_id", ""),
+        "ansible_host": robot.get("ansible_host", ""),
+        "network_status": "CHECKING",
+        "latency_ms": None,
+        "checked_at": "",
+        "reason": "等待首次网络探测",
+    }
+
+
+def probe_robot_network(robot: dict[str, str]) -> dict[str, Any]:
+    host = str(robot.get("ansible_host", "")).strip()
+    result = default_network_status(robot)
+    if not host:
+        result.update(
+            {
+                "network_status": "UNKNOWN",
+                "checked_at": now_iso(),
+                "reason": "inventory.ini 未配置 ansible_host",
+            }
+        )
+        return result
+    started = time.monotonic()
+    try:
+        with socket.create_connection((host, 22), timeout=NETWORK_STATUS_TIMEOUT_SECONDS):
+            pass
+        result.update(
+            {
+                "network_status": "ONLINE",
+                "latency_ms": int(round((time.monotonic() - started) * 1000)),
+                "checked_at": now_iso(),
+                "reason": "",
+            }
+        )
+    except OSError as exc:
+        result.update(
+            {
+                "network_status": "OFFLINE",
+                "latency_ms": None,
+                "checked_at": now_iso(),
+                "reason": f"{host}:22 连接失败：{exc}",
+            }
+        )
+    return result
+
+
+def refresh_robot_network_status_once() -> dict[str, dict[str, Any]]:
+    robots = parse_inventory()
+    current_names = {robot["inventory_hostname"] for robot in robots}
+    with ROBOT_STATUS_LOCK:
+        for hostname in list(ROBOT_NETWORK_STATUS):
+            if hostname not in current_names:
+                ROBOT_NETWORK_STATUS.pop(hostname, None)
+        for robot in robots:
+            ROBOT_NETWORK_STATUS.setdefault(robot["inventory_hostname"], default_network_status(robot))
+    if not robots:
+        return {}
+
+    max_workers = max(1, min(NETWORK_STATUS_MAX_WORKERS, len(robots)))
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = [executor.submit(probe_robot_network, robot) for robot in robots]
+        for future in as_completed(futures):
+            status = future.result()
+            hostname = status.get("inventory_hostname", "")
+            if not hostname:
+                continue
+            with ROBOT_STATUS_LOCK:
+                ROBOT_NETWORK_STATUS[hostname] = status
+    with ROBOT_STATUS_LOCK:
+        return {
+            robot["inventory_hostname"]: dict(ROBOT_NETWORK_STATUS.get(robot["inventory_hostname"], default_network_status(robot)))
+            for robot in robots
+        }
+
+
+def robot_network_refresher() -> None:
+    while True:
+        try:
+            refresh_robot_network_status_once()
+        except Exception as exc:
+            print(f"Robot status refresh warning: {exc}")
+        time.sleep(NETWORK_STATUS_REFRESH_SECONDS)
+
+
+def start_robot_status_refresher() -> None:
+    thread = threading.Thread(target=robot_network_refresher, daemon=True)
+    thread.start()
+
+
+def public_heartbeat(record: dict[str, Any], now: float | None = None) -> dict[str, Any]:
+    now = time.time() if now is None else now
+    received_at = float(record.get("received_at_epoch") or 0)
+    age = max(0.0, now - received_at) if received_at else None
+    if age is None:
+        business_status = "UNKNOWN"
+        reason = "尚未收到业务心跳"
+    elif age <= HEARTBEAT_ONLINE_SECONDS:
+        business_status = "ONLINE"
+        reason = ""
+    elif age <= HEARTBEAT_STALE_SECONDS:
+        business_status = "STALE"
+        reason = f"业务心跳已超过 {int(HEARTBEAT_ONLINE_SECONDS)} 秒未更新"
+    else:
+        business_status = "OFFLINE"
+        reason = f"业务心跳已超过 {int(HEARTBEAT_STALE_SECONDS)} 秒未更新"
+    public = {key: value for key, value in record.items() if key != "received_at_epoch"}
+    public.update(
+        {
+            "business_status": business_status,
+            "heartbeat_age_seconds": round(age, 1) if age is not None else None,
+            "business_reason": reason,
+        }
+    )
+    return public
+
+
+def default_business_status(reason: str = "尚未收到业务心跳，也没有最新服务报告") -> dict[str, Any]:
+    return {
+        "business_status": "UNKNOWN",
+        "last_heartbeat_at": "",
+        "heartbeat_age_seconds": None,
+        "business_reason": reason,
+    }
+
+
+def network_offline_business_status(network: dict[str, Any]) -> dict[str, Any]:
+    reason = str(network.get("reason") or "").strip()
+    business_reason = "机器人网络离线，业务状态同步标记为离线"
+    if reason:
+        business_reason = f"{business_reason}：{reason}"
+    return default_business_status(business_reason) | {"business_status": "OFFLINE"}
+
+
+def report_business_fresh_seconds() -> float:
+    try:
+        return float(cfg("reports", "business_fresh_seconds", default=REPORT_BUSINESS_FRESH_SECONDS))
+    except (TypeError, ValueError):
+        return REPORT_BUSINESS_FRESH_SECONDS
+
+
+def report_business_age_seconds(report: dict[str, Any]) -> float | None:
+    try:
+        mtime_epoch = float(report.get("_business_report_mtime_epoch") or 0)
+    except (TypeError, ValueError):
+        return None
+    if mtime_epoch <= 0:
+        return None
+    return max(0.0, time.time() - mtime_epoch)
+
+
+def report_business_is_fresh(report: dict[str, Any]) -> bool:
+    age = report_business_age_seconds(report)
+    return age is None or age <= report_business_fresh_seconds()
+
+
+def latest_report_candidates(data: Any) -> list[dict[str, Any]]:
+    if isinstance(data, dict):
+        return [data]
+    if isinstance(data, list):
+        return [item for item in data if isinstance(item, dict)]
+    return []
+
+
+def business_report_paths() -> list[Path]:
+    paths = [
+        LATEST_SUMMARY_PATH,
+        ROOT_REPORTS_DIR / "g1_env_summary.json",
+        RAW_REPORTS_DIR / "deploy_setup_agent_summary.json",
+        RAW_REPORTS_DIR / "cos_setup_summary.json",
+    ]
+    paths.extend(ROOT_REPORTS_DIR.glob("g1_robot_*.json"))
+    paths.extend(RAW_REPORTS_DIR.glob("g1_robot_*.json"))
+    paths.extend(RAW_REPORTS_DIR.glob("cos_setup_g1_robot_*.json"))
+    seen: set[Path] = set()
+    ordered: list[Path] = []
+    for path in paths:
+        if path in seen or not path.exists() or not path.is_file():
+            continue
+        seen.add(path)
+        ordered.append(path)
+    return ordered
+
+
+def latest_report_business_source(robots: list[dict[str, str]]) -> dict[str, dict[str, Any]]:
+    paths = business_report_paths()
+    signature: list[tuple[str, int]] = []
+    for path in paths:
+        try:
+            signature.append((str(path), path.stat().st_mtime_ns))
+        except OSError:
+            continue
+    robot_signature = tuple(
+        (robot.get("inventory_hostname", ""), robot.get("robot_id", ""), robot.get("ansible_host", ""))
+        for robot in robots
+    )
+    if (
+        LATEST_REPORT_BUSINESS_CACHE.get("signature") == tuple(signature)
+        and LATEST_REPORT_BUSINESS_CACHE.get("robot_signature") == robot_signature
+    ):
+        return dict(LATEST_REPORT_BUSINESS_CACHE.get("reports", {}))
+
+    by_host: dict[str, tuple[int, dict[str, Any]]] = {}
+    for path_text, mtime_ns in signature:
+        path = Path(path_text)
+        try:
+            reports = latest_report_candidates(read_json_file(path))
+            updated_at = datetime.fromtimestamp(path.stat().st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+        except (OSError, ValueError, json.JSONDecodeError):
+            continue
+        for report in reports:
+            robot = None
+            for key in ("inventory_hostname", "host", "robot_id", "ansible_host"):
+                robot = find_inventory_robot(report.get(key), robots)
+                if robot:
+                    break
+            if not robot:
+                robot = find_inventory_robot(robot_identity(report), robots)
+            if not robot:
+                continue
+            hostname = robot["inventory_hostname"]
+            if hostname in by_host and by_host[hostname][0] > mtime_ns:
+                continue
+            item = dict(report)
+            item["_business_report_source"] = str(path.relative_to(ROOT_DIR) if path.is_relative_to(ROOT_DIR) else path)
+            item["_business_report_updated_at"] = updated_at
+            item["_business_report_mtime_epoch"] = path.stat().st_mtime
+            by_host[hostname] = (mtime_ns, item)
+
+    reports_by_host = {hostname: report for hostname, (_, report) in by_host.items()}
+    LATEST_REPORT_BUSINESS_CACHE.update(
+        {"signature": tuple(signature), "robot_signature": robot_signature, "reports": reports_by_host}
+    )
+    return dict(reports_by_host)
+
+
+def report_service_items(report: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
+    services = report.get("services")
+    if isinstance(services, dict):
+        return [(str(name), service) for name, service in services.items() if isinstance(service, dict)]
+    service_health = report.get("service_health")
+    if isinstance(service_health, dict):
+        return [(str(name), service) for name, service in service_health.items() if isinstance(service, dict)]
+    if isinstance(service_health, list):
+        return [(str(service.get("name") or service.get("service_name") or ""), service) for service in service_health if isinstance(service, dict)]
+    return []
+
+
+def service_business_ok(service: dict[str, Any]) -> bool:
+    return service_active(service) or str(service.get("status", "")).upper() == "OK"
+
+
+def service_business_label(name: str) -> str:
+    return name if name.endswith(".service") else f"{name}.service"
+
+
+def service_detail_status_ttl_seconds() -> float:
+    try:
+        return float(cfg("reports", "service_detail_status_ttl_seconds", default=SERVICE_DETAIL_STATUS_TTL_SECONDS))
+    except (TypeError, ValueError):
+        return SERVICE_DETAIL_STATUS_TTL_SECONDS
+
+
+def refresh_status_max_workers(total: int) -> int:
+    try:
+        configured = int(cfg("reports", "refresh_status_max_workers", default=REFRESH_STATUS_MAX_WORKERS))
+    except (TypeError, ValueError):
+        configured = REFRESH_STATUS_MAX_WORKERS
+    return max(1, min(configured, total))
+
+
+def service_details_business_status(services: list[dict[str, Any]], checked_at: str = "") -> dict[str, Any]:
+    failed: list[str] = []
+    warned: list[str] = []
+    for service in services:
+        if not isinstance(service, dict):
+            continue
+        name = str(service.get("name") or service.get("service_name") or "")
+        label = service_business_label(name) if name else "unknown service"
+        status = str(service.get("status", "")).upper()
+        active_state = str(service.get("active_state", "") or "").lower()
+        if status in ("FAIL", "UNREACHABLE") or (status not in ("OK", "WARN") and active_state != "active"):
+            failed.append(label)
+        elif status == "WARN":
+            warned.append(label)
+
+    if failed:
+        reason = f"服务详情显示业务服务异常：{', '.join(failed[:3])}"
+        business_status = "FAIL"
+    elif warned:
+        reason = f"服务详情显示业务服务存在警告：{', '.join(warned[:3])}"
+        business_status = "WARN"
+    else:
+        reason = f"服务详情显示业务服务正常（{checked_at}）" if checked_at else "服务详情显示业务服务正常"
+        business_status = "OK"
+    return default_business_status(reason) | {"business_status": business_status}
+
+
+def public_service_business_status(record: dict[str, Any], now: float | None = None) -> dict[str, Any] | None:
+    now = time.time() if now is None else now
+    received_at = float(record.get("received_at_epoch") or 0)
+    if not received_at:
+        return None
+    age = max(0.0, now - received_at)
+    if age > service_detail_status_ttl_seconds():
+        return None
+    query_error = str(record.get("query_error") or "")
+    if query_error:
+        status = default_business_status(query_error)
+        status.update(
+            {
+                "business_status": "UNKNOWN",
+                "last_heartbeat_at": str(record.get("checked_at", "") or ""),
+                "heartbeat_age_seconds": round(age, 1),
+            }
+        )
+        return status
+    services = record.get("services")
+    if not isinstance(services, list):
+        return None
+    status = service_details_business_status(services, str(record.get("checked_at", "") or ""))
+    status.update(
+        {
+            "last_heartbeat_at": str(record.get("checked_at", "") or ""),
+            "heartbeat_age_seconds": round(age, 1),
+        }
+    )
+    return status
+
+
+def record_robot_service_status(payload: dict[str, Any]) -> None:
+    hostname = str(payload.get("inventory_hostname") or payload.get("host") or "").strip()
+    services = payload.get("services")
+    if not hostname or not isinstance(services, list):
+        return
+    record = {
+        "inventory_hostname": hostname,
+        "checked_at": str(payload.get("checked_at", "") or now_iso()),
+        "services": [dict(service) for service in services if isinstance(service, dict)],
+        "received_at_epoch": time.time(),
+    }
+    with ROBOT_STATUS_LOCK:
+        ROBOT_SERVICE_STATUS[hostname] = record
+
+
+def record_robot_service_query_error(robot: dict[str, str], reason: str) -> None:
+    hostname = str(robot.get("inventory_hostname") or "").strip()
+    if not hostname:
+        return
+    record = {
+        "inventory_hostname": hostname,
+        "checked_at": now_iso(),
+        "services": [],
+        "query_error": reason,
+        "received_at_epoch": time.time(),
+    }
+    with ROBOT_STATUS_LOCK:
+        ROBOT_SERVICE_STATUS[hostname] = record
+
+
+def report_business_status(report: dict[str, Any] | None) -> dict[str, Any]:
+    if not report:
+        return default_business_status()
+
+    updated_at = str(report.get("_business_report_updated_at", "") or "")
+    report_source = str(report.get("_business_report_source", "") or "最新报告")
+    source = f"来自 {report_source} {updated_at}；未收到实时业务心跳" if updated_at else f"来自 {report_source}；未收到实时业务心跳"
+    if not report_business_is_fresh(report):
+        age = report_business_age_seconds(report)
+        age_text = f"{int(age)} 秒" if age is not None else "较长时间"
+        return default_business_status(f"最新业务报告已超过 {age_text}，不再作为当前业务状态（{source}）")
+    if report_is_unreachable(report):
+        return default_business_status(f"最新报告显示机器人无法连接（{source}）") | {"business_status": "FAIL"}
+
+    services = report_service_items(report)
+    scoped_services = [
+        (name, service)
+        for name, service in services
+        if name.removesuffix(".service") in COS_REQUIRED_SERVICES
+    ] or services
+
+    if scoped_services:
+        failed: list[str] = []
+        warned: list[str] = []
+        for name, service in scoped_services:
+            status = str(service.get("status", "")).upper()
+            label = service_business_label(name)
+            if status in ("FAIL", "UNREACHABLE") or (status != "WARN" and not service_business_ok(service)):
+                failed.append(label)
+            elif status == "WARN":
+                warned.append(label)
+        if failed:
+            return default_business_status(f"最新报告显示业务服务异常：{', '.join(failed[:3])}（{source}）") | {"business_status": "FAIL"}
+        if warned:
+            return default_business_status(f"最新报告显示业务服务存在警告：{', '.join(warned[:3])}（{source}）") | {"business_status": "WARN"}
+        return default_business_status(f"最新报告显示业务服务正常（{source}）") | {"business_status": "OK"}
+
+    report_status = str(report.get("overall_status") or report.get("setup_status") or report.get("status") or "").upper()
+    if report_status == "OK":
+        return default_business_status(f"最新报告状态正常（{source}）") | {"business_status": "OK"}
+    if report_status in ("WARN", "FAIL", "UNREACHABLE"):
+        return default_business_status(f"最新报告状态为 {report_status}，但缺少业务服务明细，未作为当前业务状态（{source}）")
+    return default_business_status()
+
+
+def heartbeat_identity(payload: dict[str, Any], robots: list[dict[str, str]]) -> dict[str, str] | None:
+    for key in ("hostname", "inventory_hostname", "host", "robot_id", "ip", "ansible_host"):
+        robot = find_inventory_robot(payload.get(key), robots)
+        if robot:
+            return robot
+    return None
+
+
+def record_robot_heartbeat(payload: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        raise ValueError("heartbeat payload 必须是 JSON 对象")
+    robots = parse_inventory()
+    robot = heartbeat_identity(payload, robots)
+    hostname = str(payload.get("hostname") or payload.get("inventory_hostname") or payload.get("host") or "").strip()
+    robot_id = str(payload.get("robot_id") or "").strip()
+    if robot_id:
+        try:
+            robot_id = normalize_robot_id(robot_id)
+        except ValueError:
+            if not hostname:
+                raise
+    if robot:
+        hostname = robot["inventory_hostname"]
+        robot_id = robot.get("robot_id", robot_id)
+    elif not hostname and robot_id:
+        try:
+            hostname = hostname_from_robot_id(normalize_robot_id(robot_id))
+        except ValueError:
+            hostname = ""
+    if not hostname:
+        raise ValueError("heartbeat 缺少 robot_id 或 hostname")
+
+    services = payload.get("services")
+    topics = payload.get("topics")
+    record = {
+        "inventory_hostname": hostname,
+        "hostname": str(payload.get("hostname") or hostname),
+        "robot_id": robot_id,
+        "ip": str(payload.get("ip") or payload.get("ansible_host") or (robot or {}).get("ansible_host", "")),
+        "services": services if isinstance(services, (dict, list)) else {},
+        "topics": topics if isinstance(topics, (dict, list)) else {},
+        "timestamp": str(payload.get("timestamp") or ""),
+        "last_heartbeat_at": now_iso(),
+        "received_at_epoch": time.time(),
+    }
+    with ROBOT_STATUS_LOCK:
+        ROBOT_HEARTBEATS[hostname] = record
+    return {"status": "OK", "heartbeat": public_heartbeat(record)}
+
+
+def robots_status_payload() -> dict[str, Any]:
+    robots = parse_inventory()
+    now = time.time()
+    with ROBOT_STATUS_LOCK:
+        network_status = {key: dict(value) for key, value in ROBOT_NETWORK_STATUS.items()}
+        heartbeats = {key: dict(value) for key, value in ROBOT_HEARTBEATS.items()}
+        service_status = {key: dict(value) for key, value in ROBOT_SERVICE_STATUS.items()}
+    report_business = latest_report_business_source(robots)
+
+    items: list[dict[str, Any]] = []
+    for robot in robots:
+        hostname = robot["inventory_hostname"]
+        network = network_status.get(hostname) or default_network_status(robot)
+        if str(network.get("network_status", "")).upper() == "OFFLINE":
+            heartbeat = network_offline_business_status(network)
+        elif hostname in heartbeats:
+            heartbeat = public_heartbeat(heartbeats[hostname], now)
+        elif hostname in service_status and (
+            service_heartbeat := public_service_business_status(service_status[hostname], now)
+        ):
+            heartbeat = service_heartbeat
+        else:
+            heartbeat = report_business_status(report_business.get(hostname))
+        items.append(
+            {
+                **robot,
+                "network_status": network.get("network_status", "UNKNOWN"),
+                "latency_ms": network.get("latency_ms"),
+                "checked_at": network.get("checked_at", ""),
+                "reason": network.get("reason", ""),
+                "business_status": heartbeat.get("business_status", "UNKNOWN"),
+                "last_heartbeat_at": heartbeat.get("last_heartbeat_at", ""),
+                "heartbeat_age_seconds": heartbeat.get("heartbeat_age_seconds"),
+                "business_reason": heartbeat.get("business_reason", ""),
+            }
+        )
+    return {"robots": items, "updated_at": now_iso()}
 
 
 def hostname_from_robot_id(robot_id: str) -> str:
@@ -526,36 +1463,186 @@ def aggregate_status(report: dict[str, Any], issues: list[dict[str, Any]], check
     base_status = status_of(report)
     if base_status in ("UNREACHABLE", "SKIP", "NO_REPORT"):
         return base_status
-    statuses = [base_status] if base_status and base_status != "UNKNOWN" else []
-    statuses.extend(str(item.get("status", "")).upper() for item in issues if isinstance(item, dict))
-    statuses.extend(str(item.get("status", "")).upper() for item in checks if isinstance(item, dict))
+    base_statuses = [base_status] if base_status and base_status != "UNKNOWN" else []
+    camera_issue_statuses = [
+        str(item.get("status", "")).upper()
+        for item in issues
+        if isinstance(item, dict) and str(item.get("name", "")).startswith("/cam_")
+    ]
+    non_camera_issue_statuses = [
+        str(item.get("status", "")).upper()
+        for item in issues
+        if isinstance(item, dict) and not str(item.get("name", "")).startswith("/cam_")
+    ]
+    check_statuses = [str(item.get("status", "")).upper() for item in checks if isinstance(item, dict)]
+    service_statuses: list[str] = []
     for key in ("services", "service_health"):
         value = report.get(key)
         service_items = value.values() if isinstance(value, dict) else value if isinstance(value, list) else []
-        statuses.extend(str(item.get("status", "")).upper() for item in service_items if isinstance(item, dict))
-    if any(status in ("FAIL", "UNREACHABLE") for status in statuses):
+        service_statuses.extend(str(item.get("status", "")).upper() for item in service_items if isinstance(item, dict))
+
+    hard_statuses = base_statuses + non_camera_issue_statuses + check_statuses + service_statuses
+    if any(status in ("FAIL", "UNREACHABLE") for status in hard_statuses):
         return "FAIL"
+    if report_setup_success(report):
+        return "OK"
+    statuses = hard_statuses + camera_issue_statuses
     if "WARN" in statuses:
+        return "WARN"
+    if any(status == "FAIL" for status in camera_issue_statuses):
         return "WARN"
     if statuses and all(status == "OK" for status in statuses):
         return "OK"
     return base_status
 
 
+def report_is_unreachable(report: dict[str, Any]) -> bool:
+    if str(report.get("overall_status", "")).upper() == "UNREACHABLE":
+        return True
+
+    if str(report.get("status", "")).upper() == "UNREACHABLE":
+        return True
+
+    text_fields = [
+        report.get("execution_error", ""),
+        report.get("reason", ""),
+        report.get("detail", ""),
+    ]
+    if any("机器人无法连接" in str(value) for value in text_fields):
+        return True
+
+    for key in ("failed_items", "warn_items", "checks", "issues"):
+        items = report.get(key)
+        if not isinstance(items, list):
+            continue
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            if str(item.get("status", "")).upper() == "UNREACHABLE":
+                return True
+    return False
+
+
+def normalized_camera_status(report: dict[str, Any]) -> dict[str, float]:
+    if report_is_unreachable(report):
+        return {}
+
+    raw_status = report.get("camera_status")
+    if isinstance(raw_status, dict):
+        return {
+            "cam_head": float(raw_status.get("cam_head") or 0),
+            "cam_left": float(raw_status.get("cam_left") or 0),
+            "cam_right": float(raw_status.get("cam_right") or 0),
+        }
+
+    status = {"cam_head": 0.0, "cam_left": 0.0, "cam_right": 0.0}
+    if not isinstance(report.get("camera_topics"), list):
+        return status
+
+    topic_to_key = {
+        "/cam_head/compressed_image": "cam_head",
+        "/cam_wrist_left/compressed_image": "cam_left",
+        "/cam_wrist_right/compressed_image": "cam_right",
+    }
+    for item in report.get("camera_topics", []) if isinstance(report.get("camera_topics"), list) else []:
+        if not isinstance(item, dict):
+            continue
+        key = topic_to_key.get(str(item.get("topic", "")))
+        if key:
+            status[key] = float(item.get("rate_hz") or 0)
+    return status
+
+
+def camera_topic_status_for_rate(rate_hz: float) -> str:
+    if rate_hz >= CAMERA_TOPIC_MIN_RATE_HZ:
+        return "OK"
+    if rate_hz > 0:
+        return "WARN"
+    return "FAIL"
+
+
+def normalized_camera_topics(report: dict[str, Any], camera_status: dict[str, float]) -> list[dict[str, Any]]:
+    if report_is_unreachable(report):
+        return []
+
+    if str(report.get("camera_streams_status", "")).upper() == "SKIP":
+        return []
+
+    topic_specs = [
+        ("cam_head", "/cam_head/compressed_image", "头部相机"),
+        ("cam_left", "/cam_wrist_left/compressed_image", "左腕相机"),
+        ("cam_right", "/cam_wrist_right/compressed_image", "右腕相机"),
+    ]
+    raw_items = report.get("camera_topics")
+    by_topic: dict[str, dict[str, Any]] = {}
+    if isinstance(raw_items, list):
+        for item in raw_items:
+            if isinstance(item, dict):
+                by_topic[str(item.get("topic", ""))] = item
+    normalized: list[dict[str, Any]] = []
+    for key, topic, label in topic_specs:
+        existing = by_topic.get(topic, {})
+        rate_hz = float(existing.get("rate_hz", camera_status.get(key, 0) if camera_status else 0) or 0)
+        status = str(existing.get("status") or camera_topic_status_for_rate(rate_hz)).upper()
+        reason = existing.get("reason")
+        suggestion = existing.get("suggestion")
+        if not reason and status == "WARN":
+            reason = "摄像头 topic 帧率不足"
+        if not suggestion and status == "WARN":
+            suggestion = f"检查{label}帧率是否稳定，确认相机连接、系统负载和 cos_teleop.service 状态。"
+        item = {
+            "topic": topic,
+            "label": str(existing.get("label", label) or label),
+            "status": status,
+            "status_cn": translate_status(status),
+            "rate_hz": rate_hz,
+            "reason": translate_phrase(reason or ("" if rate_hz > 0 else "camera topic no data")),
+            "suggestion": translate_phrase(suggestion or ("" if rate_hz > 0 else f"检查{label} Type-C 连接或重启 cos_teleop.service")),
+        }
+        normalized.append(item)
+    return normalized
+
+
+def report_setup_success(report: dict[str, Any]) -> bool:
+    if truthy(report.get("setup_success")):
+        return True
+
+    required_services = report.get("required_services")
+    if isinstance(required_services, dict):
+        return all(
+            service_active(required_services.get(f"{name}.service", {}))
+            for name in COS_REQUIRED_SERVICES
+        )
+
+    services = report.get("services")
+    if isinstance(services, dict):
+        return all(service_active(services.get(name, {})) for name in COS_REQUIRED_SERVICES)
+
+    return False
+
+
 def service_loaded(service: dict[str, Any]) -> bool:
     stdout = str(service.get("stdout", "") or "")
-    return bool(service.get("loaded")) or "Loaded: loaded" in stdout
+    return truthy(service.get("loaded")) or "Loaded: loaded" in stdout
 
 
 def service_enabled(service: dict[str, Any]) -> bool:
     stdout = str(service.get("stdout", "") or "")
     enabled_value = service.get("enabled")
-    return bool(enabled_value) or "\nenabled\n" in f"\n{stdout}\n" or "; enabled;" in stdout
+    return truthy(enabled_value) or "\nenabled\n" in f"\n{stdout}\n" or "; enabled;" in stdout
 
 
 def service_active(service: dict[str, Any]) -> bool:
     stdout = str(service.get("stdout", "") or "")
-    return bool(service.get("active")) or "\nactive\n" in f"\n{stdout}\n" or "Active: active" in stdout
+    return truthy(service.get("active")) or "\nactive\n" in f"\n{stdout}\n" or "Active: active" in stdout
+
+
+def truthy(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on", "ok", "active"}
 
 
 def tail_lines(text: str, count: int = 100) -> str:
@@ -603,30 +1690,292 @@ def clean_ansible_heading(text: str) -> str:
     return re.sub(r"\s+\*+$", "", text.strip())
 
 
+def strip_ansi(text: str) -> str:
+    return ANSI_ESCAPE_RE.sub("", text)
+
+
+def service_progress_label(host: str, service_name: str) -> str:
+    service_label = RESTARTABLE_SERVICES.get(service_name, service_name)
+    return f"{host}：{service_label}"
+
+
+def selected_service_names_for_robot(robot: dict[str, str], service_name: str = "") -> list[str]:
+    if service_name:
+        return [service_name]
+    names = [
+        "cos_agent.service",
+        "cos_teleop.service",
+        "xrobotoolkit-pc-service.service",
+    ]
+    end_effector = str(robot.get("end_effector", "")).strip().lower()
+    if end_effector == "dex1":
+        names.append("dex1_gripper.service")
+    elif end_effector == "brainco":
+        names.append("brainco_hand.service")
+    return names
+
+
+def service_stage_items_for_robots(robots: list[dict[str, str]], service_name: str = "", status: str = "pending") -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    for robot in robots:
+        host = str(robot.get("inventory_hostname") or robot.get("ansible_host") or "unknown")
+        for name in selected_service_names_for_robot(robot, service_name):
+            items.append(
+                {
+                    "key": f"{host}:service:{name}",
+                    "label": service_progress_label(host, name),
+                    "status": status,
+                }
+            )
+    return items
+
+
+def stage_item_status_from_report(status: str) -> str:
+    value = str(status or "").upper()
+    if value == "WARN":
+        return "warn"
+    if value in ("FAIL", "UNREACHABLE"):
+        return "failed"
+    return "done"
+
+
+def service_stage_items_from_reports(reports: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    for report in reports:
+        host = str(report.get("inventory_hostname") or report.get("host") or report.get("ansible_host") or "unknown")
+        services = report.get("services")
+        if not isinstance(services, dict):
+            continue
+        for name, service in services.items():
+            if not isinstance(service, dict):
+                continue
+            items.append(
+                {
+                    "key": f"{host}:service:{name}",
+                    "label": service_progress_label(host, str(name)),
+                    "status": stage_item_status_from_report(str(service.get("status") or "")),
+                    "detail": str(service.get("reason") or service.get("detail") or ""),
+                }
+            )
+    return items
+
+
+def latest_service_stage_items() -> list[dict[str, Any]]:
+    if not LATEST_SUMMARY_PATH.exists():
+        return []
+    data = read_json_file(LATEST_SUMMARY_PATH)
+    reports = [data] if isinstance(data, dict) else [item for item in data if isinstance(item, dict)] if isinstance(data, list) else []
+    return service_stage_items_from_reports(reports)
+
+
+def camera_stage_items_from_reports(reports: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    for report in reports:
+        host = str(report.get("inventory_hostname") or report.get("host") or report.get("ansible_host") or "unknown")
+        camera_topics = report.get("camera_topics")
+        if not isinstance(camera_topics, list):
+            continue
+        for camera in camera_topics:
+            if not isinstance(camera, dict):
+                continue
+            topic = str(camera.get("topic") or "").strip()
+            if not topic:
+                continue
+            label = str(camera.get("label") or camera_label_from_topic(topic))
+            items.append(
+                {
+                    "key": f"{host}:topic:{topic}",
+                    "label": f"{host}：{label}（{topic}）",
+                    "status": stage_item_status_from_report(str(camera.get("status") or "")),
+                    "detail": str(camera.get("reason") or camera.get("detail") or ""),
+                }
+            )
+    return items
+
+
+def latest_camera_stage_items() -> list[dict[str, Any]]:
+    if not LATEST_SUMMARY_PATH.exists():
+        return []
+    data = read_json_file(LATEST_SUMMARY_PATH)
+    reports = [data] if isinstance(data, dict) else [item for item in data if isinstance(item, dict)] if isinstance(data, list) else []
+    return camera_stage_items_from_reports(reports)
+
+
+def merge_job_stage_items(stage_items: dict[str, list[dict[str, Any]]]) -> None:
+    with JOB_LOCK:
+        merge_job_stage_items_by_stage_locked(stage_items)
+
+
+def parse_camera_loop_item(item_text: str) -> tuple[str, str]:
+    value = item_text.strip()
+    if len(value) < 1000 and value.startswith("{"):
+        try:
+            parsed = ast.literal_eval(value)
+        except (SyntaxError, ValueError):
+            parsed = {}
+        if isinstance(parsed, dict):
+            camera_item = parsed.get("item") if isinstance(parsed.get("item"), dict) else parsed
+            if isinstance(camera_item.get("item"), dict):
+                camera_item = camera_item["item"]
+            topic = str(camera_item.get("topic") or "").strip()
+            label = str(camera_item.get("label") or camera_label_from_topic(topic)).strip()
+            if topic:
+                return topic, label or topic
+    label_topic_match = re.match(r"(.+?)（(/[^）]+)）$", value)
+    if label_topic_match:
+        label = label_topic_match.group(1).strip()
+        topic = label_topic_match.group(2).strip()
+        return topic, label or camera_label_from_topic(topic)
+    topic_match = re.search(r"['\"]topic['\"]\s*:\s*['\"]([^'\"]+)['\"]", value)
+    label_match = re.search(r"['\"]label['\"]\s*:\s*['\"]([^'\"]+)['\"]", value)
+    topic = topic_match.group(1) if topic_match else value
+    label = label_match.group(1) if label_match else camera_label_from_topic(topic)
+    return topic, label or topic
+
+
+def append_stage_progress_item(stage_items: dict[str, list[dict[str, Any]]], stage_id: str, item: dict[str, Any]) -> None:
+    stage_items.setdefault(stage_id, []).append(item)
+
+
+def camera_stage_status_from_result(status: str) -> str:
+    value = str(status or "").strip().upper()
+    if value == "OK":
+        return "done"
+    if value == "WARN":
+        return "warn"
+    if value == "FAIL":
+        return "failed"
+    return "pending"
+
+
 def parse_ansible_progress(text: str) -> dict[str, Any]:
-    progress: dict[str, Any] = {"message": "", "phase": "running", "recap_success": False, "recap_failed": False}
+    progress: dict[str, Any] = {
+        "message": "",
+        "phase": "running",
+        "task_name": "",
+        "task_stage_id": "",
+        "stage_items": {},
+        "recap_success": False,
+        "recap_failed": False,
+    }
     recap_seen = False
+    active_task_name = ""
+    last_camera_result_item: tuple[str, str, str] | None = None
+    stage_items: dict[str, list[dict[str, Any]]] = {}
     for raw_line in text.splitlines():
-        line = raw_line.strip()
+        line = strip_ansi(raw_line).strip()
         play_match = re.match(r"PLAY \[(.+?)\]\s+\*+", line)
         if play_match:
             progress.update({"message": f"开始执行：{clean_ansible_heading(play_match.group(1))}", "phase": "running"})
             continue
         task_match = re.match(r"TASK \[(.+?)\]\s+\*+", line)
         if task_match:
-            progress.update({"message": f"正在执行：{clean_ansible_heading(task_match.group(1))}", "phase": "running"})
+            task_name = clean_ansible_heading(task_match.group(1))
+            active_task_name = task_name
+            display_task_name = task_name
+            message = f"正在执行：{task_name}"
+            task_stage_id = task_stage_from_text(task_name)
+            if task_name == "启动相机频率检查":
+                display_task_name = "正在采样相机帧率（约 8 秒）"
+                message = display_task_name
+                task_stage_id = "ros2"
+            elif task_name == "等待相机频率检查完成":
+                display_task_name = "正在等待三路相机帧率结果"
+                message = display_task_name
+                task_stage_id = "ros2"
+            elif task_name in {"记录相机频率状态", "输出相机频率检查结果"}:
+                display_task_name = "正在整理相机帧率结果"
+                message = display_task_name
+                task_stage_id = "ros2"
+            progress.update(
+                {
+                    "message": message,
+                    "phase": "running",
+                    "task_name": display_task_name,
+                    "task_stage_id": task_stage_id,
+                }
+            )
             continue
-        host_match = re.match(r"(ok|changed|failed|fatal): \[([^\]]+)\]", line)
+        host_match = re.match(r"(ok|changed|failed|fatal): \[([^\]]+)\](?: => \(item=(.*)\))?", line)
         if host_match:
-            status, host = host_match.groups()
+            status, host, loop_item = host_match.groups()
+            item_status = "failed" if status in ("failed", "fatal") else "done"
+            if loop_item and active_task_name in {"Check selected services", "检查服务"}:
+                service_name = loop_item.strip()
+                append_stage_progress_item(
+                    stage_items,
+                    "services",
+                    {
+                        "key": f"{host}:service:{service_name}",
+                        "label": service_progress_label(host, service_name),
+                        "status": item_status,
+                    },
+                )
+            elif loop_item and active_task_name in {
+                "Check ROS2 camera topic heartbeats",
+                "检查相机频率",
+                "启动相机频率检查",
+                "等待相机频率检查完成",
+                "输出相机频率检查结果",
+            }:
+                topic, label = parse_camera_loop_item(loop_item)
+                display = label if label and label != topic else camera_label_from_topic(topic)
+                suffix = f"（{topic}）" if topic.startswith("/") and topic not in display else ""
+                camera_item_status = item_status
+                if active_task_name in {"启动相机频率检查", "等待相机频率检查完成", "输出相机频率检查结果"}:
+                    camera_item_status = "pending"
+                if active_task_name == "输出相机频率检查结果":
+                    last_camera_result_item = (host, topic, display)
+                append_stage_progress_item(
+                    stage_items,
+                    "ros2",
+                    {
+                        "key": f"{host}:topic:{topic}",
+                        "label": f"{host}：{display}{suffix}",
+                        "status": camera_item_status,
+                    },
+                )
             if status in ("failed", "fatal"):
                 progress.update({"message": f"{host}：执行失败，请查看日志", "phase": "fail"})
             else:
                 progress.update({"message": f"{host}：该步骤完成", "phase": "running"})
             continue
+        camera_result_match = re.search(r"__CAMERA_TOPIC_STATUS__\s+status=(OK|WARN|FAIL)\s+topic=([^ \"]+)", line)
+        if camera_result_match and last_camera_result_item:
+            result_status, result_topic = camera_result_match.groups()
+            host, fallback_topic, label = last_camera_result_item
+            topic = result_topic or fallback_topic
+            display = label if label and label != topic else camera_label_from_topic(topic)
+            suffix = f"（{topic}）" if topic.startswith("/") and topic not in display else ""
+            append_stage_progress_item(
+                stage_items,
+                "ros2",
+                {
+                    "key": f"{host}:topic:{topic}",
+                    "label": f"{host}：{display}{suffix}",
+                    "status": camera_stage_status_from_result(result_status),
+                },
+            )
+            progress.update(
+                {
+                    "message": f"{host}：相机帧率结果 {result_status}",
+                    "phase": "running",
+                    "task_name": "正在整理相机帧率结果",
+                    "task_stage_id": "ros2",
+                }
+            )
+            last_camera_result_item = None
+            continue
         if "PLAY RECAP" in line:
             recap_seen = True
-            progress.update({"message": "任务执行结束，正在生成中文报告……", "phase": "reporting"})
+            progress.update(
+                {
+                    "message": "任务执行结束，正在生成中文报告……",
+                    "phase": "reporting",
+                    "task_name": "生成中文报告",
+                    "task_stage_id": "report",
+                }
+            )
             continue
         if recap_seen:
             counts = parse_recap_counts(line)
@@ -636,10 +1985,13 @@ def parse_ansible_progress(text: str) -> dict[str, Any]:
                 progress.update({"message": "执行完成：任务成功。", "phase": "success", "recap_success": True})
             else:
                 progress.update({"message": "执行失败：存在失败或无法连接的机器人", "phase": "fail", "recap_failed": True})
+    progress["stage_items"] = stage_items
     return progress
 
 
 def report_source_for_action(action: str) -> Path:
+    if action == DEPLOY_SETUP_AGENT_ACTION:
+        return RAW_REPORTS_DIR / "deploy_setup_agent_summary.json"
     if action == "cos_setup":
         return RAW_REPORTS_DIR / "cos_setup_summary.json"
     return ROOT_REPORTS_DIR / "g1_env_summary.json"
@@ -813,8 +2165,8 @@ def collect_issues(report: dict[str, Any]) -> list[dict[str, Any]]:
     return sorted(dedupe_items(issues), key=issue_sort_key)
 
 
-def raw_outputs(report: dict[str, Any]) -> list[dict[str, str]]:
-    outputs: list[dict[str, str]] = []
+def raw_outputs(report: dict[str, Any]) -> list[dict[str, Any]]:
+    outputs: list[dict[str, Any]] = []
 
     def add(label: str, obj: Any) -> None:
         if not isinstance(obj, dict):
@@ -852,6 +2204,11 @@ def raw_outputs(report: dict[str, Any]) -> list[dict[str, str]]:
         add(str(item.get("name", "安装项")), item)
     for key in ("first_attempt", "retry_attempt", "librealsense_cleanup", "remote_start", "time_sync"):
         add(key, report.get(key))
+    for phase in report.get("agent_phases", []) if isinstance(report.get("agent_phases"), list) else []:
+        if not isinstance(phase, dict):
+            continue
+        phase_name = str(phase.get("label") or phase.get("name") or "agent phase")
+        add(f"agent: {phase_name}", phase)
     services = report.get("services")
     if isinstance(services, dict):
         for name, obj in services.items():
@@ -871,6 +2228,8 @@ def normalize_report(report: dict[str, Any]) -> dict[str, Any]:
     ]
     issues = collect_issues(report)
     status = aggregate_status(report, issues, checks)
+    camera_status = normalized_camera_status(report)
+    camera_topics = normalized_camera_topics(report, camera_status)
     return {
         "inventory_hostname": robot_identity(report),
         "robot_id": str(report.get("robot_id", "")),
@@ -879,6 +2238,9 @@ def normalize_report(report: dict[str, Any]) -> dict[str, Any]:
         "mode": str(report.get("mode", "cos_setup" if report.get("setup_status") else "")),
         "status": status,
         "status_cn": translate_status(status),
+        "system_services_status": str(report.get("system_services_status", "")),
+        "camera_streams_status": str(report.get("camera_streams_status", "")),
+        "camera_status": camera_status,
         "issue_count": len(issues),
         "summary": (
             "cos_setup.sh 执行完成，cos_agent / cos_teleop / xrobotoolkit-pc-service 状态正常。"
@@ -910,19 +2272,7 @@ def normalize_report(report: dict[str, Any]) -> dict[str, Any]:
             }
             for item in checks
         ],
-        "camera_topics": [
-            {
-                "topic": str(item.get("topic", "")),
-                "label": str(item.get("label", "") or camera_label_from_topic(str(item.get("topic", "") or ""))),
-                "status": str(item.get("status", "")).upper(),
-                "status_cn": translate_status(item.get("status", "")),
-                "rate_hz": item.get("rate_hz", 0),
-                "reason": translate_phrase(item.get("reason", "")),
-                "suggestion": translate_phrase(item.get("suggestion", "")),
-            }
-            for item in report.get("camera_topics", [])
-            if isinstance(item, dict)
-        ],
+        "camera_topics": camera_topics,
         "raw_outputs": raw_outputs(report),
     }
 
@@ -1002,6 +2352,10 @@ def latest_action_outcome() -> tuple[int, str, str]:
         if first["status"] in ("FAIL", "UNREACHABLE"):
             return 1, f"执行失败：{reason}", "fail"
         return 0, f"执行完成但存在警告：{reason}", "partial"
+    if any(str(item.get("mode", "")) == CAMERA_CHECK_ACTION for item in reports if isinstance(item, dict)):
+        host_names = [robot["inventory_hostname"] for robot in robots if robot.get("inventory_hostname")]
+        host_label = host_names[0] if len(host_names) == 1 else "所有机器人"
+        return 0, f"执行成功：{host_label} 三路相机帧率正常。", "success"
     if any(str(item.get("mode", "")) in SERVICE_ACTIONS for item in reports if isinstance(item, dict)):
         host_names = [robot["inventory_hostname"] for robot in robots if robot.get("inventory_hostname")]
         host_label = host_names[0] if len(host_names) == 1 else "所有机器人"
@@ -1047,7 +2401,7 @@ def selected_inventory_robots(selected: list[str]) -> list[dict[str, str]]:
     return [
         robot
         for robot in parse_inventory()
-        if not names or robot["inventory_hostname"] in names or robot.get("robot_id") in selected_ids
+        if not names or robot["inventory_hostname"] in names or robot.get("robot_id") in selected_ids or robot.get("ansible_host") in names
     ]
 
 
@@ -1061,6 +2415,9 @@ def unreachable_report(robot: dict[str, str], action: str, detail: str = "") -> 
         "end_effector": robot.get("end_effector", ""),
         "mode": action,
         "overall_status": "UNREACHABLE",
+        "camera_streams_status": "SKIP",
+        "camera_status": {},
+        "camera_topics": [],
         "execution_error": reason,
         "reason": reason,
         "suggestion": suggestion,
@@ -1167,12 +2524,54 @@ def build_execution_summary(action: str, execution: dict[str, Any]) -> list[dict
     ]
 
 
+def build_single_execution_report(action: str, execution: dict[str, Any], robot: dict[str, str]) -> list[dict[str, Any]]:
+    combined = "\n".join([str(execution.get("stdout", "")), str(execution.get("stderr", ""))])
+    returncode = int(execution.get("returncode") or 0)
+    classified = classify_error(combined)
+    status = "OK" if returncode == 0 else "UNREACHABLE" if classified["reason"].startswith("机器人无法连接") else "FAIL"
+    execution_error = "" if returncode == 0 else classified["reason"]
+    return [
+        {
+            "inventory_hostname": robot.get("inventory_hostname", robot.get("ansible_host", "unknown")),
+            "robot_id": robot.get("robot_id", ""),
+            "ansible_host": robot.get("ansible_host", ""),
+            "end_effector": robot.get("end_effector", ""),
+            "mode": action,
+            "overall_status": status,
+            "execution_error": execution_error,
+            "reason": execution_error,
+            "suggestion": "" if returncode == 0 else classified["suggestion"],
+            "stdout": execution.get("stdout", ""),
+            "stderr": execution.get("stderr", ""),
+            "latest_output": execution.get("latest_output", ""),
+            "command": execution.get("command", ""),
+            "cwd": execution.get("cwd", ""),
+            "returncode": returncode,
+            "report_path": execution.get("report_path", ""),
+            "log_file": execution.get("log_file", ""),
+            "start_time": execution.get("start_time", ""),
+            "end_time": execution.get("end_time", ""),
+            "duration_seconds": execution.get("duration_seconds", ""),
+        }
+    ]
+
+
 def build_execution_failure_summary(action: str, execution: dict[str, Any]) -> list[dict[str, Any]]:
     return build_execution_summary(action, execution)
 
 
 def action_timeout_seconds(action: str) -> int:
-    defaults = {"check": 600, "install": 1800, "cos_setup": 1800, "service_check": 300, "service_restart": 300}
+    defaults = {
+        "check": 600,
+        "install": 1800,
+        "cos_setup": 1800,
+        "service_check": 300,
+        "service_restart": 300,
+        CAMERA_CHECK_ACTION: 300,
+        HAND_TEST_ACTION: 600,
+        DEPLOY_ACTION: 1800,
+        DEPLOY_SETUP_AGENT_ACTION: 3600,
+    }
     return int(cfg("ansible", f"{action}_timeout_seconds", default=defaults.get(action, 900)))
 
 
@@ -1183,6 +2582,437 @@ def ssh_common_args() -> str:
         "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "
         f"-o ConnectTimeout={connect_timeout} -o ConnectionAttempts=1"
     )
+
+
+def ssh_key_common_args() -> list[str]:
+    connect_timeout = int(cfg("ansible", "ssh_connect_timeout", default=5))
+    return [
+        "-o",
+        "BatchMode=yes",
+        "-o",
+        "PreferredAuthentications=publickey",
+        "-o",
+        "PubkeyAuthentication=yes",
+        "-o",
+        "StrictHostKeyChecking=no",
+        "-o",
+        "UserKnownHostsFile=/dev/null",
+        "-o",
+        f"ConnectTimeout={connect_timeout}",
+        "-o",
+        "ConnectionAttempts=1",
+    ]
+
+
+def service_detail_names_for_robot(robot: dict[str, str]) -> list[str]:
+    names = list(SERVICE_DETAIL_BASE_NAMES)
+    hand_service = SERVICE_DETAIL_HAND_NAMES.get(str(robot.get("end_effector", "")).strip().lower())
+    if hand_service:
+        names.append(hand_service)
+    return names
+
+
+def service_detail_script(service_names: list[str]) -> str:
+    service_args = " ".join(shlex.quote(name) for name in service_names)
+    return f"""set +e
+for service in {service_args}; do
+  printf '__SERVICE_BEGIN__ name=%s\\n' "$service"
+  systemctl show "$service" --property=LoadState,ActiveState,UnitFileState,MainPID --no-pager 2>&1
+  show_rc=$?
+  printf '__SERVICE_SHOW_RC__ %s\\n' "$show_rc"
+  printf '__SERVICE_END__\\n'
+done
+"""
+
+
+def service_detail_command(robot: dict[str, str], ssh_password: str) -> list[str]:
+    host = str(robot.get("ansible_host", "")).strip()
+    if not host:
+        raise ValueError("机器人未配置 ansible_host")
+    remote_cmd = "bash -lc " + shlex.quote(service_detail_script(service_detail_names_for_robot(robot)))
+    if ssh_password:
+        args = shlex.split(ssh_common_args())
+    else:
+        args = ssh_key_common_args()
+    return ["ssh", *args, f"unitree@{host}", remote_cmd]
+
+
+def camera_binding_script(operation: str) -> str:
+    if operation == "inspect":
+        return """for d in /dev/video*; do
+  [ -e "$d" ] || continue
+  echo "===== $d ====="
+  udevadm info -q property -n "$d" 2>/dev/null | grep -E "DEVNAME|ID_PATH|ID_V4L_PRODUCT|ID_SERIAL"
+done
+"""
+    if operation == "reload":
+        sudo_prompt = "[sudo] password: "
+        return (
+            f"sudo -S -p {shlex.quote(sudo_prompt)} udevadm control --reload-rules && "
+            f"sudo -S -p {shlex.quote(sudo_prompt)} udevadm trigger && "
+            "ls -la /dev/cam_*"
+        )
+    raise ValueError("未知摄像头绑定操作")
+
+
+def camera_binding_command(robot: dict[str, str], ssh_password: str, operation: str) -> list[str]:
+    host = str(robot.get("ansible_host", "")).strip()
+    if not host:
+        raise ValueError("机器人未配置 ansible_host")
+    remote_cmd = "bash -lc " + shlex.quote(camera_binding_script(operation))
+    args = shlex.split(ssh_common_args()) if ssh_password else ssh_key_common_args()
+    return ["ssh", *args, f"unitree@{host}", remote_cmd]
+
+
+def run_ssh_capture(cmd: list[str], ssh_password: str, sudo_password: str = "", timeout_seconds: float = SERVICE_QUERY_TIMEOUT_SECONDS) -> tuple[int, str]:
+    deadline = time.time() + timeout_seconds
+    prompt_timeout = min(5, int(cfg("ansible", "prompt_timeout", default=15)))
+    child = pexpect.spawn(cmd[0], cmd[1:], cwd=str(ROOT_DIR), encoding="utf-8", timeout=prompt_timeout)
+    output: list[str] = []
+    ssh_prompt_attempts = 0
+    sudo_prompt_attempts = 0
+    generic_password_attempts = 0
+    try:
+        while True:
+            index = child.expect(PASSWORD_PROMPTS)
+            if child.before:
+                output.append(child.before)
+            if index in SSH_PROMPT_INDEXES:
+                if not ssh_password:
+                    child.terminate(force=True)
+                    raise PermissionError("详情服务查询需要 SSH 密码或免密 SSH。")
+                ssh_prompt_attempts += 1
+                if ssh_prompt_attempts > MAX_PASSWORD_PROMPT_ATTEMPTS:
+                    child.terminate(force=True)
+                    raise PermissionError("SSH 密码错误，请确认 unitree 密码。")
+                child.sendline(ssh_password)
+            elif index in BECOME_PROMPT_INDEXES:
+                sudo_prompt_attempts += 1
+                if sudo_prompt_attempts > MAX_PASSWORD_PROMPT_ATTEMPTS:
+                    child.terminate(force=True)
+                    raise PermissionError("sudo 密码未被正确识别或认证失败。")
+                child.sendline(sudo_password or ssh_password)
+            elif index == GENERIC_PASSWORD_PROMPT_INDEX:
+                password = sudo_password if (ssh_prompt_attempts or sudo_prompt_attempts) and sudo_password else ssh_password
+                if not password:
+                    child.terminate(force=True)
+                    raise PermissionError("详情服务查询需要 SSH 密码或免密 SSH。")
+                generic_password_attempts += 1
+                if generic_password_attempts > MAX_PASSWORD_PROMPT_ATTEMPTS:
+                    child.terminate(force=True)
+                    raise PermissionError("密码认证失败。请检查 SSH 密码和 sudo 密码是否正确。")
+                child.sendline(password)
+            elif index == HOST_KEY_PROMPT_INDEX:
+                child.sendline("yes")
+            elif index == TIMEOUT_PROMPT_INDEX:
+                if not child.isalive():
+                    child.close()
+                    break
+                if time.time() > deadline:
+                    child.terminate(force=True)
+                    raise TimeoutError("服务状态查询超时。")
+                continue
+            elif index == EOF_PROMPT_INDEX:
+                break
+    finally:
+        child.close()
+    returncode = child.exitstatus if child.exitstatus is not None else child.signalstatus or 1
+    return returncode, "".join(output)
+
+
+def parse_camera_binding_output(output: str) -> list[dict[str, Any]]:
+    devices: list[dict[str, Any]] = []
+    current: dict[str, Any] | None = None
+    for line in output.splitlines():
+        match = re.fullmatch(r"===== (.+) =====", line.strip())
+        if match:
+            current = {"device": match.group(1), "properties": {}}
+            devices.append(current)
+            continue
+        if current is None or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if any(property_key in key for property_key in CAMERA_BINDING_PROPERTY_KEYS):
+            current["properties"][key] = value.strip()
+
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for device in devices:
+        properties = device["properties"]
+        product = str(properties.get("ID_V4L_PRODUCT") or "未识别 ID_V4L_PRODUCT")
+        grouped.setdefault(product, []).append(device)
+
+    categories: list[dict[str, Any]] = []
+    for index, (product, items) in enumerate(grouped.items(), start=1):
+        copy_sections: list[str] = []
+        for item in items:
+            lines = [f"===== {item['device']} ====="]
+            lines.extend(f"{key}={value}" for key, value in item["properties"].items())
+            copy_sections.append("\n".join(lines))
+        categories.append(
+            {
+                "index": index,
+                "product": product,
+                "device_count": len(items),
+                "devices": items,
+                "copy_text": "\n".join(copy_sections),
+            }
+        )
+    return categories
+
+
+def selected_camera_binding_robot(selected: list[str]) -> dict[str, str]:
+    if len([item for item in selected if str(item).strip()]) != 1:
+        raise ValueError("摄像头绑定检查一次只能选择 1 台机器人")
+    robots = selected_inventory_robots(selected)
+    if len(robots) != 1:
+        raise ValueError("摄像头绑定检查一次只能选择 1 台机器人")
+    return robots[0]
+
+
+def camera_binding_payload(
+    operation: str,
+    selected: list[str],
+    ssh_password: str,
+    sudo_password: str,
+) -> dict[str, Any]:
+    robot = selected_camera_binding_robot(selected)
+    cmd = camera_binding_command(robot, ssh_password, operation)
+    returncode, output = run_ssh_capture(
+        cmd,
+        ssh_password=ssh_password,
+        sudo_password=sudo_password,
+        timeout_seconds=30.0,
+    )
+    if returncode != 0 and ("Permission denied" in output or "publickey" in output):
+        raise PermissionError("SSH 认证失败，请确认 unitree 密码。")
+
+    base = {
+        "inventory_hostname": robot["inventory_hostname"],
+        "robot_id": robot.get("robot_id", ""),
+        "ansible_host": robot.get("ansible_host", ""),
+        "checked_at": now_iso(),
+        "returncode": returncode,
+        "output": output.strip(),
+    }
+    if operation == "inspect":
+        categories = parse_camera_binding_output(output)
+        device_count = sum(int(item["device_count"]) for item in categories)
+        if returncode != 0 and not categories:
+            raise RuntimeError(f"摄像头信息读取失败，返回码：{returncode}。{tail_lines(output, 8)}")
+        return {
+            **base,
+            "status": "OK" if len(categories) == 3 else "WARN",
+            "category_count": len(categories),
+            "device_count": device_count,
+            "categories": categories,
+            "rule_path": CAMERA_BINDING_RULE_PATH,
+        }
+    return {
+        **base,
+        "status": "OK" if returncode == 0 else "FAIL",
+        "command": "sudo udevadm control --reload-rules && sudo udevadm trigger && ls -la /dev/cam_*",
+    }
+
+
+def parse_marker_value(line: str, key: str) -> str:
+    match = re.search(rf"(?:^| ){re.escape(key)}=([^ ]*)", line)
+    return match.group(1) if match else ""
+
+
+def parse_service_detail_output(output: str, service_names: list[str]) -> list[dict[str, Any]]:
+    sections: dict[str, dict[str, Any]] = {}
+    current: dict[str, Any] | None = None
+    in_status = False
+    for line in output.splitlines():
+        if line.startswith("__SERVICE_BEGIN__"):
+            name = parse_marker_value(line, "name")
+            current = {"name": name, "show": {}, "status_lines": [], "show_rc": "", "status_rc": ""}
+            in_status = False
+            if name:
+                sections[name] = current
+            continue
+        if current is None:
+            continue
+        if line.startswith("__SERVICE_SHOW_RC__"):
+            current["show_rc"] = line.rsplit(" ", 1)[-1].strip()
+            continue
+        if line == "__SERVICE_STATUS_BEGIN__":
+            in_status = True
+            continue
+        if line.startswith("__SERVICE_STATUS_RC__"):
+            current["status_rc"] = line.rsplit(" ", 1)[-1].strip()
+            in_status = False
+            continue
+        if line.startswith("__SERVICE_END__"):
+            current = None
+            in_status = False
+            continue
+        if in_status:
+            current["status_lines"].append(line)
+            continue
+        if "=" in line:
+            key, value = line.split("=", 1)
+            current["show"][key.strip()] = value.strip()
+
+    return [normalize_service_detail(name, sections.get(name)) for name in service_names]
+
+
+def normalize_service_detail(name: str, section: dict[str, Any] | None) -> dict[str, Any]:
+    section = section or {}
+    show = section.get("show") if isinstance(section.get("show"), dict) else {}
+    load_state = str(show.get("LoadState") or "unknown")
+    active_state = str(show.get("ActiveState") or "unknown")
+    enabled_state = str(show.get("UnitFileState") or "unknown")
+    pid_text = str(show.get("MainPID") or "0")
+    pid = int(pid_text) if pid_text.isdigit() else 0
+    enabled_ok_states = {"enabled", "enabled-runtime", "static", "generated", "indirect"}
+    if load_state != "loaded":
+        status = "FAIL"
+        reason = f"{name} 未安装或未加载。"
+    elif active_state == "active" and enabled_state in enabled_ok_states:
+        status = "OK"
+        reason = ""
+    elif active_state == "active":
+        status = "WARN"
+        reason = f"{name} 正在运行，但 enabled_state={enabled_state}。"
+    else:
+        status = "FAIL"
+        reason = f"{name} 未正常运行，active_state={active_state}。"
+    return {
+        "name": name,
+        "load_state": load_state,
+        "active_state": active_state,
+        "enabled_state": enabled_state,
+        "pid": pid,
+        "status": status,
+        "reason": reason,
+    }
+
+
+def robot_services_payload(hostname: str, ssh_password: str = "", sudo_password: str = "") -> dict[str, Any]:
+    robot = find_inventory_robot(hostname)
+    if not robot:
+        raise ValueError("机器人不存在")
+    service_names = service_detail_names_for_robot(robot)
+    cmd = service_detail_command(robot, ssh_password)
+    returncode, output = run_ssh_capture(cmd, ssh_password=ssh_password, sudo_password=sudo_password)
+    if returncode != 0:
+        if "Permission denied" in output or "publickey" in output:
+            raise PermissionError("SSH 认证失败。请输入 SSH 密码，或确认已配置免密 SSH。")
+        raise RuntimeError(f"服务状态查询失败，返回码：{returncode}。{tail_lines(output, 8)}")
+    payload = {
+        "inventory_hostname": robot["inventory_hostname"],
+        "robot_id": robot.get("robot_id", ""),
+        "ansible_host": robot.get("ansible_host", ""),
+        "service_names": service_names,
+        "checked_at": now_iso(),
+        "refresh_seconds": SERVICE_DETAIL_REFRESH_SECONDS,
+        "services": parse_service_detail_output(output, service_names),
+    }
+    record_robot_service_status(payload)
+    return payload
+
+
+def refresh_robot_business_status(robot: dict[str, str], ssh_password: str = "", sudo_password: str = "") -> dict[str, Any]:
+    hostname = str(robot.get("inventory_hostname") or "")
+    try:
+        payload = robot_services_payload(hostname, ssh_password=ssh_password, sudo_password=sudo_password)
+        return {
+            "inventory_hostname": hostname,
+            "status": "OK",
+            "checked_at": payload.get("checked_at", ""),
+            "service_count": len(payload.get("services", [])),
+            "reason": "",
+        }
+    except Exception as exc:  # noqa: BLE001 - keep refresh stable per robot
+        reason = f"业务状态查询失败：{exc}"
+        record_robot_service_query_error(robot, reason)
+        return {
+            "inventory_hostname": hostname,
+            "status": "QUERY_FAILED",
+            "checked_at": now_iso(),
+            "service_count": 0,
+            "reason": reason,
+        }
+
+
+def refresh_online_robot_business_status(
+    robots: list[dict[str, str]],
+    network_status: dict[str, dict[str, Any]],
+    ssh_password: str = "",
+    sudo_password: str = "",
+) -> list[dict[str, Any]]:
+    online_robots = [
+        robot
+        for robot in robots
+        if str(network_status.get(robot["inventory_hostname"], {}).get("network_status", "")).upper() == "ONLINE"
+    ]
+    if not online_robots:
+        return []
+
+    results: list[dict[str, Any]] = []
+    max_workers = refresh_status_max_workers(len(online_robots))
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {
+            executor.submit(refresh_robot_business_status, robot, ssh_password, sudo_password): robot
+            for robot in online_robots
+        }
+        for future in as_completed(futures):
+            robot = futures[future]
+            try:
+                results.append(future.result())
+            except Exception as exc:  # noqa: BLE001 - do not let one robot stop the batch
+                reason = f"业务状态查询失败：{exc}"
+                record_robot_service_query_error(robot, reason)
+                results.append(
+                    {
+                        "inventory_hostname": str(robot.get("inventory_hostname") or ""),
+                        "status": "QUERY_FAILED",
+                        "checked_at": now_iso(),
+                        "service_count": 0,
+                        "reason": reason,
+                    }
+                )
+    results.sort(key=lambda item: item.get("inventory_hostname", ""))
+    return results
+
+
+def refresh_latest_report_with_status(ssh_password: str = "", sudo_password: str = "") -> dict[str, Any]:
+    if not REFRESH_LOCK.acquire(blocking=False):
+        raise RuntimeError("正在刷新最新报告，请稍后再试。")
+    started_at = now_iso()
+    try:
+        robots = parse_inventory()
+        network_status = refresh_robot_network_status_once()
+        business_results = refresh_online_robot_business_status(
+            robots,
+            network_status,
+            ssh_password=ssh_password,
+            sudo_password=sudo_password,
+        )
+        payload = latest_report_payload()
+        robot_statuses = robots_status_payload()
+        online_count = sum(
+            1
+            for robot in robots
+            if str(network_status.get(robot["inventory_hostname"], {}).get("network_status", "")).upper() == "ONLINE"
+        )
+        failed_business = [item for item in business_results if item.get("status") != "OK"]
+        payload["robot_statuses"] = robot_statuses.get("robots", [])
+        payload["refresh"] = {
+            "started_at": started_at,
+            "finished_at": now_iso(),
+            "network_checked": len(robots),
+            "network_online": online_count,
+            "network_offline": max(0, len(robots) - online_count),
+            "business_checked": len(business_results),
+            "business_failed": len(failed_business),
+            "business_results": business_results,
+        }
+        return payload
+    finally:
+        REFRESH_LOCK.release()
 
 
 def service_action_playbook(action: str, service_name: str = "") -> Path:
@@ -1214,14 +3044,36 @@ def service_action_playbook(action: str, service_name: str = "") -> Path:
     service_report_file: "{(ROOT_REPORTS_DIR / "g1_env_summary.json")}"
     service_action: "{action}"
     service_restart_name: "{service_name}"
-    camera_topic_min_rate_hz: 0.0
+    camera_topic_min_rate_hz: {CAMERA_TOPIC_MIN_RATE_HZ:.1f}
+    camera_topic_sample_seconds: 8
+    camera_status_default:
+      cam_head: 0
+      cam_left: 0
+      cam_right: 0
+    should_check_services: "{{{{ service_action != 'camera_check' }}}}"
+    should_check_camera_topics: >-
+      {{{{
+        service_action == 'camera_check'
+        or
+        (
+          service_action == 'service_check'
+          and (
+            (service_restart_name | default('') | length) == 0
+            or service_restart_name == 'cos_teleop.service'
+          )
+        )
+        or service_restart_name == 'cos_teleop.service'
+      }}}}
     camera_topics:
       - topic: /cam_head/compressed_image
         label: 头部相机
+        device: /dev/cam_head
       - topic: /cam_wrist_left/compressed_image
         label: 左腕相机
+        device: /dev/cam_wrist_left
       - topic: /cam_wrist_right/compressed_image
         label: 右腕相机
+        device: /dev/cam_wrist_right
 
   tasks:
 {restart_line}
@@ -1229,12 +3081,23 @@ def service_action_playbook(action: str, service_name: str = "") -> Path:
       ansible.builtin.set_fact:
         selected_service_names: >-
           {{{{
-            ['cos_agent.service', 'cos_teleop.service', 'xrobotoolkit-pc-service.service']
-            + (['dex1_gripper.service'] if (end_effector | default('none') | lower) == 'dex1' else [])
-            + (['brainco_hand.service'] if (end_effector | default('none') | lower) == 'brainco' else [])
+            []
+            if service_action == 'camera_check'
+            else [service_restart_name]
+            if (service_restart_name | default('') | length) > 0
+            else (
+              ['cos_agent.service', 'cos_teleop.service', 'xrobotoolkit-pc-service.service']
+              + (['dex1_gripper.service'] if (end_effector | default('none') | lower) == 'dex1' else [])
+              + (['brainco_hand.service'] if (end_effector | default('none') | lower) == 'brainco' else [])
+            )
           }}}}
 
-    - name: Check selected services
+    - name: 初始化服务检查结果
+      ansible.builtin.set_fact:
+        service_result_map: {{}}
+        service_check_items: []
+
+    - name: 检查服务
       become: true
       ansible.builtin.shell: |
         set +e
@@ -1251,11 +3114,11 @@ def service_action_playbook(action: str, service_name: str = "") -> Path:
           status="$(systemctl status "$service" --no-pager -l 2>&1)"
           status_rc=$?
           if [ "$service" = "dex1_gripper.service" ] || [ "$service" = "brainco_hand.service" ]; then
-            journal="$(journalctl -u "$service" -n 120 --no-pager -o cat 2>&1)"
+            journal="$(journalctl -u "$service" -n 60 --no-pager -o cat 2>&1)"
           elif [ "$service" = "cos_teleop.service" ]; then
-            journal="$(journalctl -u "$service" -n 200 --no-pager -o cat 2>&1)"
+            journal="$(journalctl -u "$service" -n 60 --no-pager -o cat 2>&1)"
           else
-            journal="$(journalctl -u "$service" -n 150 --no-pager 2>&1)"
+            journal="$(journalctl -u "$service" -n 60 --no-pager 2>&1)"
           fi
           if printf '%s\\n' "$status" | grep -q 'Loaded: loaded'; then loaded=1; else loaded=0; fi
         }}
@@ -1263,6 +3126,15 @@ def service_action_playbook(action: str, service_name: str = "") -> Path:
           log_issue=0
           health_ok=0
           detail="not active"
+          if [ "{{{{ service_action }}}}" = "service_restart" ]; then
+            if [ "$active_rc" -eq 0 ]; then
+              health_ok=1
+              detail="active"
+            else
+              detail="not active"
+            fi
+            return
+          fi
           if [ "$service" = "xrobotoolkit-pc-service.service" ]; then
             if [ "$loaded" -eq 1 ] && [ "$enabled_rc" -eq 0 ]; then
               health_ok=1
@@ -1285,11 +3157,20 @@ def service_action_playbook(action: str, service_name: str = "") -> Path:
             return
           fi
           if [ "$service" = "dex1_gripper.service" ]; then
+            dex1_startup_ok=0
+            dex1_runtime_ok=0
             if printf '%s\\n' "$journal" | grep -q 'Available Serial Ports' &&
                printf '%s\\n' "$journal" | grep -q 'Detected motors' &&
                printf '%s\\n' "$journal" | grep -q 'Side: right' &&
                printf '%s\\n' "$journal" | grep -q 'Side: left' &&
-               printf '%s\\n' "$journal" | grep -q 'Dex1-1 Gripper Server started'; then
+               printf '%s\\n' "$journal" | grep -Eq 'Dex1-1 Gripper Server.*started'; then
+              dex1_startup_ok=1
+            fi
+            if printf '%s\\n' "$journal" | grep -Eq 'No DDS command received on rt/dex1/right/cmd.*motor 0.*publishing state' &&
+               printf '%s\\n' "$journal" | grep -Eq 'No DDS command received on rt/dex1/left/cmd.*motor 1.*publishing state'; then
+              dex1_runtime_ok=1
+            fi
+            if [ "$dex1_startup_ok" -eq 1 ] || [ "$dex1_runtime_ok" -eq 1 ]; then
               health_ok=1
               detail="active/enabled/motors bound"
             else
@@ -1311,7 +3192,7 @@ def service_action_playbook(action: str, service_name: str = "") -> Path:
             fi
             return
           fi
-          if [ "$service" = "cos_teleop.service" ] && printf '%s\\n' "$journal" | grep -Eiq 'RealSense camera\\[0\\] frame wait timed out|frame wait timed out|Failed to read direct MJPEG frame|Failed to open V4L2 device|Failed to initialize V4L2|Failed to initialize V4L2 direct MJPEG capture|Camera initialization failed|No such file or directory'; then
+          if [ "$service" = "cos_teleop.service" ] && printf '%s\\n' "$journal" | grep -Eiq 'Failed to read direct MJPEG frame|Failed to open V4L2 device|Failed to initialize V4L2|Failed to initialize V4L2 direct MJPEG capture|Camera initialization failed|No such file or directory'; then
             log_issue=1
             detail="cos_teleop journal has recent camera initialization error"
             return
@@ -1321,7 +3202,7 @@ def service_action_playbook(action: str, service_name: str = "") -> Path:
         }}
         check_service
         evaluate_health
-        if [ "$service" != "xrobotoolkit-pc-service.service" ] && {{ [ "$active_rc" -ne 0 ] || [ "$log_issue" -eq 1 ]; }}; then
+        if [ "{{{{ service_action }}}}" = "service_restart" ] && [ "$service" != "xrobotoolkit-pc-service.service" ] && {{ [ "$active_rc" -ne 0 ] || [ "$log_issue" -eq 1 ]; }}; then
           systemctl restart "$service"
           restart_rc=$?
           sleep 3
@@ -1342,6 +3223,8 @@ def service_action_playbook(action: str, service_name: str = "") -> Path:
       args:
         executable: /bin/bash
       loop: "{{{{ selected_service_names }}}}"
+      loop_control:
+        label: "{{{{ item }}}}"
       register: service_checks
       changed_when: false
       failed_when: false
@@ -1363,7 +3246,7 @@ def service_action_playbook(action: str, service_name: str = "") -> Path:
                 'restart_rc': item.stdout | regex_search('__SERVICE_META__ .*restart_rc=([^\\n ]*)', '\\1') | default(''),
                 'camera_error': (
                   item.item == 'cos_teleop.service' and
-                  ((item.stdout | default('') | lower) is regex('realsense camera\\[0\\] frame wait timed out|frame wait timed out|failed to read direct mjpeg frame|failed to open v4l2 device|failed to initialize v4l2|failed to initialize v4l2 direct mjpeg capture|camera initialization failed|no such file or directory'))
+                  ((item.stdout | default('') | lower) is regex('failed to read direct mjpeg frame|failed to open v4l2 device|failed to initialize v4l2|failed to initialize v4l2 direct mjpeg capture|camera initialization failed|no such file or directory'))
                 ),
                 'status': (
                   'WARN'
@@ -1387,7 +3270,7 @@ def service_action_playbook(action: str, service_name: str = "") -> Path:
                   else 'cos_teleop journal has recent camera initialization error'
                   if (
                     item.item == 'cos_teleop.service' and
-                    ((item.stdout | default('') | lower) is regex('realsense camera\\[0\\] frame wait timed out|frame wait timed out|failed to read direct mjpeg frame|failed to open v4l2 device|failed to initialize v4l2|failed to initialize v4l2 direct mjpeg capture|camera initialization failed|no such file or directory'))
+                    ((item.stdout | default('') | lower) is regex('failed to read direct mjpeg frame|failed to open v4l2 device|failed to initialize v4l2|failed to initialize v4l2 direct mjpeg capture|camera initialization failed|no such file or directory'))
                   )
                   else 'loaded/enabled'
                   if item.item == 'xrobotoolkit-pc-service.service' and (item.stdout is search('__SERVICE_META__ .*health_ok=1'))
@@ -1427,6 +3310,8 @@ def service_action_playbook(action: str, service_name: str = "") -> Path:
             }})
           }}}}
       loop: "{{{{ service_checks.results | default([]) }}}}"
+      loop_control:
+        label: "{{{{ item.item }}}}"
 
     - name: Build service check items
       ansible.builtin.set_fact:
@@ -1435,107 +3320,132 @@ def service_action_playbook(action: str, service_name: str = "") -> Path:
             service_result_map | dict2items | map(attribute='value') | list
           }}}}
 
-    - name: Check ROS2 camera topic heartbeats
+    - name: 启动相机频率检查
       ansible.builtin.shell: |
         set +e
         export HOME=/home/unitree
         export ROS_VERSION=2
         export ROS_DISTRO=foxy
         export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-        export CYCLONEDDS_URI=/home/unitree/cyclonedds_ws/cyclonedds.xml
+        export CYCLONEDDS_URI=file:///home/unitree/unitree_ros2/cyclonedds_ws/src/cyclonedds.xml
         export PYTHONUNBUFFERED=1
         source /opt/ros/foxy/setup.bash
-        if [ -f /home/unitree/cyclonedds_ws/install/setup.bash ]; then
-          source /home/unitree/cyclonedds_ws/install/setup.bash
+        if [ -f /home/unitree/unitree_ros2/cyclonedds_ws/install/setup.bash ]; then
+          source /home/unitree/unitree_ros2/cyclonedds_ws/install/setup.bash
         fi
         if [ -f /home/unitree/cos_ws/install/setup.bash ]; then
           source /home/unitree/cos_ws/install/setup.bash
         fi
-        python3 - "{{{{ item.topic }}}}" <<'PY'
-        import sys
-        import time
-
-        topic = sys.argv[1]
-        duration_seconds = 6.0
-        count = 0
-        first_time = None
-        last_time = None
-
-        try:
-            import rclpy
-            from sensor_msgs.msg import CompressedImage
-        except Exception as exc:
-            print("ros_hz_error: import failed: %s" % exc, file=sys.stderr, flush=True)
-            sys.exit(2)
-
-        def callback(_msg):
-            global count, first_time, last_time
-            now = time.monotonic()
-            if first_time is None:
-                first_time = now
-            last_time = now
-            count += 1
-
-        try:
-            rclpy.init(args=None)
-            node = rclpy.create_node("operator_console_camera_hz_check")
-            node.create_subscription(CompressedImage, topic, callback, 10)
-            deadline = time.monotonic() + duration_seconds
-            while time.monotonic() < deadline:
-                rclpy.spin_once(node, timeout_sec=0.2)
-            node.destroy_node()
-            rclpy.shutdown()
-        except Exception as exc:
-            print("ros_hz_error: %s" % exc, file=sys.stderr, flush=True)
-            try:
-                rclpy.shutdown()
-            except Exception:
-                pass
-            sys.exit(3)
-
-        if count >= 2 and first_time is not None and last_time is not None and last_time > first_time:
-            rate = (count - 1) / (last_time - first_time)
-            print("average rate: %.3f" % rate, flush=True)
-            sys.exit(0)
-
-        print("ros_hz_warning: no messages received on %s count=%d" % (topic, count), flush=True)
-        sys.exit(1)
-        PY
+        topic="{{{{ item.topic }}}}"
+        device="{{{{ item.device | default('') }}}}"
+        min_rate="{{{{ camera_topic_min_rate_hz }}}}"
+        sample_seconds="{{{{ camera_topic_sample_seconds | int }}}}"
+        if [ -n "$device" ] && [ ! -e "$device" ]; then
+          printf 'camera_device_missing: %s\\n' "$device"
+          exit 2
+        fi
+        hz_output_file="$(mktemp)"
+        ros2 topic hz "$topic" > "$hz_output_file" 2>&1 &
+        hz_pid=$!
+        sleep "$sample_seconds"
+        if kill -0 "$hz_pid" >/dev/null 2>&1; then
+          kill "$hz_pid" >/dev/null 2>&1 || true
+          wait "$hz_pid" >/dev/null 2>&1 || true
+          hz_rc=124
+        else
+          wait "$hz_pid"
+          hz_rc=$?
+        fi
+        hz_output="$(cat "$hz_output_file" 2>/dev/null || true)"
+        rm -f "$hz_output_file"
+        printf '%s\\n' "$hz_output"
+        hz_rate="$(printf '%s\\n' "$hz_output" | sed -n 's/.*average rate:[[:space:]]*\\([0-9][0-9.]*\\).*/\\1/p' | tail -n 1)"
+        if [ -z "$hz_rate" ]; then
+          printf 'ros_hz_warning: no average rate received on %s rc=%s\\n' "$topic" "$hz_rc"
+          exit 1
+        fi
+        if awk "BEGIN {{ exit !($hz_rate >= $min_rate) }}"; then
+          exit 0
+        fi
+        printf 'ros_hz_warning: average rate %s Hz below minimum %s Hz on %s rc=%s\\n' "$hz_rate" "$min_rate" "$topic" "$hz_rc"
+        exit 1
       args:
         executable: /bin/bash
       loop: "{{{{ camera_topics }}}}"
-      register: camera_topic_hz_checks
+      loop_control:
+        label: "{{{{ item.label }}}}（{{{{ item.topic }}}}）"
+      async: 25
+      poll: 0
+      register: camera_topic_hz_jobs
       changed_when: false
       failed_when: false
+      when: should_check_camera_topics | bool
 
-    - name: Initialize ROS2 camera topic heartbeat results
+    - name: 等待相机频率检查完成
+      ansible.builtin.async_status:
+        jid: "{{{{ item.ansible_job_id }}}}"
+      loop: "{{{{ camera_topic_hz_jobs.results | default([]) | selectattr('ansible_job_id', 'defined') | list }}}}"
+      loop_control:
+        label: "{{{{ item.item.label | default('相机') }}}}（{{{{ item.item.topic | default(item.ansible_job_id) }}}}）"
+      register: camera_topic_hz_checks
+      until: camera_topic_hz_checks.finished
+      retries: 20
+      delay: 1
+      changed_when: false
+      failed_when: false
+      when: should_check_camera_topics | bool
+
+    - name: 初始化相机频率原始结果
+      ansible.builtin.set_fact:
+        camera_topic_hz_results: []
+      when: should_check_camera_topics | bool
+
+    - name: 整理相机频率并发结果
+      ansible.builtin.set_fact:
+        camera_topic_hz_results: "{{{{ camera_topic_hz_results + [camera_topic_hz_result] }}}}"
+      vars:
+        camera_topic_hz_result:
+          item: "{{{{ item.item.item | default(item.item) }}}}"
+          stdout: "{{{{ item.stdout | default('') }}}}"
+          stderr: "{{{{ item.stderr | default('') }}}}"
+          rc: "{{{{ item.rc | default(1) }}}}"
+      loop: "{{{{ camera_topic_hz_checks.results | default([]) }}}}"
+      loop_control:
+        label: "{{{{ item.item.item.label | default(item.item.item.topic | default(item.item.ansible_job_id | default('camera topic'))) }}}}"
+      when: should_check_camera_topics | bool
+
+    - name: 初始化相机频率结果
       ansible.builtin.set_fact:
         camera_topic_results: []
 
-    - name: Record ROS2 camera topic heartbeat status
+    - name: 记录相机频率状态
       ansible.builtin.set_fact:
         camera_topic_results: "{{{{ camera_topic_results + [camera_topic_result] }}}}"
       vars:
         camera_topic_rate_matches: "{{{{ item.stdout | default('') | regex_findall('average rate:\\\\s*([0-9]+(?:\\\\.[0-9]+)?)') }}}}"
         camera_topic_rate_hz: "{{{{ (camera_topic_rate_matches | first | default('0', true)) | float }}}}"
-        camera_topic_ok: "{{{{ (item.rc | default(1) == 0) and (camera_topic_rate_hz | float > camera_topic_min_rate_hz | default(0.0) | float) }}}}"
-        camera_topic_reason: "{{{{ item.item.label }}}}无数据"
-        camera_topic_suggestion: "检查{{{{ item.item.label }}}} Type-C 连接或重启 cos_teleop.service"
+        camera_topic_ok: "{{{{ camera_topic_rate_hz | float >= camera_topic_min_rate_hz | default(0.0) | float }}}}"
+        camera_topic_low_rate: "{{{{ camera_topic_rate_hz | float > 0 and camera_topic_rate_hz | float < camera_topic_min_rate_hz | default(0.0) | float }}}}"
+        camera_topic_status: "{{{{ 'OK' if camera_topic_ok | bool else 'WARN' if camera_topic_low_rate | bool else 'FAIL' }}}}"
+        camera_topic_reason: "{{{{ '摄像头 topic 帧率不足' if camera_topic_low_rate | bool else 'camera topic no data' }}}}"
+        camera_topic_suggestion: "{{{{ '检查' ~ item.item.label ~ '帧率是否稳定，确认相机连接、系统负载和 cos_teleop.service 状态。' if camera_topic_low_rate | bool else '检查' ~ item.item.label ~ ' Type-C 连接或重启 cos_teleop.service' }}}}"
         camera_topic_detail: >-
           {{{{
             'average rate: ' ~ camera_topic_rate_hz ~ ' Hz'
             if camera_topic_ok | bool
-            else 'timeout 10 ros2 topic hz ' ~ item.item.topic ~ ' did not receive messages'
+            else 'average rate: ' ~ camera_topic_rate_hz ~ ' Hz below minimum ' ~ camera_topic_min_rate_hz ~ ' Hz'
+            if camera_topic_low_rate | bool
+            else 'timeout ' ~ camera_topic_sample_seconds ~ 's ros2 topic hz ' ~ item.item.topic ~ ' did not receive messages'
           }}}}
         camera_topic_result: >-
           {{{{
             {{
               'topic': item.item.topic,
               'label': item.item.label,
-              'status': ('OK' if camera_topic_ok | bool else 'WARN'),
+              'status': camera_topic_status,
               'rate_hz': camera_topic_rate_hz | float
             }}
-            | combine({{}} if camera_topic_ok | bool else {{
+            | combine({{}} if camera_topic_status == 'OK' else {{
               'reason': camera_topic_reason,
               'suggestion': camera_topic_suggestion,
               'detail': camera_topic_detail,
@@ -1543,7 +3453,80 @@ def service_action_playbook(action: str, service_name: str = "") -> Path:
               'stderr': item.stderr | default('')
             }})
           }}}}
-      loop: "{{{{ camera_topic_hz_checks.results | default([]) }}}}"
+      loop: "{{{{ camera_topic_hz_results | default([]) }}}}"
+      when: should_check_camera_topics | bool
+
+    - name: Build structured camera status map
+      ansible.builtin.set_fact:
+        camera_topic_by_topic: "{{{{ camera_topic_by_topic | default({{}}) | combine({{item.topic: item}}) }}}}"
+      loop: "{{{{ camera_topic_results | default([]) }}}}"
+      when: should_check_camera_topics | bool
+
+    - name: 初始化标准化相机频率结果
+      ansible.builtin.set_fact:
+        camera_topic_results_normalized: []
+
+    - name: 标准化相机频率结果
+      ansible.builtin.set_fact:
+        camera_topic_results_normalized: "{{{{ camera_topic_results_normalized + [camera_topic_result] }}}}"
+      vars:
+        existing_camera_topic: "{{{{ camera_topic_by_topic.get(item.topic, {{}}) }}}}"
+        camera_topic_result: >-
+          {{{{
+            {{
+              'topic': item.topic,
+              'label': item.label,
+              'status': existing_camera_topic.get('status', 'FAIL'),
+              'rate_hz': existing_camera_topic.get('rate_hz', 0) | float
+            }}
+            | combine({{}} if existing_camera_topic.get('status', 'FAIL') == 'OK' else {{
+              'reason': existing_camera_topic.get('reason', 'camera topic no data'),
+              'suggestion': existing_camera_topic.get('suggestion', '检查' ~ item.label ~ ' Type-C 连接或重启 cos_teleop.service'),
+              'detail': existing_camera_topic.get('detail', 'timeout ' ~ camera_topic_sample_seconds ~ 's ros2 topic hz ' ~ item.topic ~ ' did not return data'),
+              'stdout': existing_camera_topic.get('stdout', ''),
+              'stderr': existing_camera_topic.get('stderr', '')
+            }})
+          }}}}
+      loop: "{{{{ camera_topics }}}}"
+      when: should_check_camera_topics | bool
+
+    - name: 替换为标准化相机频率结果
+      ansible.builtin.set_fact:
+        camera_topic_results: "{{{{ camera_topic_results_normalized }}}}"
+      when: should_check_camera_topics | bool
+
+    - name: 输出相机频率检查结果
+      ansible.builtin.debug:
+        msg: "__CAMERA_TOPIC_STATUS__ status={{{{ item.status }}}} topic={{{{ item.topic }}}} rate_hz={{{{ item.rate_hz | default(0) }}}}"
+      loop: "{{{{ camera_topic_results | default([]) }}}}"
+      loop_control:
+        label: "{{{{ item.label | default('相机') }}}}（{{{{ item.topic | default('unknown') }}}}）"
+      changed_when: false
+      failed_when: false
+      when: should_check_camera_topics | bool
+
+    - name: Build structured camera status map
+      ansible.builtin.set_fact:
+        camera_status: >-
+          {{{{
+            camera_status | default({{}}) | combine({{
+              (
+                'cam_head'
+                if item.topic == '/cam_head/compressed_image'
+                else 'cam_left'
+                if item.topic == '/cam_wrist_left/compressed_image'
+                else 'cam_right'
+              ): item.rate_hz | float
+            }})
+          }}}}
+      loop: "{{{{ camera_topic_results | default([]) }}}}"
+      when: should_check_camera_topics | bool
+
+    - name: Initialize service issue lists
+      ansible.builtin.set_fact:
+        service_failed_items: []
+        service_warn_items: []
+        camera_failed_items: []
 
     - name: Build service issue lists
       ansible.builtin.set_fact:
@@ -1559,12 +3542,21 @@ def service_action_playbook(action: str, service_name: str = "") -> Path:
             | selectattr('value.status', 'equalto', 'WARN')
             | map(attribute='key') | list
           }}}}
-        camera_warn_items: >-
+        camera_failed_items: >-
           {{{{
             camera_topic_results | default([])
-            | selectattr('status', 'equalto', 'WARN')
+            | rejectattr('status', 'equalto', 'OK')
             | map(attribute='topic') | list
           }}}}
+
+    - name: Evaluate missing cameras
+      ansible.builtin.set_fact:
+        all_camera_missing: "{{{{ (should_check_camera_topics | bool) and ((camera_topic_results | default([]) | rejectattr('status', 'equalto', 'FAIL') | list | length) == 0) }}}}"
+
+    - name: Build service subsystem statuses
+      ansible.builtin.set_fact:
+        system_services_status: "{{{{ 'SKIP' if not (should_check_services | bool) else 'FAIL' if service_failed_items | length > 0 else 'WARN' if service_warn_items | length > 0 else 'OK' }}}}"
+        camera_streams_status: "{{{{ 'FAIL' if all_camera_missing | bool else 'WARN' if camera_failed_items | length > 0 else 'OK' if should_check_camera_topics | bool else 'SKIP' }}}}"
 
     - name: Build service final report
       ansible.builtin.set_fact:
@@ -1574,22 +3566,29 @@ def service_action_playbook(action: str, service_name: str = "") -> Path:
           ansible_host: "{{{{ ansible_host | default(inventory_hostname) }}}}"
           robot_id: "{{{{ robot_id | default('unknown') }}}}"
           mode: "{{{{ service_action }}}}"
+          system_services_status: "{{{{ system_services_status }}}}"
+          camera_streams_status: "{{{{ camera_streams_status }}}}"
           overall_status: >-
             {{{{
               'FAIL'
-              if service_failed_items | length > 0
+              if (service_failed_items | length > 0 or (service_action in ['service_check', 'camera_check'] and all_camera_missing | bool))
               else 'WARN'
-              if (service_warn_items | length > 0 or camera_warn_items | length > 0)
+              if (service_warn_items | length > 0 or camera_failed_items | length > 0)
               else 'OK'
             }}}}
           summary: >-
             {{{{
-              '服务状态正常。'
-              if (service_failed_items | length == 0 and service_warn_items | length == 0 and camera_warn_items | length == 0)
-              else '服务存在异常：' ~ ((service_failed_items + service_warn_items + camera_warn_items) | join(', '))
+              '相机帧率正常。'
+              if service_action == 'camera_check' and camera_failed_items | length == 0
+              else '相机帧率存在异常：' ~ (camera_failed_items | join(', '))
+              if service_action == 'camera_check'
+              else '服务状态正常。'
+              if (service_failed_items | length == 0 and service_warn_items | length == 0 and camera_failed_items | length == 0)
+              else '服务存在异常：' ~ ((service_failed_items + service_warn_items + camera_failed_items) | join(', '))
             }}}}
           services: "{{{{ service_result_map | default({{}}) }}}}"
           checks: "{{{{ service_result_map | dict2items | map(attribute='value') | list }}}}"
+          camera_status: "{{{{ camera_status | default(camera_status_default) }}}}"
           camera_topics: "{{{{ camera_topic_results | default([]) }}}}"
           restart:
             service: "{{{{ service_restart_name }}}}"
@@ -1662,9 +3661,138 @@ def build_ansible_command(action: str, robots: list[str], service_name: str = ""
     return cmd, ROOT_DIR
 
 
+def run_deploy_to_robot(ip: str, password: str, log_file: Path, append: bool = False) -> tuple[int, str, str]:
+    robot_dir = ROOT_DIR / "deploy_eva_robot检测" / "robot"
+    cmd = [
+        "bash",
+        "-c",
+        f"export REMOTE_HOST={shlex.quote(ip)} && ./deploy_to_robot.sh",
+    ]
+    return run_pexpect_command(
+        action=DEPLOY_ACTION,
+        cmd=cmd,
+        cwd=robot_dir,
+        ssh_password=password,
+        sudo_password=password,
+        log_file=log_file,
+        append=append,
+    )
+
+
 def set_job(**updates: Any) -> None:
+    updates = dict(updates)
+    explicit_stage_id = str(updates.pop("task_stage_id", "") or "")
+    current_task = str(updates.pop("current_task", "") or "")
+    stage_items = updates.pop("stage_items", {})
     with JOB_LOCK:
+        starting_new = (
+            updates.get("running") is True
+            and updates.get("returncode") is None
+            and "action" in updates
+        )
+        if starting_new:
+            action = str(updates.get("action") or "")
+            CURRENT_JOB.update(
+                {
+                    "stages": make_job_stages(action),
+                    "current_stage": "",
+                    "current_task": "",
+                    "current_command": "",
+                    "cancellable": False,
+                    "cancel_requested": False,
+                    "robot_label": "",
+                    "hand_type": "",
+                    "hand_side": "",
+                    "hand_side_cn": "",
+                }
+            )
         CURRENT_JOB.update(updates)
+        if current_task:
+            CURRENT_JOB["current_task"] = current_task
+        elif "message" in updates:
+            CURRENT_JOB["current_task"] = str(updates.get("message") or "")
+        if "cmd" in updates:
+            CURRENT_JOB["current_command"] = str(updates.get("cmd") or "")
+        if CURRENT_JOB.get("running"):
+            stage_id = stage_id_for_job_update_locked(
+                {
+                    **updates,
+                    "current_task": current_task or CURRENT_JOB.get("current_task", ""),
+                },
+                explicit_stage_id,
+            )
+            if stage_id:
+                update_job_stage_locked(
+                    stage_id,
+                    task=current_task or str(updates.get("message") or CURRENT_JOB.get("current_task") or ""),
+                    command=str(updates.get("cmd") or CURRENT_JOB.get("current_command") or ""),
+                )
+            if isinstance(stage_items, dict):
+                merge_job_stage_items_by_stage_locked(stage_items)
+        elif updates.get("running") is False:
+            finalize_job_stages_locked(str(CURRENT_JOB.get("phase") or updates.get("phase") or ""))
+
+
+def job_cancel_requested() -> bool:
+    with JOB_LOCK:
+        return bool(CURRENT_JOB.get("cancel_requested"))
+
+
+def hand_test_command(robot: dict[str, str], side: str) -> tuple[list[str], Path, str]:
+    hand_type = str(robot.get("end_effector", "")).strip().lower()
+    host = str(robot.get("ansible_host", "")).strip()
+    if side not in HAND_TEST_SIDES:
+        raise ValueError("请选择左手或右手")
+    if hand_type == "dex1":
+        remote_dir = "/home/unitree/g1_setup/dex1_1_service/bin"
+        side_arg = "-l" if side == "left" else "-r"
+        remote_cmd = f"cd {remote_dir} && sudo ./test_dex1_1_gripper_server {side_arg}"
+    elif hand_type == "brainco":
+        remote_dir = "/home/unitree/g1_setup/brainco_hand_service/bin"
+        remote_cmd = f"cd {remote_dir} && sudo ./test_brainco_hand_server {side}"
+    else:
+        raise ValueError("当前机器人未配置 dex1 或 brainco，无法执行手测试")
+    cmd = ["ssh", "-tt", *shlex.split(ssh_common_args()), f"unitree@{host}", remote_cmd]
+    return cmd, ROOT_DIR, remote_cmd
+
+
+def selected_hand_test_robot(robots: list[str]) -> dict[str, str]:
+    selected = selected_inventory_robots(robots)
+    if len(selected) != 1:
+        raise ValueError("验证手是否能动一次只能选择 1 台机器人")
+    robot = selected[0]
+    if str(robot.get("end_effector", "")).strip().lower() not in {"dex1", "brainco"}:
+        raise ValueError("当前机器人 end_effector 不是 dex1 或 brainco，无法测试手")
+    return robot
+
+
+def cancel_current_job() -> dict[str, Any]:
+    with JOB_LOCK:
+        if not CURRENT_JOB.get("running"):
+            return job_payload_locked()
+        if CURRENT_JOB.get("action") != HAND_TEST_ACTION:
+            raise ValueError("当前任务不支持从页面取消")
+        CURRENT_JOB.update(
+            {
+                "cancel_requested": True,
+                "message": "正在取消手测试，请稍候……",
+                "phase": "cancelling",
+                "cancellable": False,
+            }
+        )
+    with PROCESS_LOCK:
+        child = CURRENT_PROCESS.get("child")
+    if child is not None and child.isalive():
+        try:
+            child.sendcontrol("c")
+        except Exception:
+            pass
+        try:
+            child.terminate(force=False)
+        except Exception:
+            pass
+    with JOB_LOCK:
+        return job_payload_locked()
 
 
 def update_job_from_log(log_file: Path, fallback: str = "任务仍在执行，请稍候……") -> dict[str, Any]:
@@ -1673,16 +3801,33 @@ def update_job_from_log(log_file: Path, fallback: str = "任务仍在执行，�
         return {"message": fallback, "phase": "running"}
     text = log_file.read_text(encoding="utf-8", errors="replace")
     progress = parse_ansible_progress(text)
-    set_job(message=progress.get("message") or fallback, phase=progress.get("phase", "running"))
+    set_job(
+        message=progress.get("message") or fallback,
+        phase=progress.get("phase", "running"),
+        current_task=progress.get("task_name", ""),
+        task_stage_id=progress.get("task_stage_id", ""),
+        stage_items=progress.get("stage_items", {}),
+    )
     return progress
 
 
-def run_pexpect_command(action: str, cmd: list[str], cwd: Path, ssh_password: str, sudo_password: str, log_file: Path) -> tuple[int, str, str]:
+def run_pexpect_command(
+    action: str,
+    cmd: list[str],
+    cwd: Path,
+    ssh_password: str,
+    sudo_password: str,
+    log_file: Path,
+    append: bool = False,
+) -> tuple[int, str, str]:
     deadline = time.time() + action_timeout_seconds(action)
     env = os.environ.copy()
     env["ANSIBLE_SSH_RETRIES"] = str(int(cfg("ansible", "ssh_retries", default=1)))
     env["ANSIBLE_TIMEOUT"] = str(int(cfg("ansible", "ansible_timeout", default=15)))
-    with log_file.open("w", encoding="utf-8") as log:
+    mode = "a" if append else "w"
+    with log_file.open(mode, encoding="utf-8") as log:
+        if append and log.tell() > 0:
+            log.write("\n\n")
         log.write(f"$ {shlex.join(cmd)}\n")
         log.write(f"cwd={cwd}\n\n")
         log.flush()
@@ -1771,7 +3916,643 @@ def run_pexpect_command(action: str, cmd: list[str], cwd: Path, ssh_password: st
     return returncode, stdout, stderr
 
 
+def run_hand_test_pexpect(
+    cmd: list[str],
+    cwd: Path,
+    ssh_password: str,
+    sudo_password: str,
+    log_file: Path,
+    robot_label: str,
+    side_cn: str,
+) -> tuple[int, str, str, bool]:
+    deadline = time.time() + action_timeout_seconds(HAND_TEST_ACTION)
+    env = os.environ.copy()
+    env["PYTHONUNBUFFERED"] = "1"
+    running_message = f"{robot_label} {side_cn} 正在测试，请观察手是否在动。需要停止时点击取消测试。"
+    cancelled = False
+    child: pexpect.spawn | None = None
+    with log_file.open("w", encoding="utf-8") as log:
+        log.write(f"$ {shlex.join(cmd)}\n")
+        log.write(f"cwd={cwd}\n\n")
+        log.flush()
+        child = pexpect.spawn(cmd[0], cmd[1:], cwd=str(cwd), env=env, encoding="utf-8", timeout=int(cfg("ansible", "prompt_timeout", default=15)))
+        child.logfile_read = log
+        with PROCESS_LOCK:
+            CURRENT_PROCESS["child"] = child
+        ssh_prompt_attempts = 0
+        sudo_prompt_attempts = 0
+        generic_password_attempts = 0
+        try:
+            while True:
+                if job_cancel_requested():
+                    cancelled = True
+                    log.write("\n[operator_console] 用户取消手测试，正在停止远程测试进程\n")
+                    log.flush()
+                    if child.isalive():
+                        child.sendcontrol("c")
+                        time.sleep(0.5)
+                        child.terminate(force=True)
+                    break
+                index = child.expect(PASSWORD_PROMPTS)
+                log.flush()
+                if index in SSH_PROMPT_INDEXES:
+                    ssh_prompt_attempts += 1
+                    if ssh_prompt_attempts > MAX_PASSWORD_PROMPT_ATTEMPTS:
+                        child.terminate(force=True)
+                        raise PermissionError("密码认证失败。请检查 SSH 密码是否正确。")
+                    set_job(message="正在连接机器人……", phase="running")
+                    log.write("\n[operator_console] detected SSH password prompt, password sent\n")
+                    log.flush()
+                    child.sendline(ssh_password)
+                elif index in BECOME_PROMPT_INDEXES:
+                    sudo_prompt_attempts += 1
+                    if sudo_prompt_attempts > MAX_PASSWORD_PROMPT_ATTEMPTS:
+                        child.terminate(force=True)
+                        raise PermissionError("sudo 密码未被正确识别或认证失败。请重新输入 sudo 密码后重试。")
+                    set_job(message="正在获取 sudo 权限并启动手测试……", phase="running")
+                    log.write("\n[operator_console] detected sudo password prompt, sudo password sent\n")
+                    log.flush()
+                    child.sendline(sudo_password or ssh_password)
+                elif index == GENERIC_PASSWORD_PROMPT_INDEX:
+                    generic_password_attempts += 1
+                    if generic_password_attempts > MAX_PASSWORD_PROMPT_ATTEMPTS:
+                        child.terminate(force=True)
+                        raise PermissionError("密码认证失败。请检查 SSH 密码和 sudo 密码是否正确。")
+                    if ssh_prompt_attempts > 0 or sudo_prompt_attempts > 0:
+                        password = sudo_password or ssh_password
+                    else:
+                        password = ssh_password
+                    set_job(message="正在连接机器人或获取 sudo 权限……", phase="running")
+                    log.write("\n[operator_console] detected generic password prompt, password sent\n")
+                    log.flush()
+                    child.sendline(password)
+                elif index == HOST_KEY_PROMPT_INDEX:
+                    child.sendline("yes")
+                elif index == TIMEOUT_PROMPT_INDEX:
+                    if not child.isalive():
+                        child.close()
+                        break
+                    if time.time() > deadline:
+                        child.terminate(force=True)
+                        raise TimeoutError("手测试执行超时，已停止远程测试进程。")
+                    set_job(message=running_message, phase="running")
+                    continue
+                elif index == EOF_PROMPT_INDEX:
+                    cancelled = job_cancel_requested()
+                    break
+        finally:
+            with PROCESS_LOCK:
+                if CURRENT_PROCESS.get("child") is child:
+                    CURRENT_PROCESS["child"] = None
+            if child is not None:
+                child.close()
+                returncode = child.exitstatus if child.exitstatus is not None else child.signalstatus or 1
+            else:
+                returncode = 1
+            if cancelled:
+                returncode = 130
+            log.write(f"\nreturncode={returncode}\n")
+            log.flush()
+    text = log_file.read_text(encoding="utf-8", errors="replace")
+    return returncode, text, "", cancelled
+
+
+def append_agent_log(log_file: Path, message: str) -> None:
+    with log_file.open("a", encoding="utf-8") as log:
+        log.write(f"\n[deploy_setup_agent] {message}\n")
+        log.flush()
+
+
+def agent_report_file(robot: dict[str, str]) -> Path:
+    return RAW_REPORTS_DIR / f"{DEPLOY_SETUP_AGENT_ACTION}_{robot['inventory_hostname']}.json"
+
+
+def clear_cos_setup_reports(hostname: str) -> None:
+    for path in (RAW_REPORTS_DIR / "cos_setup_summary.json", RAW_REPORTS_DIR / f"cos_setup_{hostname}.json"):
+        if path.exists():
+            try:
+                path.unlink()
+            except OSError:
+                pass
+
+
+def load_cos_setup_report(robot: dict[str, str]) -> dict[str, Any]:
+    candidates = [
+        RAW_REPORTS_DIR / f"cos_setup_{robot['inventory_hostname']}.json",
+        RAW_REPORTS_DIR / "cos_setup_summary.json",
+    ]
+    for path in candidates:
+        if not path.exists():
+            continue
+        try:
+            reports = latest_report_candidates(read_json_file(path))
+        except (OSError, ValueError, json.JSONDecodeError):
+            continue
+        for report in reports:
+            matched = find_inventory_robot(robot_identity(report), [robot])
+            if matched:
+                return dict(report)
+    return {}
+
+
+def cos_setup_report_text(report: dict[str, Any]) -> str:
+    parts = [text_from_obj(report)]
+    for key in ("first_attempt", "retry_attempt", "librealsense_cleanup", "remote_start", "time_sync"):
+        value = report.get(key)
+        if isinstance(value, dict):
+            parts.append(text_from_obj(value))
+    return "\n".join(parts)
+
+
+def agent_match_rule(text: str) -> dict[str, str]:
+    haystack = text.lower()
+    for rule in AGENT_DIAGNOSIS_RULES:
+        if any(str(keyword).lower() in haystack for keyword in rule["keywords"]):
+            return {key: str(value) for key, value in rule.items() if key != "keywords"}
+    return {}
+
+
+def agent_diagnosis(text: str, cos_report: dict[str, Any] | None = None) -> dict[str, str]:
+    report = cos_report or {}
+    haystack = "\n".join([text, cos_setup_report_text(report)])
+    if truthy(report.get("realsense_error_detected")):
+        rule = next((item for item in AGENT_DIAGNOSIS_RULES if item["id"] == "realsense"), {})
+        if rule:
+            return {key: str(value) for key, value in rule.items() if key != "keywords"}
+    matched = agent_match_rule(haystack)
+    if matched:
+        return matched
+    classified = classify_error(haystack)
+    return {
+        "id": "generic",
+        "reason": classified["reason"],
+        "suggestion": classified["suggestion"],
+        "repair_action": "",
+    }
+
+
+def report_status_for_agent(report: dict[str, Any], returncode: int) -> str:
+    if report:
+        try:
+            status = normalize_report(report)["status"]
+        except Exception:  # noqa: BLE001 - report normalization should not hide the raw result
+            status = status_of(report)
+        if status in ("OK", "WARN", "FAIL", "UNREACHABLE", "SKIP", "NO_REPORT"):
+            return status
+    return "OK" if returncode == 0 else "FAIL"
+
+
+def build_agent_phase(
+    name: str,
+    label: str,
+    status: str,
+    rc: int,
+    started_at: str,
+    ended_at: str,
+    detail: str = "",
+    stdout: str = "",
+    stderr: str = "",
+    command: str = "",
+    cwd: str = "",
+    report_path: str = "",
+) -> dict[str, Any]:
+    return {
+        "name": name,
+        "label": label,
+        "status": status,
+        "rc": rc,
+        "started_at": started_at,
+        "ended_at": ended_at,
+        "detail": detail,
+        "stdout": stdout,
+        "stderr": stderr,
+        "command": command,
+        "cwd": cwd,
+        "report_path": report_path,
+    }
+
+
+def agent_phase_checks(phases: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        {
+            "name": str(phase.get("label") or phase.get("name") or "agent phase"),
+            "status": str(phase.get("status") or "UNKNOWN").upper(),
+            "detail": str(phase.get("detail") or f"rc={phase.get('rc', '')}"),
+        }
+        for phase in phases
+    ]
+
+
+def build_deploy_setup_agent_report(
+    robot: dict[str, str],
+    final_status: str,
+    summary: str,
+    diagnosis: dict[str, str],
+    phases: list[dict[str, Any]],
+    cos_report: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    report = dict(cos_report or {})
+    issue_status = "WARN" if final_status == "WARN" else "FAIL"
+    issue = {
+        "name": "智能部署 / 修复",
+        "status": issue_status,
+        "reason": diagnosis.get("reason", ""),
+        "suggestion": diagnosis.get("suggestion", ""),
+        "detail": "\n".join(
+            f"{phase.get('label')}: {phase.get('status')} rc={phase.get('rc')}"
+            for phase in phases
+        ),
+    }
+    checks = agent_phase_checks(phases)
+    report.update(
+        {
+            "inventory_hostname": robot.get("inventory_hostname", ""),
+            "robot_id": robot.get("robot_id", ""),
+            "ansible_host": robot.get("ansible_host", ""),
+            "end_effector": robot.get("end_effector", ""),
+            "mode": DEPLOY_SETUP_AGENT_ACTION,
+            "overall_status": final_status,
+            "agent_status": final_status,
+            "agent_summary": summary,
+            "setup_success": final_status == "OK" or truthy(report.get("setup_success")),
+            "checks": checks,
+            "agent_phases": phases,
+        }
+    )
+    if final_status == "OK":
+        report["execution_error"] = ""
+    elif final_status == "WARN":
+        report["warn_items"] = [issue, *[item for item in report.get("warn_items", []) if isinstance(item, dict)]]
+        report["execution_error"] = diagnosis.get("reason", "")
+    else:
+        report["failed_items"] = [issue, *[item for item in report.get("failed_items", []) if isinstance(item, dict)]]
+        report["execution_error"] = diagnosis.get("reason", "")
+    return report
+
+
+def write_deploy_setup_agent_report(report: dict[str, Any], robot: dict[str, str]) -> None:
+    write_json_file(agent_report_file(robot), report)
+    write_json_file(report_source_for_action(DEPLOY_SETUP_AGENT_ACTION), [report])
+
+
+def run_agent_deploy_phase(robot: dict[str, str], ssh_password: str, sudo_password: str, log_file: Path, name: str, label: str) -> dict[str, Any]:
+    ip = robot["ansible_host"]
+    command = f"export REMOTE_HOST={shlex.quote(ip)} && ./deploy_to_robot.sh"
+    cwd = ROOT_DIR / "deploy_eva_robot检测" / "robot"
+    set_job(message=f"agent：{label}……", cmd=command, cwd=str(cwd), phase="running")
+    append_agent_log(log_file, f"{label} start: {robot['inventory_hostname']} ({ip})")
+    started_at = now_iso()
+    rc, stdout, stderr = run_deploy_to_robot(ip=ip, password=ssh_password, log_file=log_file, append=True)
+    ended_at = now_iso()
+    status = "OK" if rc == 0 else "FAIL"
+    detail = "robot 文件部署完成" if status == "OK" else classify_error("\n".join([stdout, stderr]))["reason"]
+    append_agent_log(log_file, f"{label} done: status={status} rc={rc}")
+    return build_agent_phase(name, label, status, rc, started_at, ended_at, detail, stdout, stderr, command, str(cwd))
+
+
+def run_agent_cos_setup_phase(robot: dict[str, str], ssh_password: str, sudo_password: str, log_file: Path, name: str, label: str) -> tuple[dict[str, Any], dict[str, Any]]:
+    hostname = robot["inventory_hostname"]
+    clear_cos_setup_reports(hostname)
+    cmd, cwd = build_ansible_command("cos_setup", [hostname])
+    command = shlex.join(cmd)
+    set_job(message=f"agent：{label}……", cmd=command, cwd=str(cwd), phase="running")
+    append_agent_log(log_file, f"{label} start: {hostname}")
+    started_at = now_iso()
+    rc, stdout, stderr = run_pexpect_command("cos_setup", cmd, cwd, ssh_password, sudo_password, log_file, append=True)
+    combined_output = "\n".join([stdout, stderr])
+    if rc != 0 and recap_success_from_text(combined_output):
+        rc = 0
+    elif recap_failed_from_text(combined_output):
+        rc = rc or 1
+    cos_report = load_cos_setup_report(robot)
+    report_status = report_status_for_agent(cos_report, rc)
+    phase_status = report_status if report_status in ("OK", "WARN") else "FAIL"
+    ended_at = now_iso()
+    if cos_report:
+        detail = str(cos_report.get("setup_detail") or cos_report.get("agent_summary") or f"cos_setup status={report_status}")
+        report_path = str((RAW_REPORTS_DIR / f"cos_setup_{hostname}.json").relative_to(ROOT_DIR))
+    else:
+        detail = "未生成 cos_setup 报告" if rc != 0 else "cos_setup 执行完成，但未读取到报告"
+        report_path = ""
+    append_agent_log(log_file, f"{label} done: status={phase_status} rc={rc}")
+    phase = build_agent_phase(name, label, phase_status, rc, started_at, ended_at, detail, stdout, stderr, command, str(cwd), report_path)
+    return phase, cos_report
+
+
+def run_deploy_setup_agent(robots: list[str], ssh_password: str, sudo_password: str) -> None:
+    ensure_dirs()
+    started_monotonic = time.monotonic()
+    started = datetime.now().strftime("%Y%m%d_%H%M%S")
+    start_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    log_file = ROOT_LOGS_DIR / f"{started}_{DEPLOY_SETUP_AGENT_ACTION}.log"
+    execution = {
+        "action": DEPLOY_SETUP_AGENT_ACTION,
+        "robots": robots,
+        "started_at": started,
+        "start_time": start_time,
+        "finished_at": "",
+        "end_time": "",
+        "duration_seconds": None,
+        "returncode": 0,
+        "stdout": "",
+        "stderr": "",
+        "latest_output": "",
+        "command": "deploy_setup_agent",
+        "cwd": str(ROOT_DIR),
+        "report_path": report_path_text(DEPLOY_SETUP_AGENT_ACTION),
+        "log_file": str(log_file),
+    }
+    set_job(
+        running=True,
+        action=DEPLOY_SETUP_AGENT_ACTION,
+        started_at=started,
+        finished_at="",
+        returncode=None,
+        message="agent：正在检查本地依赖和机器人连接……",
+        log_file=str(log_file),
+        cmd="deploy_setup_agent",
+        cwd=str(ROOT_DIR),
+        start_time=start_time,
+        end_time="",
+        duration_seconds=None,
+        report_file=report_path_text(DEPLOY_SETUP_AGENT_ACTION),
+        phase="precheck",
+    )
+    phases: list[dict[str, Any]] = []
+    cos_report: dict[str, Any] = {}
+    robot: dict[str, str] | None = None
+
+    def finish(final_status: str, message: str, diagnosis: dict[str, str], returncode: int) -> None:
+        end_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        duration = round(time.monotonic() - started_monotonic, 1)
+        log_text = log_file.read_text(encoding="utf-8", errors="replace") if log_file.exists() else ""
+        execution.update(
+            {
+                "finished_at": end_time,
+                "end_time": end_time,
+                "duration_seconds": duration,
+                "returncode": returncode,
+                "stdout": log_text,
+                "stderr": "" if returncode == 0 else diagnosis.get("reason", ""),
+                "latest_output": tail_lines(log_text),
+            }
+        )
+        write_json_file(RAW_REPORTS_DIR / f"{started}_{DEPLOY_SETUP_AGENT_ACTION}_execution.json", execution)
+        if robot:
+            report = build_deploy_setup_agent_report(robot, final_status, message, diagnosis, phases, cos_report)
+            write_deploy_setup_agent_report(report, robot)
+            write_json_file(LATEST_SUMMARY_PATH, attach_execution_metadata([report], execution))
+        else:
+            write_json_file(LATEST_SUMMARY_PATH, build_execution_failure_summary(DEPLOY_SETUP_AGENT_ACTION, execution))
+        set_job(
+            running=False,
+            finished_at=end_time,
+            returncode=returncode,
+            message=message,
+            end_time=end_time,
+            duration_seconds=duration,
+            phase="success" if final_status == "OK" else "partial" if final_status == "WARN" else "fail",
+        )
+
+    try:
+        ensure_deploy_setup_agent_available()
+        selected_robots = selected_inventory_robots(robots)
+        if len(selected_robots) != 1:
+            raise ValueError("智能部署 / 修复第一版一次只能选择 1 台机器人")
+        robot = selected_robots[0]
+        execution["robots"] = [robot["inventory_hostname"]]
+
+        reachable, unreachable = precheck_ssh([robot], DEPLOY_SETUP_AGENT_ACTION)
+        if unreachable and not reachable:
+            diagnosis = {
+                "reason": "机器人无法连接，请检查网络、IP 和 SSH 密码。",
+                "suggestion": "请检查机器人是否开机、IP 是否正确、电脑和机器人是否在同一网络，以及 SSH 密码是否正确。",
+                "repair_action": "",
+            }
+            phases.append(
+                build_agent_phase(
+                    "precheck",
+                    "机器人连接检查",
+                    "UNREACHABLE",
+                    1,
+                    now_iso(),
+                    now_iso(),
+                    str(unreachable[0].get("detail", "")),
+                )
+            )
+            finish("UNREACHABLE", "agent 执行失败：机器人无法连接。", diagnosis, 1)
+            return
+
+        phases.append(build_agent_phase("precheck", "机器人连接检查", "OK", 0, now_iso(), now_iso(), "SSH 端口可连接"))
+
+        deploy_phase = run_agent_deploy_phase(robot, ssh_password, sudo_password, log_file, "deploy_to_robot", "部署 robot 文件")
+        phases.append(deploy_phase)
+        if deploy_phase["status"] != "OK":
+            diagnosis = agent_diagnosis("\n".join([deploy_phase.get("stdout", ""), deploy_phase.get("stderr", "")]))
+            finish("FAIL", f"agent 执行失败：{diagnosis['reason']}", diagnosis, 1)
+            return
+
+        cos_phase, cos_report = run_agent_cos_setup_phase(robot, ssh_password, sudo_password, log_file, "cos_setup", "执行 cos_setup.sh")
+        phases.append(cos_phase)
+        if cos_phase["status"] == "OK":
+            diagnosis = {"reason": "", "suggestion": "", "repair_action": ""}
+            finish("OK", "agent 执行完成：deploy 和 cos_setup 均成功。", diagnosis, 0)
+            return
+        if cos_phase["status"] == "WARN":
+            diagnosis = agent_diagnosis("\n".join([cos_phase.get("stdout", ""), cos_phase.get("stderr", "")]), cos_report)
+            finish("WARN", f"agent 执行完成但存在警告：{diagnosis['reason']}", diagnosis, 0)
+            return
+
+        diagnosis = agent_diagnosis("\n".join([cos_phase.get("stdout", ""), cos_phase.get("stderr", "")]), cos_report)
+        if diagnosis.get("repair_action") == "redeploy_and_retry_cos_setup":
+            repair_phase = run_agent_deploy_phase(robot, ssh_password, sudo_password, log_file, "repair_deploy_to_robot", "自动修复：重新部署 robot 文件")
+            phases.append(repair_phase)
+            if repair_phase["status"] == "OK":
+                retry_phase, cos_report = run_agent_cos_setup_phase(robot, ssh_password, sudo_password, log_file, "cos_setup_retry", "自动修复后重试 cos_setup.sh")
+                phases.append(retry_phase)
+                if retry_phase["status"] == "OK":
+                    fixed = {"reason": "", "suggestion": "", "repair_action": ""}
+                    finish("OK", "agent 执行完成：重新部署后 cos_setup 成功。", fixed, 0)
+                    return
+                diagnosis = agent_diagnosis("\n".join([retry_phase.get("stdout", ""), retry_phase.get("stderr", "")]), cos_report)
+            else:
+                diagnosis = agent_diagnosis("\n".join([repair_phase.get("stdout", ""), repair_phase.get("stderr", "")]))
+
+        finish("FAIL", f"agent 执行失败：{diagnosis['reason']}", diagnosis, 1)
+    except Exception as exc:  # noqa: BLE001 - surface readable agent failures to UI
+        diagnosis = {"reason": str(exc), "suggestion": "请查看实时日志和技术日志，确认本地依赖、机器人选择和密码是否正确。", "repair_action": ""}
+        append_agent_log(log_file, f"failed: {exc}")
+        finish("FAIL", f"agent 执行失败：{exc}", diagnosis, 1)
+
+
+def run_hand_test(robots: list[str], side: str, ssh_password: str, sudo_password: str) -> None:
+    ensure_dirs()
+    started_monotonic = time.monotonic()
+    started = datetime.now().strftime("%Y%m%d_%H%M%S")
+    start_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    log_file = ROOT_LOGS_DIR / f"{started}_{HAND_TEST_ACTION}.log"
+    side_cn = HAND_TEST_SIDE_LABELS.get(side, side)
+    robot: dict[str, str] | None = None
+    execution: dict[str, Any] = {
+        "action": HAND_TEST_ACTION,
+        "robots": robots,
+        "side": side,
+        "started_at": started,
+        "start_time": start_time,
+        "finished_at": "",
+        "end_time": "",
+        "duration_seconds": None,
+        "returncode": 0,
+        "stdout": "",
+        "stderr": "",
+        "latest_output": "",
+        "command": "",
+        "cwd": "",
+        "report_path": "",
+        "log_file": str(log_file),
+    }
+    try:
+        if shutil.which("ssh") is None:
+            raise ValueError("控制电脑没有找到 ssh 命令")
+        robot = selected_hand_test_robot(robots)
+        hand_type = str(robot.get("end_effector", "")).strip().lower()
+        robot_label = f"ID {robot.get('robot_id', '-')} · {robot.get('ansible_host', '-')} · {hand_type}"
+        set_job(
+            running=True,
+            action=HAND_TEST_ACTION,
+            started_at=started,
+            finished_at="",
+            returncode=None,
+            message="正在检查机器人连接……",
+            log_file=str(log_file),
+            cmd="",
+            cwd="",
+            start_time=start_time,
+            end_time="",
+            duration_seconds=None,
+            report_file="",
+            phase="precheck",
+            cancellable=True,
+            cancel_requested=False,
+            robot_label=robot_label,
+            hand_type=hand_type,
+            hand_side=side,
+            hand_side_cn=side_cn,
+        )
+        reachable, unreachable = precheck_ssh([robot], HAND_TEST_ACTION)
+        if unreachable and not reachable:
+            message = "机器人无法连接，请检查网络、IP 和 SSH 密码。"
+            details = "\n".join(str(item.get("detail", "")) for item in unreachable)
+            log_file.write_text(f"{message}\n{details}\n", encoding="utf-8")
+            raise ConnectionError(message)
+        cmd, cwd, remote_cmd = hand_test_command(robot, side)
+        execution.update(
+            {
+                "robots": [robot["inventory_hostname"]],
+                "hand_type": hand_type,
+                "robot_id": robot.get("robot_id", ""),
+                "ansible_host": robot.get("ansible_host", ""),
+                "command": shlex.join(cmd),
+                "remote_command": remote_cmd,
+                "cwd": str(cwd),
+            }
+        )
+        set_job(
+            message=f"正在启动 {hand_type} {side_cn} 测试……",
+            cmd=execution["command"],
+            cwd=str(cwd),
+            phase="running",
+        )
+        returncode, stdout, stderr, cancelled = run_hand_test_pexpect(
+            cmd=cmd,
+            cwd=cwd,
+            ssh_password=ssh_password,
+            sudo_password=sudo_password,
+            log_file=log_file,
+            robot_label=robot_label,
+            side_cn=side_cn,
+        )
+        combined_output = "\n".join([stdout, stderr])
+        end_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        duration = round(time.monotonic() - started_monotonic, 1)
+        execution.update(
+            {
+                "finished_at": end_time,
+                "end_time": end_time,
+                "duration_seconds": duration,
+                "stdout": stdout,
+                "stderr": stderr,
+                "returncode": returncode,
+                "cancelled": cancelled,
+                "latest_output": tail_lines(combined_output),
+            }
+        )
+        write_json_file(RAW_REPORTS_DIR / f"{started}_{HAND_TEST_ACTION}_execution.json", execution)
+        if cancelled:
+            message = "手测试已取消。"
+            phase = "success"
+            returncode = 0
+        elif returncode == 0:
+            message = "手测试程序已结束。"
+            phase = "success"
+        else:
+            message = classify_error(combined_output)["reason"]
+            phase = "fail"
+        set_job(
+            running=False,
+            finished_at=end_time,
+            returncode=returncode,
+            message=message,
+            end_time=end_time,
+            duration_seconds=duration,
+            phase=phase,
+            cancellable=False,
+            cancel_requested=False,
+        )
+    except Exception as exc:  # noqa: BLE001 - return readable failure to UI
+        message = f"执行失败：{exc}"
+        previous_log = log_file.read_text(encoding="utf-8", errors="replace") if log_file.exists() else ""
+        with log_file.open("a", encoding="utf-8") as log:
+            if previous_log and not previous_log.endswith("\n"):
+                log.write("\n")
+            log.write(f"{message}\n")
+        latest_output = tail_lines("\n".join([previous_log, message]))
+        end_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        duration = round(time.monotonic() - started_monotonic, 1)
+        execution.update(
+            {
+                "finished_at": end_time,
+                "end_time": end_time,
+                "duration_seconds": duration,
+                "returncode": 1,
+                "stdout": previous_log,
+                "stderr": message,
+                "latest_output": latest_output,
+            }
+        )
+        write_json_file(RAW_REPORTS_DIR / f"{started}_{HAND_TEST_ACTION}_execution.json", execution)
+        set_job(
+            running=False,
+            action=HAND_TEST_ACTION,
+            started_at=started,
+            finished_at=end_time,
+            returncode=1,
+            message=message,
+            log_file=str(log_file),
+            end_time=end_time,
+            duration_seconds=duration,
+            phase="fail",
+            cancellable=False,
+            cancel_requested=False,
+            hand_side=side,
+            hand_side_cn=side_cn,
+        )
+
+
 def run_action(action: str, robots: list[str], ssh_password: str, sudo_password: str, service_name: str = "") -> None:
+    if action == DEPLOY_SETUP_AGENT_ACTION:
+        run_deploy_setup_agent(robots, ssh_password, sudo_password)
+        return
     ensure_dirs()
     started_monotonic = time.monotonic()
     started = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -1812,6 +4593,20 @@ def run_action(action: str, robots: list[str], ssh_password: str, sudo_password:
     }
     try:
         selected_robots = selected_inventory_robots(robots)
+        if action == DEPLOY_ACTION and not selected_robots:
+            direct_ip = next((str(item).strip() for item in robots if str(item).strip()), "")
+            try:
+                ipaddress.ip_address(direct_ip)
+            except ValueError as exc:
+                raise ValueError("请选择要部署的机器人") from exc
+            selected_robots = [
+                {
+                    "inventory_hostname": direct_ip,
+                    "ansible_host": direct_ip,
+                    "robot_id": "",
+                    "end_effector": "",
+                }
+            ]
         set_job(message="正在检查机器人连接……", phase="precheck")
         reachable_robots, unreachable_reports = precheck_ssh(selected_robots, action)
         if unreachable_reports and not reachable_robots:
@@ -1845,9 +4640,79 @@ def run_action(action: str, robots: list[str], ssh_password: str, sudo_password:
 
         set_job(message="机器人连接成功，正在启动任务……", phase="starting")
         reachable_names = [robot["inventory_hostname"] for robot in reachable_robots]
+        if action == CAMERA_CHECK_ACTION:
+            set_job(
+                message="相机帧率检查准备中……",
+                phase="running",
+                current_task="等待相机帧率检查开始",
+                task_stage_id="ros2",
+            )
+        elif action in SERVICE_ACTIONS:
+            set_job(
+                message="服务检查准备中……",
+                phase="running",
+                current_task="等待服务检查开始",
+                task_stage_id="services",
+                stage_items={"services": service_stage_items_for_robots(reachable_robots, service_name)},
+            )
+        if action == DEPLOY_ACTION:
+            set_job(message="正在执行 deploy_to_robot……", phase="running")
+            robot = reachable_robots[0] if reachable_robots else selected_robots[0]
+            ip = robot["ansible_host"]
+            cmd = [
+                "bash",
+                "-c",
+                f"export REMOTE_HOST={shlex.quote(ip)} && ./deploy_to_robot.sh",
+            ]
+            cwd = ROOT_DIR / "deploy_eva_robot检测" / "robot"
+            execution.update({"robots": [robot["inventory_hostname"]], "command": shlex.join(cmd), "cwd": str(cwd)})
+            set_job(cmd=execution["command"], cwd=str(cwd))
+
+            returncode, stdout, stderr = run_deploy_to_robot(
+                ip=ip,
+                password=ssh_password,
+                log_file=log_file,
+            )
+            combined_output = "\n".join([stdout, stderr])
+            end_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            duration = round(time.monotonic() - started_monotonic, 1)
+            execution.update(
+                {
+                    "finished_at": end_time,
+                    "end_time": end_time,
+                    "duration_seconds": duration,
+                    "stdout": stdout,
+                    "stderr": stderr,
+                    "returncode": returncode,
+                    "latest_output": tail_lines(combined_output),
+                }
+            )
+            write_json_file(RAW_REPORTS_DIR / f"{started}_{action}_execution.json", execution)
+            write_json_file(LATEST_SUMMARY_PATH, build_single_execution_report(action, execution, robot))
+
+            set_job(
+                running=False,
+                finished_at=end_time,
+                message="deploy 完成" if returncode == 0 else "deploy 失败",
+                phase="success" if returncode == 0 else "fail",
+                returncode=returncode,
+                end_time=end_time,
+                duration_seconds=duration,
+            )
+            return
+
         cmd, cwd = build_ansible_command(action, reachable_names, service_name)
         execution.update({"robots": reachable_names, "command": shlex.join(cmd), "cwd": str(cwd)})
         set_job(message="正在执行脚本……", cmd=execution["command"], cwd=str(cwd), phase="running")
+
+        # 每次执行前清理旧的报告，防止 playbook 崩溃时读取到历史成功记录
+        source_report = report_source_for_action(action)
+        if source_report.exists():
+            try:
+                source_report.unlink()
+            except OSError:
+                pass
+
         returncode, stdout, stderr = run_pexpect_command(action, cmd, cwd, ssh_password, sudo_password, log_file)
         set_job(message="任务执行结束，正在生成中文报告……", phase="reporting")
         if unreachable_reports:
@@ -1875,18 +4740,36 @@ def run_action(action: str, robots: list[str], ssh_password: str, sudo_password:
         )
         write_json_file(RAW_REPORTS_DIR / f"{started}_{action}_execution.json", execution)
         merge_latest_summary(action, execution, unreachable_reports)
+        if action in SERVICE_ACTIONS:
+            service_items = latest_service_stage_items()
+            if service_items:
+                merge_job_stage_items({"services": service_items})
+            camera_items = latest_camera_stage_items()
+            if camera_items:
+                merge_job_stage_items({"ros2": camera_items})
         if unreachable_reports:
             message = "部分机器人执行失败，请查看下方报告。"
             phase = "partial"
         else:
             message = "执行完成：任务成功。" if returncode == 0 else classify_error(stdout + "\n" + stderr)["reason"]
             phase = "success" if returncode == 0 else "fail"
-        if action in ("cos_setup", "check", "install", "service_check", "service_restart") and not unreachable_reports:
+        if (
+            action in ("cos_setup", "check", "install", "service_check", "service_restart", CAMERA_CHECK_ACTION)
+            and not unreachable_reports
+            and (returncode == 0 or report_source_for_action(action).exists())
+        ):
             report_returncode, report_message, report_phase = latest_action_outcome()
-            returncode = max(returncode, report_returncode)
+            returncode = report_returncode
             execution["returncode"] = returncode
             write_json_file(RAW_REPORTS_DIR / f"{started}_{action}_execution.json", execution)
             merge_latest_summary(action, execution, [])
+            if action in SERVICE_ACTIONS:
+                service_items = latest_service_stage_items()
+                if service_items:
+                    merge_job_stage_items({"services": service_items})
+                camera_items = latest_camera_stage_items()
+                if camera_items:
+                    merge_job_stage_items({"ros2": camera_items})
             message = report_message
             phase = report_phase
         set_job(
@@ -1999,6 +4882,11 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         if parsed.path == "/":
             self.send_file(TEMPLATES_DIR / "index.html", "text/html; charset=utf-8")
+        elif parsed.path == "/api/robots/status":
+            self.send_json(robots_status_payload())
+        elif parsed.path.startswith("/api/robots/") and parsed.path.endswith("/services"):
+            hostname = unquote(parsed.path.removeprefix("/api/robots/").removesuffix("/services").strip("/"))
+            self.send_robot_services(hostname)
         elif parsed.path == "/api/robots":
             self.send_json({"robots": parse_inventory()})
         elif parsed.path in ("/api/report/latest", "/api/reports"):
@@ -2009,7 +4897,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(log_tail_payload())
         elif parsed.path == "/api/job":
             with JOB_LOCK:
-                self.send_json(dict(CURRENT_JOB))
+                self.send_json(job_payload_locked())
         elif parsed.path == "/api/local/checks":
             self.send_json(local_dependency_status())
         elif parsed.path.startswith("/static/"):
@@ -2023,12 +4911,32 @@ class Handler(BaseHTTPRequestHandler):
             if parsed.path == "/api/robots":
                 self.send_json({"robots": add_robot(self.read_payload())}, HTTPStatus.CREATED)
                 return
+            if parsed.path in HEARTBEAT_PATHS:
+                self.send_json(record_robot_heartbeat(self.read_payload()), HTTPStatus.CREATED)
+                return
             if parsed.path == "/api/refresh":
-                self.send_json(latest_report_payload())
+                try:
+                    self.send_json(
+                        refresh_latest_report_with_status(
+                            ssh_password=str(self.headers.get("X-SSH-Password", "")),
+                            sudo_password=str(self.headers.get("X-Sudo-Password", "")),
+                        )
+                    )
+                except RuntimeError as exc:
+                    self.send_json({"error": str(exc)}, HTTPStatus.CONFLICT)
+                return
+            if parsed.path == "/api/camera-binding/inspect":
+                self.send_camera_binding("inspect", self.read_payload())
+                return
+            if parsed.path == "/api/camera-binding/reload":
+                self.send_camera_binding("reload", self.read_payload())
                 return
             if parsed.path.startswith("/api/run/"):
                 action = parsed.path.rsplit("/", 1)[-1]
                 self.start_action(action, self.read_payload())
+                return
+            if parsed.path == "/api/hand-test/cancel":
+                self.send_json(cancel_current_job())
                 return
             if parsed.path == "/api/run":
                 payload = self.read_payload()
@@ -2037,6 +4945,51 @@ class Handler(BaseHTTPRequestHandler):
             self.send_error(HTTPStatus.NOT_FOUND.value)
         except ValueError as exc:
             self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+
+    def send_robot_services(self, hostname: str) -> None:
+        try:
+            self.send_json(
+                robot_services_payload(
+                    hostname,
+                    ssh_password=str(self.headers.get("X-SSH-Password", "")),
+                    sudo_password=str(self.headers.get("X-Sudo-Password", "")),
+                )
+            )
+        except PermissionError as exc:
+            self.send_json({"error": str(exc)}, HTTPStatus.UNAUTHORIZED)
+        except TimeoutError as exc:
+            self.send_json({"error": str(exc)}, HTTPStatus.REQUEST_TIMEOUT)
+        except ValueError as exc:
+            self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+        except RuntimeError as exc:
+            self.send_json({"error": str(exc)}, HTTPStatus.BAD_GATEWAY)
+
+    def send_camera_binding(self, operation: str, payload: dict[str, Any]) -> None:
+        robots = payload.get("robots") or []
+        if not isinstance(robots, list):
+            robots = []
+        ssh_password = str(payload.get("ssh_password", ""))
+        sudo_password = str(payload.get("sudo_password", ""))
+        if not ssh_password or not sudo_password:
+            self.send_json({"error": "缺少 SSH 或 sudo 密码"}, HTTPStatus.BAD_REQUEST)
+            return
+        try:
+            self.send_json(
+                camera_binding_payload(
+                    operation,
+                    [str(item) for item in robots],
+                    ssh_password,
+                    sudo_password,
+                )
+            )
+        except PermissionError as exc:
+            self.send_json({"error": str(exc)}, HTTPStatus.UNAUTHORIZED)
+        except TimeoutError as exc:
+            self.send_json({"error": str(exc)}, HTTPStatus.REQUEST_TIMEOUT)
+        except ValueError as exc:
+            self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+        except RuntimeError as exc:
+            self.send_json({"error": str(exc)}, HTTPStatus.BAD_GATEWAY)
 
     def do_PUT(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
@@ -2061,28 +5014,54 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
 
     def start_action(self, action: str, payload: dict[str, Any]) -> None:
-        if action not in ("cos_setup", "install", "check", "service_check", "service_restart"):
+        if action == HAND_TEST_ACTION:
+            self.start_hand_test(payload)
+            return
+        if action not in ("cos_setup", "install", "check", "service_check", "service_restart", CAMERA_CHECK_ACTION, DEPLOY_ACTION, DEPLOY_SETUP_AGENT_ACTION):
             self.send_json({"error": "未知操作"}, HTTPStatus.BAD_REQUEST)
             return
-        try:
-            ensure_ansible_available()
-        except ValueError:
-            self.send_json(
-                {
-                    "status": "FAIL",
-                    "message": "控制电脑未安装 Ansible，请先安装 ansible 和 sshpass。",
-                    "reason": "控制电脑缺少 ansible-playbook",
-                    "suggestion": "请在控制电脑执行：sudo apt install -y ansible sshpass",
-                },
-                HTTPStatus.BAD_REQUEST,
-            )
-            return
+        if action == DEPLOY_SETUP_AGENT_ACTION:
+            try:
+                ensure_deploy_setup_agent_available()
+            except ValueError as exc:
+                self.send_json(
+                    {
+                        "status": "FAIL",
+                        "message": str(exc),
+                        "reason": str(exc),
+                        "suggestion": deploy_setup_agent_dependency_status().get("suggestion", "请安装缺失依赖后重试。"),
+                    },
+                    HTTPStatus.BAD_REQUEST,
+                )
+                return
+        elif action != DEPLOY_ACTION:
+            try:
+                ensure_ansible_available()
+            except ValueError:
+                self.send_json(
+                    {
+                        "status": "FAIL",
+                        "message": "控制电脑未安装 Ansible，请先安装 ansible 和 sshpass。",
+                        "reason": "控制电脑缺少 ansible-playbook",
+                        "suggestion": "请在控制电脑执行：sudo apt install -y ansible sshpass",
+                    },
+                    HTTPStatus.BAD_REQUEST,
+                )
+                return
         robots = payload.get("robots") or []
         if not isinstance(robots, list):
             robots = []
+        if action == DEPLOY_SETUP_AGENT_ACTION:
+            selected_for_agent = selected_inventory_robots([str(item) for item in robots])
+            if len(selected_for_agent) != 1:
+                self.send_json({"error": "智能部署 / 修复第一版一次只能选择 1 台机器人"}, HTTPStatus.BAD_REQUEST)
+                return
         service_name = str(payload.get("service_name", "")).strip()
         if action == "service_restart" and service_name not in RESTARTABLE_SERVICES:
             self.send_json({"error": "请选择要重启的服务"}, HTTPStatus.BAD_REQUEST)
+            return
+        if action == "service_check" and service_name and service_name not in RESTARTABLE_SERVICES:
+            self.send_json({"error": "请选择要复查的服务"}, HTTPStatus.BAD_REQUEST)
             return
         ssh_password = str(payload.get("ssh_password", ""))
         sudo_password = str(payload.get("sudo_password", ""))
@@ -2097,7 +5076,42 @@ class Handler(BaseHTTPRequestHandler):
         thread.start()
         time.sleep(0.1)
         with JOB_LOCK:
-            self.send_json(dict(CURRENT_JOB), HTTPStatus.ACCEPTED)
+            self.send_json(job_payload_locked(), HTTPStatus.ACCEPTED)
+
+    def start_hand_test(self, payload: dict[str, Any]) -> None:
+        robots = payload.get("robots") or []
+        if not isinstance(robots, list):
+            robots = []
+        side = str(payload.get("side", "")).strip().lower()
+        if side not in HAND_TEST_SIDES:
+            self.send_json({"error": "请选择左手或右手"}, HTTPStatus.BAD_REQUEST)
+            return
+        if len(robots) != 1:
+            self.send_json({"error": "验证手是否能动一次只能选择 1 台机器人"}, HTTPStatus.BAD_REQUEST)
+            return
+        try:
+            selected_hand_test_robot([str(item) for item in robots])
+        except ValueError as exc:
+            self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
+        ssh_password = str(payload.get("ssh_password", ""))
+        sudo_password = str(payload.get("sudo_password", ""))
+        if not ssh_password or not sudo_password:
+            self.send_json({"status": "FAIL", "message": "缺少 SSH 或 sudo 密码"}, HTTPStatus.BAD_REQUEST)
+            return
+        with JOB_LOCK:
+            if CURRENT_JOB.get("running"):
+                self.send_json({"error": "已有任务正在执行"}, HTTPStatus.CONFLICT)
+                return
+        thread = threading.Thread(
+            target=run_hand_test,
+            args=([str(item) for item in robots], side, ssh_password, sudo_password),
+            daemon=True,
+        )
+        thread.start()
+        time.sleep(0.1)
+        with JOB_LOCK:
+            self.send_json(job_payload_locked(), HTTPStatus.ACCEPTED)
 
 
 def main() -> None:
@@ -2112,6 +5126,7 @@ def main() -> None:
     if local_status.get("reason"):
         print(f"Local dependency warning: {local_status['reason']}")
         print(local_status.get("suggestion", ""))
+    start_robot_status_refresher()
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     url = f"http://{args.host}:{args.port}/"
     print(f"Operator Console: {url}")

@@ -61,7 +61,7 @@
         label: 左腕相机
       - topic: /cam_wrist_right/compressed_image
         label: 右腕相机
-    camera_topic_min_rate_hz: 0.0
+    camera_topic_min_rate_hz: 29.0
 
     remote_binary: "{{ project_dir }}/remote"
     remote_source_dir: "{{ project_dir }}/remote_start"
@@ -77,6 +77,12 @@
     stop_conflicting_end_effector_service: true
     disable_conflicting_end_effector_service: true
     check_conflicting_end_effector_service: false
+    enable_dex1: false
+    enable_brainco_install: false
+    required_setup_services:
+      - cos_agent.service
+      - cos_teleop.service
+      - xrobotoolkit-pc-service.service
 
     supported_end_effectors:
       - dex1
@@ -108,6 +114,36 @@
       ansible.builtin.set_fact:
         g1_check_warnings: "{{ g1_check_warnings + ['end_effector is missing or invalid: ' ~ g1_end_effector ~ '. Supported: dex1, brainco, none'] }}"
       when: g1_end_effector not in supported_end_effectors
+
+    - name: Define modular task file paths
+      ansible.builtin.set_fact:
+        g1_task_module_files:
+          common: "{{ playbook_dir }}/tasks/common.yml"
+          install_common: "{{ playbook_dir }}/tasks/install_common.yml"
+          dex1: "{{ playbook_dir }}/tasks/dex1.yml"
+          brainco: "{{ playbook_dir }}/tasks/brainco.yml"
+          report: "{{ playbook_dir }}/tasks/report.yml"
+
+    - name: Check modular task files on controller
+      ansible.builtin.stat:
+        path: "{{ item.value }}"
+      loop: "{{ g1_task_module_files | dict2items }}"
+      delegate_to: localhost
+      register: g1_task_module_stats
+      changed_when: false
+
+    - name: Build modular task file availability map
+      ansible.builtin.set_fact:
+        g1_task_module_exists: "{{ g1_task_module_exists | default({}) | combine({item.item.key: item.stat.exists | default(false)}) }}"
+      loop: "{{ g1_task_module_stats.results | default([]) }}"
+
+    - name: Validate required modular task files
+      ansible.builtin.assert:
+        that:
+          - g1_task_module_exists.common | default(false)
+          - g1_task_module_exists.report | default(false)
+          - g1_run_mode != 'install' or g1_task_module_exists.install_common | default(false)
+        fail_msg: "Required task module missing under {{ playbook_dir }}/tasks"
 
     - name: Check remote_start service presence before run
       ansible.builtin.command: "systemctl list-unit-files {{ remote_service_name }} --no-legend --no-pager"
@@ -192,21 +228,38 @@
       ansible.builtin.command: date -s "{{ controller_time.stdout }}"
       when: g1_run_mode == 'install'
 
+    - name: Run common environment tasks
+      ansible.builtin.include_tasks: tasks/common.yml
+
     - name: Run common installation tasks
-      ansible.builtin.import_tasks: tasks/install_common.yml
+      ansible.builtin.include_tasks: tasks/install_common.yml
       when: g1_run_mode == 'install'
 
-    - name: Run dex1 installation tasks
-      ansible.builtin.import_tasks: tasks/install_dex1.yml
+    - name: Run dex1 module when selected
+      ansible.builtin.include_tasks: tasks/dex1.yml
       when:
-        - g1_run_mode == 'install'
         - g1_end_effector == 'dex1'
+        - g1_task_module_exists.dex1 | default(false)
 
-    - name: Run brainco installation tasks
-      ansible.builtin.import_tasks: tasks/install_brainco.yml
+    - name: Record missing dex1 module when selected
+      ansible.builtin.set_fact:
+        g1_check_results: "{{ g1_check_results + [{'name': 'dex1 module', 'status': 'FAIL', 'detail': 'tasks/dex1.yml is missing'}] }}"
       when:
-        - g1_run_mode == 'install'
+        - g1_end_effector == 'dex1'
+        - not (g1_task_module_exists.dex1 | default(false))
+
+    - name: Run brainco module when selected
+      ansible.builtin.include_tasks: tasks/brainco.yml
+      when:
         - g1_end_effector == 'brainco'
+        - g1_task_module_exists.brainco | default(false)
+
+    - name: Record missing brainco module when selected
+      ansible.builtin.set_fact:
+        g1_check_results: "{{ g1_check_results + [{'name': 'brainco module', 'status': 'FAIL', 'detail': 'tasks/brainco.yml is missing'}] }}"
+      when:
+        - g1_end_effector == 'brainco'
+        - not (g1_task_module_exists.brainco | default(false))
 
     - name: Stop conflicting brainco service for dex1
       become: true
@@ -338,22 +391,6 @@
         - g1_run_mode == 'install'
         - g1_end_effector == 'none'
 
-    - name: Reset check results before final verification
-      ansible.builtin.set_fact:
-        g1_check_results: []
-      when: g1_run_mode == 'install'
-
-    - name: Run common environment checks
-      ansible.builtin.import_tasks: tasks/common.yml
-
-    - name: Run dex1 checks
-      ansible.builtin.import_tasks: tasks/dex1.yml
-      when: g1_end_effector == 'dex1'
-
-    - name: Run brainco checks
-      ansible.builtin.import_tasks: tasks/brainco.yml
-      when: g1_end_effector == 'brainco'
-
     - name: Record skipped end effector checks
       ansible.builtin.set_fact:
         g1_check_results: "{{ g1_check_results + [{'name': 'end effector service', 'status': 'SKIP', 'detail': 'end_effector=' ~ g1_end_effector}] }}"
@@ -364,5 +401,64 @@
         g1_check_results: "{{ g1_check_results + [{'name': 'end effector service', 'status': 'FAIL', 'detail': 'invalid end_effector=' ~ g1_end_effector}] }}"
       when: g1_end_effector not in supported_end_effectors
 
+    - name: Check required setup services
+      ansible.builtin.shell: |
+        set +e
+        service="{{ item }}"
+        active="$(systemctl is-active "$service" 2>&1)"
+        active_rc=$?
+        status="$(systemctl status "$service" --no-pager -l 2>&1)"
+        status_rc=$?
+        if [ "$active_rc" -eq 0 ]; then active_ok=1; else active_ok=0; fi
+        printf '__SETUP_SERVICE__ name=%s active=%s active_rc=%s status_rc=%s\n' "$service" "$active_ok" "$active_rc" "$status_rc"
+        printf '%s\n' "$active"
+        printf '%s\n' "$status"
+        exit 0
+      args:
+        executable: /bin/bash
+      loop: "{{ required_setup_services }}"
+      register: required_setup_service_checks
+      changed_when: false
+      failed_when: false
+
+    - name: Build canonical setup success gate
+      ansible.builtin.set_fact:
+        setup_service_report: >-
+          {{
+            setup_service_report | default({}) | combine({
+              item.item: {
+                'active': item.stdout is search('__SETUP_SERVICE__ .*active=1'),
+                'status': ('OK' if (item.stdout is search('__SETUP_SERVICE__ .*active=1')) else 'FAIL'),
+                'detail': ('active' if (item.stdout is search('__SETUP_SERVICE__ .*active=1')) else 'not active'),
+                'stdout': item.stdout | default(''),
+                'stderr': item.stderr | default(''),
+                'rc': item.rc | default(0)
+              }
+            })
+          }}
+      loop: "{{ required_setup_service_checks.results | default([]) }}"
+
+    - name: Record canonical setup service checks
+      ansible.builtin.set_fact:
+        g1_check_results: "{{ g1_check_results + [setup_service_check_result] }}"
+      vars:
+        setup_service_item: "{{ setup_service_report.get(item, {}) }}"
+        setup_service_check_result:
+          name: "{{ item | regex_replace('\\.service$', '') }} active"
+          status: "{{ setup_service_item.status | default('FAIL') }}"
+          detail: "{{ setup_service_item.detail | default('not checked') }}"
+          stdout: "{{ setup_service_item.stdout | default('') }}"
+          stderr: "{{ setup_service_item.stderr | default('') }}"
+      loop: "{{ required_setup_services }}"
+
+    - name: Set canonical setup_success
+      ansible.builtin.set_fact:
+        setup_success: >-
+          {{
+            (setup_service_report.get('cos_agent.service', {}).get('active', false) | bool) and
+            (setup_service_report.get('cos_teleop.service', {}).get('active', false) | bool) and
+            (setup_service_report.get('xrobotoolkit-pc-service.service', {}).get('active', false) | bool)
+          }}
+
     - name: Build final report
-      ansible.builtin.import_tasks: tasks/report.yml
+      ansible.builtin.include_tasks: tasks/report.yml

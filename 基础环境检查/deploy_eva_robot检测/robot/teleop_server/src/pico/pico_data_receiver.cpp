@@ -14,8 +14,13 @@
 
 #include "pico/pico_data_receiver.hpp"
 
+#include "logging/logger.hpp"
+
 #include <algorithm>
+#include <array>
+#include <cctype>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <exception>
 #include <optional>
@@ -26,16 +31,77 @@
 
 #include <Eigen/Geometry>
 #include <json/json.h>
+#include <yaml-cpp/yaml.h>
 
 namespace teleop_server
 {
 namespace
 {
 constexpr int kExpectedBodyJointCount = 24;
+constexpr int kPicoPelvisJointIndex = 0;
+constexpr int kPicoLeftFootJointIndex = 10;
+constexpr int kPicoRightFootJointIndex = 11;
+constexpr double kPelvisPositionScale = 0.9;
+constexpr int kRobotSnConfigExitCode = 72;
+
+std::string trim_copy(const std::string & value)
+{
+  const auto begin = std::find_if_not(value.begin(), value.end(), [](unsigned char ch) {
+    return std::isspace(ch) != 0;
+  });
+  const auto end = std::find_if_not(value.rbegin(), value.rend(), [](unsigned char ch) {
+    return std::isspace(ch) != 0;
+  }).base();
+  if (begin >= end) {
+    return {};
+  }
+  return std::string(begin, end);
+}
+
+[[noreturn]] void exit_robot_sn_config_error(const std::string & message)
+{
+  TELEOP_LOG_ERROR("%s", message.c_str());
+  std::exit(kRobotSnConfigExitCode);
+}
+
+std::string robot_sn_config_path()
+{
+  const char * home = std::getenv("HOME");
+  if (home == nullptr || home[0] == '\0') {
+    exit_robot_sn_config_error(
+        "HOME is not set; cannot load robot_sn config. Expected $HOME/.local/robot_sn.yml");
+  }
+  return std::string(home) + "/.local/robot_sn.yml";
+}
+
+std::string load_robot_sn()
+{
+  const std::string path = robot_sn_config_path();
+  YAML::Node config;
+  try {
+    config = YAML::LoadFile(path);
+  } catch (const YAML::Exception & e) {
+    exit_robot_sn_config_error(
+        "Failed to load robot_sn config from " + path + ": " + e.what());
+  }
+
+  const YAML::Node robot_sn_node = config["robot_sn"];
+  if (!robot_sn_node || !robot_sn_node.IsScalar()) {
+    exit_robot_sn_config_error(
+        "robot_sn field is missing in " + path + ". Expected YAML: robot_sn: \"<serial>\"");
+  }
+
+  const std::string robot_sn = trim_copy(robot_sn_node.as<std::string>());
+  if (robot_sn.empty()) {
+    exit_robot_sn_config_error("robot_sn field is empty in " + path);
+  }
+  return robot_sn;
+}
 
 Eigen::Quaterniond normalized(Eigen::Quaterniond quat)
 {
-  if (quat.norm() <= 1e-9) {
+  if (!std::isfinite(quat.w()) || !std::isfinite(quat.x()) || !std::isfinite(quat.y()) ||
+      !std::isfinite(quat.z()) || quat.norm() <= 1e-9) {
     return Eigen::Quaterniond::Identity();
   }
   quat.normalize();
@@ -125,6 +191,11 @@ bool parse_body_poses(const Json::Value & value, std::vector<Eigen::Isometry3d> 
     if (values.size() < 7) {
       return false;
     }
+    for (int k = 0; k < 7; ++k) {
+      if (!std::isfinite(values[k])) {
+        return false;
+      }
+    }
 
     Eigen::Isometry3d pose = Eigen::Isometry3d::Identity();
     pose.translation() = Eigen::Vector3d(values[0], values[1], values[2]);
@@ -135,6 +206,25 @@ bool parse_body_poses(const Json::Value & value, std::vector<Eigen::Isometry3d> 
 
   *body_poses = std::move(parsed);
   return true;
+}
+
+Eigen::Vector3d y_up_to_z_up(const Eigen::Vector3d & value)
+{
+  return Eigen::Vector3d(value.x(), -value.z(), value.y());
+}
+
+std::array<double, 3> estimate_pelvis_position(const std::vector<Eigen::Isometry3d> & body_poses)
+{
+  Eigen::Vector3d pelvis =
+      kPelvisPositionScale * y_up_to_z_up(body_poses[kPicoPelvisJointIndex].translation());
+  const Eigen::Vector3d left_foot =
+      kPelvisPositionScale * y_up_to_z_up(body_poses[kPicoLeftFootJointIndex].translation());
+  const Eigen::Vector3d right_foot =
+      kPelvisPositionScale * y_up_to_z_up(body_poses[kPicoRightFootJointIndex].translation());
+
+  const double ground_z = std::min(left_foot.z(), right_foot.z());
+  pelvis.z() -= ground_z;
+  return {pelvis.x(), pelvis.y(), pelvis.z()};
 }
 
 bool parse_controller_input(
@@ -225,12 +315,12 @@ int64_t extract_body_timestamp_ns(const Json::Value & value)
 {
   int64_t timestamp_ns = 0;
 
-  const Json::Value & body = value["Body"];
-  if (body.isObject() && read_int64(body["timeStampNs"], &timestamp_ns) && timestamp_ns > 0) {
+  if (read_int64(value["timeStampNs"], &timestamp_ns) && timestamp_ns > 0) {
     return timestamp_ns;
   }
 
-  if (read_int64(value["timeStampNs"], &timestamp_ns) && timestamp_ns > 0) {
+  const Json::Value & body = value["Body"];
+  if (body.isObject() && read_int64(body["timeStampNs"], &timestamp_ns) && timestamp_ns > 0) {
     return timestamp_ns;
   }
 
@@ -311,19 +401,23 @@ std::string tracking_payload_summary(const Json::Value & state_root)
 PicoDataReceiver::PicoDataReceiver(
     rclcpp::Node & node,
     Config config,
-    PacketCallback packet_callback)
+    PacketCallback packet_callback,
+    DeviceIpCallback device_ip_callback)
   : node_(node),
     config_(std::move(config)),
-    packet_callback_(std::move(packet_callback))
+    robot_sn_(load_robot_sn()),
+    packet_callback_(std::move(packet_callback)),
+    device_ip_callback_(std::move(device_ip_callback))
 {
   pose_82d_converter_ = std::make_unique<Pico82dConverter>(config_.pose_82d_hz);
-  RCLCPP_INFO(node_.get_logger(), "Pico 82D converter enabled. hz=%.1f", config_.pose_82d_hz);
+  TELEOP_LOG_INFO("Pico 82D converter enabled. hz=%.1f", config_.pose_82d_hz);
+  TELEOP_LOG_INFO("Loaded robot sn from %s", robot_sn_config_path().c_str());
 
   const int init_result = PXREAInit(this, &PicoDataReceiver::on_pxrea_callback, PXREAFullMask);
   if (init_result != 0) {
     throw std::runtime_error("PXREAInit failed");
   }
-  RCLCPP_INFO(node_.get_logger(), "PicoDataReceiver started.");
+  TELEOP_LOG_INFO("PicoDataReceiver started.");
 }
 
 PicoDataReceiver::~PicoDataReceiver()
@@ -350,48 +444,44 @@ void PicoDataReceiver::handle_pxrea_callback(
     void * user_data)
 {
   switch (type) {
-    case PXREAServerConnect:
-      RCLCPP_INFO(node_.get_logger(), "XRoboToolkit server connected");
+    case PXREAServerConnect: {
+      TELEOP_LOG_INFO("XRoboToolkit server connected");
+      if (const int result = PXREAReportRobotSn(robot_sn_.c_str()); result == 0) {
+        TELEOP_LOG_INFO("Reported robot sn: %s", robot_sn_.c_str());
+      } else {
+        TELEOP_LOG_WARN("Failed to report robot sn: %s", robot_sn_.c_str());
+      }
       break;
+    }
     case PXREAServerDisconnect:
-      RCLCPP_WARN(node_.get_logger(), "XRoboToolkit server disconnected");
+      TELEOP_LOG_WARN("XRoboToolkit server disconnected");
       break;
-    case PXREADeviceFind:
-      RCLCPP_INFO(
-          node_.get_logger(),
-          "XRoboToolkit device found. status=%d user_data=%p",
-          status,
-          user_data);
+    case PXREADeviceFind: {
+      auto & info = *((PXREADevFindInfo *)user_data);
+      TELEOP_LOG_INFO("XRoboToolkit device found. ID: %s, IP: %s", info.devID, info.ip);
+      if (device_ip_callback_ && info.ip[0] != '\0') {
+        device_ip_callback_(info.ip);
+      }
       break;
+    }
     case PXREADeviceMissing:
-      RCLCPP_WARN(
-          node_.get_logger(),
-          "XRoboToolkit device missing. status=%d user_data=%p",
-          status,
-          user_data);
+      TELEOP_LOG_WARN("XRoboToolkit device missing. status=%d user_data=%p", status, user_data);
       break;
     case PXREADeviceConnect:
-      RCLCPP_INFO(
-          node_.get_logger(),
-          "XRoboToolkit device connected. status=%d user_data=%p",
-          status,
-          user_data);
+      TELEOP_LOG_INFO("XRoboToolkit device connected. status=%d user_data=%p", status, user_data);
       break;
     case PXREADeviceStateJson: {
       if (user_data == nullptr) {
-        RCLCPP_WARN(node_.get_logger(), "XRoboToolkit device state JSON callback has null data");
+        TELEOP_LOG_WARN("XRoboToolkit device state JSON callback has null data");
         break;
       }
       const auto & state = *static_cast<PXREADevStateJson *>(user_data);
       const std::string state_json = bounded_c_string(state.stateJson, sizeof(state.stateJson));
       if (state_json.empty()) {
-        RCLCPP_WARN(node_.get_logger(), "XRoboToolkit device state JSON is empty");
+        TELEOP_LOG_WARN("XRoboToolkit device state JSON is empty");
         break;
       }
-      RCLCPP_INFO_ONCE(
-          node_.get_logger(),
-          "XRoboToolkit device state JSON stream started. devID=%s",
-          state.devID);
+      TELEOP_LOG_INFO_ONCE("XRoboToolkit device state JSON stream started. devID=%s", state.devID);
       handle_device_state_json(state_json.c_str());
       break;
     }
@@ -406,9 +496,7 @@ void PicoDataReceiver::handle_device_state_json(const char * state_json)
     const Json::Value root = parse_json_string(state_json);
     Json::Value tracking_value;
     if (!extract_tracking_value(root, &tracking_value)) {
-      RCLCPP_WARN_THROTTLE(
-          node_.get_logger(),
-          *node_.get_clock(),
+      TELEOP_LOG_WARN_THROTTLE(
           2000,
           "Pico tracking JSON has no usable value object: %s",
           tracking_payload_summary(root).c_str());
@@ -448,9 +536,7 @@ void PicoDataReceiver::handle_device_state_json(const char * state_json)
         packet_callback_(packet);
       }
       ++skipped_body_frame_count_;
-      RCLCPP_WARN_THROTTLE(
-          node_.get_logger(),
-          *node_.get_clock(),
+      TELEOP_LOG_WARN_THROTTLE(
           2000,
           "Pico tracking JSON has no usable Body joints yet; skipped=%lu %s",
           skipped_body_frame_count_,
@@ -461,11 +547,7 @@ void PicoDataReceiver::handle_device_state_json(const char * state_json)
     int64_t body_timestamp_ns = extract_body_timestamp_ns(tracking_value);
     if (body_timestamp_ns <= 0) {
       body_timestamp_ns = node_.get_clock()->now().nanoseconds();
-      RCLCPP_WARN_THROTTLE(
-          node_.get_logger(),
-          *node_.get_clock(),
-          2000,
-          "Pico Body timestamp is missing; using ROS clock timestamp");
+      TELEOP_LOG_WARN_THROTTLE(2000, "Pico Body timestamp is missing; using ROS clock timestamp");
     }
     if (parsed_controller_input) {
       std::lock_guard<std::mutex> lock(frame_mutex_);
@@ -483,6 +565,8 @@ void PicoDataReceiver::handle_device_state_json(const char * state_json)
       PicoTeleopPacket packet;
       packet.pose_82d = std::move(*pose_82d);
       packet.has_pose_82d = packet.pose_82d.size() == 82;
+      packet.pelvis_position = estimate_pelvis_position(body_poses);
+      packet.has_pelvis_position = true;
       packet.input = input;
       packet.body_timestamp_ns = body_timestamp_ns;
       packet.input_timestamp_ns = input_timestamp_ns;
@@ -492,12 +576,7 @@ void PicoDataReceiver::handle_device_state_json(const char * state_json)
     }
     skipped_body_frame_count_ = 0;
   } catch (const std::exception & e) {
-    RCLCPP_WARN_THROTTLE(
-        node_.get_logger(),
-        *node_.get_clock(),
-        2000,
-        "Failed to parse Pico body frame: %s",
-        e.what());
+    TELEOP_LOG_WARN_THROTTLE(2000, "Failed to parse Pico body frame: %s", e.what());
   }
 }
 
@@ -517,8 +596,7 @@ void PicoDataReceiver::update_body_fps()
 
   const double elapsed_s = static_cast<double>(elapsed_ns) * 1.0e-9;
   const double body_fps = static_cast<double>(body_fps_frame_count_) / elapsed_s;
-  RCLCPP_INFO(
-      node_.get_logger(),
+  TELEOP_LOG_INFO(
       "Pico Body receive fps: %.1f skipped_body=%lu",
       body_fps,
       skipped_body_frame_count_);

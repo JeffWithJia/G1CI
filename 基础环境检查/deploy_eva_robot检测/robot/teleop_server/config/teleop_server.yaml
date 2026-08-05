@@ -2,37 +2,33 @@ cameras:
    - device_name: ""
      topic_name: "cam_head"
      camera_type: "REALSENSE"
-     image_width: 640
-     image_height: 480
+     image_width: 1280
+     image_height: 720
      frame_rate: 30
-     compress_type: "MJPEG_COMPRESS"
      flip: false
-     enable_socket_publish: true
-     socket_publish_port: 5555
+     enable_pico_video: true
    - device_name: "/dev/cam_wrist_left"
      topic_name: "cam_wrist_left"
      camera_type: "V4L2"
      image_width: 640
      image_height: 480
      frame_rate: 30
-     compress_type: "MJPEG_COMPRESS"
      flip: false
-     enable_socket_publish: false
-     socket_publish_port: 5555
+     enable_pico_video: false
    - device_name: "/dev/cam_wrist_right"
      topic_name: "cam_wrist_right"
      camera_type: "V4L2"
      image_width: 640
      image_height: 480
      frame_rate: 30
-     compress_type: "MJPEG_COMPRESS"
      flip: false
-     enable_socket_publish: false
-     socket_publish_port: 5555
+     enable_pico_video: false
 
 device_type: "G1_29_DOF"
 
 pico:
+  video:
+    drop_old: true
   receiver:
     pose_82d_hz: 50
   teleop:

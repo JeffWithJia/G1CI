@@ -35,11 +35,11 @@
         <div class="password-grid">
           <label>
             SSH 密码
-            <input id="sshPassword" type="password" autocomplete="off" placeholder="用于机器人 SSH 登录">
+            <input id="sshPassword" type="password" autocomplete="off" placeholder="用于机器人 SSH 登录" value="123">
           </label>
           <label>
             sudo 密码
-            <input id="sudoPassword" type="password" autocomplete="off" placeholder="用于 sudo 权限">
+            <input id="sudoPassword" type="password" autocomplete="off" placeholder="用于 sudo 权限" value="123">
           </label>
           <label class="checkline same-password">
             <input id="samePassword" type="checkbox" checked> sudo 密码同 SSH 密码
@@ -49,13 +49,14 @@
         <div class="robot-row">
           <div>
             <div class="label">执行范围</div>
-            <label class="checkline"><input id="allRobots" type="checkbox" checked> 全部机器人</label>
+            <label class="checkline"><input id="allRobots" type="checkbox"> 全部机器人</label>
           </div>
           <div id="robotList" class="robot-list"></div>
         </div>
 
         <div class="actions operation-actions">
           <button data-action="service_check" type="button">服务状态检查</button>
+          <button data-action="hand_test" type="button">验证手是否能动</button>
         </div>
 
         <div class="service-actions">
@@ -77,6 +78,8 @@
         <strong>当前无任务运行</strong>
         <span>请先输入 SSH 密码和 sudo 密码，再执行任务。</span>
       </div>
+
+      <section id="taskProgress" class="task-progress" hidden></section>
 
       <section class="metrics">
         <div><span id="metricTotal">0</span><b>机器人总数</b></div>
@@ -106,15 +109,6 @@
         <div id="issueBoard" class="issue-board"></div>
       </section>
 
-      <section class="panel">
-        <div class="section-head">
-          <div>
-            <h2>检查项明细</h2>
-            <p>展示检查项名称、状态和简短 detail，长日志在开发者模块查看。</p>
-          </div>
-        </div>
-        <div id="checkCards" class="cards"></div>
-      </section>
     </section>
 
     <section id="robotsModule" class="module-pane">
@@ -175,11 +169,11 @@
         <div class="password-grid">
           <label>
             SSH 密码
-            <input id="devSshPassword" type="password" autocomplete="off" placeholder="用于机器人 SSH 登录">
+            <input id="devSshPassword" type="password" autocomplete="off" placeholder="用于机器人 SSH 登录" value="123">
           </label>
           <label>
             sudo 密码
-            <input id="devSudoPassword" type="password" autocomplete="off" placeholder="用于 sudo 权限">
+            <input id="devSudoPassword" type="password" autocomplete="off" placeholder="用于 sudo 权限" value="123">
           </label>
           <label class="checkline same-password">
             <input id="devSamePassword" type="checkbox" checked> sudo 密码同 SSH 密码
@@ -188,14 +182,17 @@
         <div class="robot-row">
           <div>
             <div class="label">执行范围</div>
-            <label class="checkline"><input id="devAllRobots" type="checkbox" checked> 全部机器人</label>
+            <label class="checkline"><input id="devAllRobots" type="checkbox"> 全部机器人</label>
           </div>
           <div id="devRobotList" class="robot-list"></div>
         </div>
         <div class="actions developer-actions">
+          <button data-action="deploy_setup_agent" type="button">智能部署 / 修复</button>
+          <button data-action="deploy_to_robot" type="button">部署到机器人</button>
           <button data-action="cos_setup" type="button">执行 cos_setup.sh</button>
           <button data-action="install" type="button">一键安装 / 修复</button>
           <button data-action="check" type="button">一键检查环境</button>
+          <button id="cameraBindingBtn" class="camera-binding-open-btn" type="button">摄像头绑定检查</button>
         </div>
       </section>
 
@@ -247,17 +244,142 @@
     </div>
   </div>
 
+  <div id="cameraBindingOverlay" class="confirm-overlay" hidden>
+    <div class="confirm-dialog camera-binding-dialog" role="dialog" aria-modal="true" aria-labelledby="cameraBindingTitle">
+      <div class="camera-binding-head">
+        <div>
+          <h2 id="cameraBindingTitle">摄像头绑定检查</h2>
+          <p id="cameraBindingRobot">当前机器人：-</p>
+        </div>
+        <button id="closeCameraBindingIconBtn" class="secondary icon-close-btn" type="button" aria-label="关闭" title="关闭">×</button>
+      </div>
+
+      <section class="camera-binding-step">
+        <div class="camera-binding-step-head">
+          <h3><span>1</span>读取摄像头信息</h3>
+          <button id="inspectCameraBindingBtn" class="secondary" type="button">重新读取</button>
+        </div>
+        <p id="cameraBindingInspectStatus" class="camera-binding-status running">等待读取。</p>
+      </section>
+
+      <section class="camera-binding-step">
+        <h3><span>2</span>按 ID_V4L_PRODUCT 分类</h3>
+        <div id="cameraBindingGroups" class="camera-binding-groups">
+          <p class="empty">读取后显示分类信息。</p>
+        </div>
+      </section>
+
+      <section class="camera-binding-step">
+        <div class="camera-binding-step-head">
+          <h3><span>3</span>在机器人终端修改绑定规则</h3>
+          <button id="copyCameraRuleEditBtn" class="secondary" type="button">复制命令</button>
+        </div>
+        <pre class="camera-binding-command">sudo vi /etc/udev/rules.d/99-usb-cameras.rules</pre>
+      </section>
+
+      <section class="camera-binding-step">
+        <div class="camera-binding-step-head">
+          <h3><span>4</span>使能并检查绑定</h3>
+          <button id="reloadCameraRulesBtn" type="button">使能规则</button>
+        </div>
+        <pre class="camera-binding-command">sudo udevadm control --reload-rules &amp;&amp; sudo udevadm trigger &amp;&amp; ls -la /dev/cam_*</pre>
+        <p id="cameraBindingReloadStatus" class="camera-binding-status">尚未执行。</p>
+        <pre id="cameraBindingReloadOutput" class="camera-binding-output" hidden></pre>
+      </section>
+
+      <div class="confirm-actions">
+        <button id="closeCameraBindingBtn" class="secondary" type="button">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="handSelectOverlay" class="confirm-overlay" hidden>
+    <div class="confirm-dialog hand-dialog" role="dialog" aria-modal="true" aria-labelledby="handSelectTitle">
+      <h2 id="handSelectTitle">选择测试手</h2>
+      <dl>
+        <dt>当前机器人</dt><dd id="handSelectRobot"></dd>
+        <dt>手类型</dt><dd id="handSelectType"></dd>
+      </dl>
+      <div class="hand-side-actions">
+        <button id="handSelectLeftBtn" type="button" data-side="left">测试左手</button>
+        <button id="handSelectRightBtn" type="button" data-side="right">测试右手</button>
+      </div>
+      <div class="confirm-actions">
+        <button id="cancelHandSelectBtn" class="secondary" type="button">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="handTestOverlay" class="confirm-overlay" hidden>
+    <div class="confirm-dialog hand-dialog" role="dialog" aria-modal="true" aria-labelledby="handTestTitle">
+      <h2 id="handTestTitle">手测试运行中</h2>
+      <p id="handTestMessage">请观察对应手是否在动。</p>
+      <dl>
+        <dt>当前机器人</dt><dd id="handTestRobot"></dd>
+        <dt>测试对象</dt><dd id="handTestTarget"></dd>
+        <dt>当前状态</dt><dd id="handTestStatus"></dd>
+      </dl>
+      <div class="confirm-actions">
+        <button id="closeHandTestBtn" class="secondary" type="button" hidden>关闭</button>
+        <button id="cancelHandTestBtn" class="danger" type="button">取消测试</button>
+      </div>
+    </div>
+  </div>
+
   <script>
-    const state = { robots: [], polling: null, lastLogContent: "", activeModule: "operation", pendingAction: null };
+    const CAMERA_TOPIC_MIN_RATE_HZ = 29;
+    const SERVICE_DETAIL_BASE_NAMES = [
+      "cos_agent.service",
+      "cos_teleop.service",
+      "xrobotoolkit-pc-service.service"
+    ];
+    const SERVICE_DETAIL_HAND_NAMES = {
+      dex1: "dex1_gripper.service",
+      brainco: "brainco_hand.service"
+    };
+    const state = {
+      robots: [],
+      robotStatuses: {},
+      polling: null,
+      statusPolling: null,
+      servicePolling: null,
+      serviceDetail: null,
+      serviceLoading: false,
+      refreshing: false,
+      jobRunning: false,
+      reportRobots: [],
+      operationRobotListExpanded: false,
+      developerRobotListExpanded: false,
+      lastLogContent: "",
+      activeModule: "operation",
+      pendingAction: null,
+      pendingHandTest: null,
+      handTestVisible: false,
+      cameraBinding: null
+    };
     const actionLabels = {
+      deploy_setup_agent: "智能部署 / 修复",
+      deploy_to_robot: "部署到机器人",
       cos_setup: "执行 cos_setup.sh",
       install: "一键安装 / 修复",
       check: "一键检查环境",
       service_check: "服务状态检查",
-      service_restart: "服务重启"
+      camera_check: "重新检测相机帧率",
+      service_restart: "服务重启",
+      hand_test: "验证手是否能动"
     };
-    const riskyActions = new Set(["cos_setup", "install", "check", "service_restart"]);
+    const riskyActions = new Set(["deploy_setup_agent", "deploy_to_robot", "cos_setup", "install", "check", "service_restart"]);
     const confirmCopy = {
+      deploy_setup_agent: {
+        title: "确认智能部署 / 修复？",
+        message: "该操作会先部署 robot 文件，再执行 /home/unitree/cos_setup.sh，并根据报告做一次低风险自动修复。第一版一次只支持 1 台机器人，请确认当前机器人无采集任务。",
+        button: "确认执行"
+      },
+      deploy_to_robot: {
+        title: "确认部署到机器人？",
+        message: "该操作会将当前 robot 文件部署到选中的机器人，包含 cos_setup.sh、apk、ROS2 工作区、teleop_server 和 systemd 文件。请确认已选择正确机器人。",
+        button: "确认部署"
+      },
       cos_setup: {
         title: "确认执行 cos_setup.sh？",
         message: "该操作会在选中的机器人上执行 /home/unitree/cos_setup.sh，可能耗时数分钟，并可能修改机器人环境。请确认已选择正确机器人。",
@@ -282,12 +404,34 @@
 
     const statusClass = (status) => ({
       OK: "ok",
+      ONLINE: "ok",
+      RUNNING: "ok",
       WARN: "warn",
+      STALE: "warn",
+      CHECKING: "warn",
+      QUERYING: "warn",
       FAIL: "fail",
+      OFFLINE: "fail",
       UNREACHABLE: "fail",
+      NETWORK_DOWN: "fail",
       SKIP: "skip",
-      NO_REPORT: "skip"
+      NO_REPORT: "skip",
+      UNKNOWN: "skip"
     }[status] || "warn");
+
+    const statusText = (status) => ({
+      ONLINE: "在线",
+      OFFLINE: "离线",
+      CHECKING: "检查中",
+      UNKNOWN: "未知",
+      STALE: "过期",
+      RUNNING: "运行中",
+      QUERYING: "查询中",
+      NETWORK_DOWN: "网络不通",
+      OK: "正常",
+      WARN: "警告",
+      FAIL: "失败"
+    }[status] || status || "未知");
 
     async function api(path, options = {}) {
       const response = await fetch(path, options);
@@ -324,10 +468,90 @@
       return `ID ${robot.robot_id || "-"} · ${robot.ansible_host || "-"} · ${robot.end_effector || "-"}`;
     }
 
+    function robotStatus(robot) {
+      return state.robotStatuses[robot.inventory_hostname] || {
+        network_status: "CHECKING",
+        business_status: "UNKNOWN",
+        latency_ms: null,
+        checked_at: "",
+        reason: "等待首次网络探测",
+        business_reason: "尚未收到业务心跳"
+      };
+    }
+
+    function networkStatusRank(robot) {
+      const status = String(robotStatus(robot).network_status || "UNKNOWN").toUpperCase();
+      return { ONLINE: 0, CHECKING: 1, UNKNOWN: 2, OFFLINE: 3 }[status] ?? 2;
+    }
+
+    function robotSortKey(robot) {
+      const id = Number(robot.robot_id);
+      return Number.isFinite(id) ? id : Number.MAX_SAFE_INTEGER;
+    }
+
+    function operationRobotList() {
+      return state.robots
+        .map((robot, index) => ({ robot, index }))
+        .sort((left, right) => (
+          networkStatusRank(left.robot) - networkStatusRank(right.robot)
+          || robotSortKey(left.robot) - robotSortKey(right.robot)
+          || left.index - right.index
+        ))
+        .map((item) => item.robot);
+    }
+
+    function managementRobotList() {
+      return operationRobotList();
+    }
+
+    function statusBadges(robot) {
+      const status = robotStatus(robot);
+      return `
+        <span class="badge ${statusClass(status.network_status)}" title="${escapeHtml(status.reason || status.checked_at || "")}">网络 ${escapeHtml(statusText(status.network_status))}</span>
+        <span class="badge ${statusClass(status.business_status)}" title="${escapeHtml(status.business_reason || status.last_heartbeat_at || "")}">业务 ${escapeHtml(statusText(status.business_status))}</span>
+      `;
+    }
+
+    function serviceHeaders() {
+      const sshPassword = document.getElementById("sshPassword").value || document.getElementById("devSshPassword").value || "";
+      const samePassword = document.getElementById("samePassword").checked;
+      const sudoPassword = samePassword
+        ? sshPassword
+        : (document.getElementById("sudoPassword").value || document.getElementById("devSudoPassword").value || "");
+      const headers = {};
+      if (sshPassword) headers["X-SSH-Password"] = sshPassword;
+      if (sudoPassword) headers["X-Sudo-Password"] = sudoPassword;
+      return headers;
+    }
+
+    function hasSshPassword(headers) {
+      return Boolean(headers?.["X-SSH-Password"]);
+    }
+
+    function refreshStartMessage(headers) {
+      if (hasSshPassword(headers)) return "正在检查全部机器人网络状态，在线机器人会继续读取业务状态……";
+      return "未填写 SSH 密码，将尝试免密 SSH；若机器人未配置免密，在线机器人的业务状态会显示未知。";
+    }
+
+    function firstBusinessFailureReason(refresh) {
+      const results = Array.isArray(refresh?.business_results) ? refresh.business_results : [];
+      const failed = results.find((item) => item && item.status !== "OK" && item.reason);
+      return failed ? compactText(failed.reason, 140) : "";
+    }
+
     function selectedRobotLabels(selected) {
       const selectedSet = new Set(selected);
       const robots = state.robots.filter((robot) => selectedSet.has(robot.inventory_hostname));
       return robots.map((robot) => `${robotLabel(robot)}（${robot.inventory_hostname}）`);
+    }
+
+    function handSideLabel(side) {
+      return side === "left" ? "左手" : "右手";
+    }
+
+    function selectedRobotObjects(selected) {
+      const selectedSet = new Set(selected);
+      return state.robots.filter((robot) => selectedSet.has(robot.inventory_hostname));
     }
 
     function switchModule(name) {
@@ -340,9 +564,21 @@
       });
     }
 
+    function setRefreshButtonState() {
+      const button = document.getElementById("refreshBtn");
+      button.disabled = state.refreshing || state.jobRunning;
+      button.textContent = state.refreshing
+        ? "刷新中..."
+        : state.jobRunning
+          ? "任务运行中"
+          : "刷新最新报告";
+    }
+
     function setBusy(running) {
+      state.jobRunning = !!running;
       document.querySelectorAll(".actions button, .service-actions button").forEach((btn) => btn.disabled = running);
       document.getElementById("serviceRestartName").disabled = running;
+      setRefreshButtonState();
     }
 
     function formatDuration(value) {
@@ -350,6 +586,99 @@
       const seconds = Number(value);
       if (!Number.isFinite(seconds)) return "";
       return `耗时：${seconds.toFixed(seconds % 1 === 0 ? 0 : 1)} 秒`;
+    }
+
+    function stageHasProblemItems(stage) {
+      const items = Array.isArray(stage?.items) ? stage.items : [];
+      return items.some((item) => ["failed", "warn"].includes(String(item?.status || "").toLowerCase()));
+    }
+
+    function effectiveStageStatus(stage) {
+      const status = String(stage?.status || "pending").toLowerCase();
+      if (stage?.id === "ros2" && stageHasProblemItems(stage)) return "failed";
+      return status;
+    }
+
+    function stageStatusText(status, stage = {}) {
+      if (stage?.id === "ros2" && status === "failed") return "异常";
+      return {
+        pending: "等待",
+        running: "进行中",
+        completed: "完成",
+        failed: "失败",
+        skipped: "跳过"
+      }[status] || status || "未知";
+    }
+
+    function stageElapsedText(stage) {
+      const elapsed = Number(stage?.elapsed_seconds);
+      const status = String(stage?.status || "").toLowerCase();
+      if (!Number.isFinite(elapsed) || elapsed < 0) return "";
+      if (elapsed === 0 && status !== "running") return "";
+      return `${elapsed.toFixed(elapsed % 1 === 0 ? 0 : 1)} 秒`;
+    }
+
+    function renderStageAction(stage) {
+      if (stage?.id !== "ros2") return "";
+      const disabled = state.jobRunning || state.refreshing ? " disabled" : "";
+      return `<button class="stage-inline-action camera-recheck-btn" type="button"${disabled}>检查摄像头绑定</button>`;
+    }
+
+    function stageItemSymbol(item) {
+      const status = String(item?.status || "").toLowerCase();
+      if (status === "failed") return "!";
+      if (status === "warn") return "!";
+      if (status === "pending") return "待";
+      return "✓";
+    }
+
+    function renderStageItems(stage) {
+      const items = Array.isArray(stage?.items) ? stage.items : [];
+      if (!items.length) return "";
+      return `
+        <ul class="task-stage-items">
+          ${items.map((item) => {
+            const status = String(item.status || "done").toLowerCase();
+            return `
+              <li class="${status}" title="${escapeHtml(item.detail || "")}">
+                <span>${escapeHtml(item.label || "")}</span>
+                <b aria-label="${status === "failed" ? "失败" : status === "warn" ? "警告" : status === "pending" ? "待检查" : "已完成"}">${escapeHtml(stageItemSymbol(item))}</b>
+              </li>
+            `;
+          }).join("")}
+        </ul>
+      `;
+    }
+
+    function renderTaskProgress(job) {
+      const panel = document.getElementById("taskProgress");
+      const stages = Array.isArray(job?.stages) ? job.stages : [];
+      if (!stages.length) {
+        panel.hidden = true;
+        panel.innerHTML = "";
+        return;
+      }
+      panel.hidden = false;
+      panel.innerHTML = stages.map((stage) => {
+        const status = effectiveStageStatus(stage);
+        const task = stage.task || (status === "pending" ? "等待执行" : "");
+        const elapsed = stageElapsedText(stage);
+        const elapsedLabel = elapsed || (status === "running" ? "计时中" : "尚未计时");
+        return `
+          <article class="task-stage ${status}">
+            <div class="task-stage-head">
+              <div class="task-stage-title">
+                <b>${escapeHtml(stage.label || stage.id || "阶段")}</b>
+                ${renderStageAction(stage)}
+              </div>
+              <span class="badge ${status === "completed" ? "ok" : status === "failed" ? "fail" : status === "running" ? "warn" : "skip"}">${escapeHtml(stageStatusText(status, stage))}</span>
+            </div>
+            <small>${escapeHtml(elapsedLabel)}</small>
+            ${task ? `<p>${escapeHtml(task)}</p>` : ""}
+            ${renderStageItems(stage)}
+          </article>
+        `;
+      }).join("");
     }
 
     function setTaskBanner(kind, title, detail, meta = "") {
@@ -372,7 +701,7 @@
       if (job.phase === "partial") return "partial";
       if (!job.running && Number(job.returncode) === 0) return "success";
       if (!job.running && job.returncode !== null && job.returncode !== undefined) return "fail";
-      if (job.phase === "precheck" || job.phase === "starting" || job.phase === "running" || job.phase === "reporting") return "running";
+      if (job.phase === "precheck" || job.phase === "starting" || job.phase === "running" || job.phase === "reporting" || job.phase === "cancelling") return "running";
       return "idle";
     }
 
@@ -380,6 +709,7 @@
       if (job.phase === "precheck") return "正在检查机器人连接……";
       if (job.phase === "starting") return "机器人连接成功，正在启动任务……";
       if (job.phase === "reporting") return "任务执行结束，正在生成中文报告……";
+      if (job.phase === "cancelling") return "正在取消测试……";
       if (job.phase === "partial") return job.message || "执行完成：存在警告，请查看下方报告。";
       if (!job.running && job.message) return job.message;
       if (!job.running && Number(job.returncode) === 0) return "执行完成：任务成功。";
@@ -393,6 +723,8 @@
       const title = bannerTitleFromJob(job);
       const detail = job.message && job.message !== title ? job.message : "";
       setTaskBanner(bannerKindFromJob(job), title, detail, formatDuration(job.duration_seconds));
+      renderTaskProgress(job);
+      renderHandTestOverlay(job);
     }
 
     function validatePasswords() {
@@ -451,34 +783,82 @@
       document.getElementById("cancelEditBtn").hidden = true;
     }
 
+    function currentSelectedRobotChoices() {
+      return new Set([...document.querySelectorAll(".robot-choice:checked")].map((item) => item.value));
+    }
+
     function renderRobots() {
+      const selectedValues = currentSelectedRobotChoices();
+      const allChecked = document.getElementById("allRobots").checked;
       ["robotList", "devRobotList"].forEach((targetId) => {
         const chooser = document.getElementById(targetId);
         chooser.innerHTML = "";
-        state.robots.forEach((robot) => {
+        const expandedKey = targetId === "robotList" ? "operationRobotListExpanded" : "developerRobotListExpanded";
+        const orderedRobots = operationRobotList();
+        const visibleRobots = !state[expandedKey]
+          ? orderedRobots.slice(0, 6)
+          : orderedRobots;
+        visibleRobots.forEach((robot) => {
           const label = document.createElement("label");
-          label.className = "robot-pill";
-          label.innerHTML = `<input class="robot-choice" type="checkbox" value="${escapeHtml(robot.inventory_hostname)}"> <span>${escapeHtml(robotLabel(robot))}</span><small>${escapeHtml(robot.inventory_hostname)}</small>`;
+          const checkedAttr = selectedValues.has(robot.inventory_hostname) ? "checked" : "";
+          const disabledAttr = allChecked ? "disabled" : "";
+          const host = robot.ansible_host || "-";
+          const meta = `${robot.inventory_hostname} · ${robot.end_effector || "-"}`;
+          label.className = "robot-pill operation-robot-pill";
+          label.innerHTML = `
+            <input class="robot-choice" type="checkbox" value="${escapeHtml(robot.inventory_hostname)}" ${checkedAttr} ${disabledAttr}>
+            <span class="operation-robot-id">ID ${escapeHtml(robot.robot_id || "-")}</span>
+            <span class="operation-robot-ip" title="IP ${escapeHtml(host)}">${escapeHtml(host)}</span>
+            <span class="status-pair operation-robot-status">${statusBadges(robot)}</span>
+            <small class="operation-robot-meta" title="${escapeHtml(meta)}">${escapeHtml(meta)}</small>
+          `;
           chooser.appendChild(label);
         });
+        const hiddenCount = orderedRobots.length - 6;
+        if (orderedRobots.length > 6) {
+          const button = document.createElement("button");
+          button.className = "secondary robot-list-more";
+          button.type = "button";
+          button.textContent = state[expandedKey] ? "收起列表" : `查看更多（${hiddenCount} 台）`;
+          button.addEventListener("click", () => {
+            state[expandedKey] = !state[expandedKey];
+            renderRobots();
+          });
+          chooser.appendChild(button);
+        }
       });
-      document.getElementById("allRobots").dispatchEvent(new Event("change"));
 
       const table = document.getElementById("robotTable");
       if (!state.robots.length) {
         table.innerHTML = `<div class="empty">暂无机器人。请先添加机器人。</div>`;
         return;
       }
-      table.innerHTML = state.robots.map((robot) => `
-        <div class="robot-row-item">
-          <b>ID ${escapeHtml(robot.robot_id || "-")}</b>
-          <span>${escapeHtml(robot.ansible_host || "-")}</span>
-          <span>${escapeHtml(robot.end_effector || "-")}</span>
-          <small>${escapeHtml(robot.inventory_hostname || "")}</small>
-          <button class="secondary edit-robot" type="button" data-host="${escapeHtml(robot.inventory_hostname)}">修改</button>
-          <button class="danger delete-robot" type="button" data-host="${escapeHtml(robot.inventory_hostname)}">删除</button>
-        </div>
-      `).join("");
+      table.innerHTML = managementRobotList().map((robot) => {
+        const isDetailOpen = state.serviceDetail?.host === robot.inventory_hostname;
+        return `
+          <div class="robot-row-item ${isDetailOpen ? "active-detail" : ""}">
+            <b>ID ${escapeHtml(robot.robot_id || "-")}</b>
+            <span>${escapeHtml(robot.ansible_host || "-")}</span>
+            <span>${escapeHtml(robot.end_effector || "-")}</span>
+            <small>${escapeHtml(robot.inventory_hostname || "")}</small>
+            <span class="status-pair">${statusBadges(robot)}</span>
+            <button class="secondary robot-detail" type="button" data-host="${escapeHtml(robot.inventory_hostname)}">${isDetailOpen ? "收起" : "详情"}</button>
+            <button class="secondary edit-robot" type="button" data-host="${escapeHtml(robot.inventory_hostname)}">修改</button>
+            <button class="danger delete-robot" type="button" data-host="${escapeHtml(robot.inventory_hostname)}">删除</button>
+          </div>
+          ${isDetailOpen ? serviceDetailPanelMarkup(robot) : ""}
+        `;
+      }).join("");
+      document.querySelectorAll(".robot-detail").forEach((button) => {
+        button.addEventListener("click", () => {
+          openServiceDetail(button.dataset.host).catch((error) => {
+            showServiceDetailMessage("fail", error.message);
+          });
+        });
+      });
+      document.querySelectorAll(".close-service-detail").forEach((button) => {
+        button.addEventListener("click", () => closeServiceDetail());
+      });
       document.querySelectorAll(".edit-robot").forEach((button) => {
         button.addEventListener("click", () => {
           const robot = state.robots.find((item) => item.inventory_hostname === button.dataset.host);
@@ -498,6 +878,7 @@
           if (!confirm(`确认删除 ${label} 吗？`)) return;
           await api(`/api/robots/${encodeURIComponent(button.dataset.host)}`, { method: "DELETE" });
           await loadRobots();
+          await loadRobotStatuses();
         });
       });
     }
@@ -523,31 +904,28 @@
       `;
     }
 
+    function selectedReportRobots(robots) {
+      if (!robots.length) return [];
+      if (!document.getElementById("allRobots").checked) {
+        const selectedSet = new Set([...document.querySelectorAll(".robot-choice:checked")].map((item) => item.value));
+        const selected = robots.filter((robot) => selectedSet.has(robot.inventory_hostname));
+        if (selected.length) return selected;
+      }
+      return [robots[0]];
+    }
+
+    function renderSelectedReportSections() {
+      renderIssueBoard(state.reportRobots);
+      renderDeveloperLogs(state.reportRobots);
+    }
+
     function renderIssueBoard(robots) {
       const board = document.getElementById("issueBoard");
-      const issues = robots.flatMap((robot) => (robot.issues || [])
+      const visibleRobots = selectedReportRobots(robots);
+      const issues = visibleRobots.flatMap((robot) => (robot.issues || [])
         .filter((issue) => ["WARN", "FAIL", "UNREACHABLE"].includes(issue.status))
         .map((issue) => issueMarkup(robot, issue)));
       board.innerHTML = issues.length ? issues.join("") : `<div class="empty">未发现需要处理的问题。</div>`;
-    }
-
-    function renderCheckCards(robots) {
-      const cards = document.getElementById("checkCards");
-      if (!robots.length) {
-        cards.innerHTML = `<div class="empty">暂无检查项明细。</div>`;
-        return;
-      }
-      cards.innerHTML = robots.map((robot) => `
-        <details class="robot-card ${statusClass(robot.status)}">
-          <summary>
-            <span>${escapeHtml(robotLabel(robot))}</span>
-            <span class="status ${statusClass(robot.status)}">${escapeHtml(robot.status_cn)}</span>
-          </summary>
-          <div class="check-list">
-            ${(robot.checks || []).map((item) => `<div><span class="badge ${statusClass(item.status)}">${escapeHtml(item.status_cn)}</span><b>${escapeHtml(item.name)}</b><small>${escapeHtml(compactText(item.detail))}</small></div>`).join("") || "<p class='muted'>无检查项明细。</p>"}
-          </div>
-        </details>
-      `).join("");
     }
 
     function cameraRateText(value) {
@@ -559,40 +937,47 @@
       const board = document.getElementById("cameraStatusBoard");
       const rows = robots
         .filter((robot) => Array.isArray(robot.camera_topics) && robot.camera_topics.length)
-        .map((robot) => `
-          <article class="camera-robot">
+        .map((robot) => {
+          return `
+            <article class="camera-robot">
             <div class="camera-robot-head">
               <b>${escapeHtml(robotLabel(robot))}</b>
               <small>${escapeHtml(robot.inventory_hostname || "")}</small>
             </div>
             <div class="camera-topic-grid">
-              ${robot.camera_topics.map((item) => `
-                <div class="camera-topic-row ${statusClass(item.status)}">
-                  <div>
-                    <b>${escapeHtml(item.label || item.topic)}</b>
-                    <small>${escapeHtml(item.topic || "")}</small>
+              ${robot.camera_topics.map((item) => {
+                const hz = Number(item.rate_hz || 0);
+                const itemStatus = (item.status || (hz >= CAMERA_TOPIC_MIN_RATE_HZ ? "OK" : hz > 0 ? "WARN" : "FAIL")).toUpperCase();
+                return `
+                  <div class="camera-topic-row ${statusClass(itemStatus)}">
+                    <div>
+                      <b>${escapeHtml(item.label || item.topic)}</b>
+                      <small>${escapeHtml(item.topic || "")}</small>
+                    </div>
+                    <span class="badge ${statusClass(itemStatus)}">${escapeHtml(itemStatus)}</span>
+                    <strong>${escapeHtml(cameraRateText(hz))}</strong>
+                    ${itemStatus === "OK" ? "" : `
+                      <p>${escapeHtml(item.reason || (itemStatus === "WARN" ? "摄像头 topic 帧率不足" : "camera topic no data"))}</p>
+                      <p>${escapeHtml(item.suggestion || (itemStatus === "WARN" ? "检查摄像头帧率是否稳定，确认相机连接、系统负载和 cos_teleop.service 状态。" : "检查 Type-C 连接或重启 cos_teleop.service"))}</p>
+                    `}
                   </div>
-                  <span class="badge ${statusClass(item.status)}">${escapeHtml(item.status || "-")}</span>
-                  <strong>${escapeHtml(cameraRateText(item.rate_hz))}</strong>
-                  ${item.status === "WARN" || item.status === "FAIL" ? `
-                    <p>${escapeHtml(item.reason || "摄像头无数据")}</p>
-                    <p>${escapeHtml(item.suggestion || "检查 Type-C 连接或重启 cos_teleop.service")}</p>
-                  ` : ""}
-                </div>
-              `).join("")}
+                `;
+              }).join("")}
             </div>
           </article>
-        `);
-      board.innerHTML = rows.length ? rows.join("") : `<div class="empty">暂无摄像头 topic 心跳结果。</div>`;
+          `;
+        });
+      board.innerHTML = rows.length ? rows.join("") : `<div class="empty">未读取到摄像头 hz 结果。</div>`;
     }
 
     function renderDeveloperLogs(robots) {
       const logs = document.getElementById("developerLogs");
-      if (!robots.length) {
+      const visibleRobots = selectedReportRobots(robots);
+      if (!visibleRobots.length) {
         logs.innerHTML = `<div class="empty">暂无技术日志。</div>`;
         return;
       }
-      logs.innerHTML = robots.map((robot) => {
+      logs.innerHTML = visibleRobots.map((robot) => {
         const rawOutputs = (robot.raw_outputs || []).length ? robot.raw_outputs.map((out) => `
           <details class="log-card">
             <summary>${escapeHtml(out.label)}</summary>
@@ -616,6 +1001,10 @@
     }
 
     function renderReports(data) {
+      state.reportRobots = data.robots || [];
+      if (Array.isArray(data.robot_statuses)) {
+        updateRobotStatuses(data.robot_statuses);
+      }
       document.getElementById("metricTotal").textContent = data.counts.total;
       document.getElementById("metricOk").textContent = data.counts.ok;
       document.getElementById("metricWarn").textContent = data.counts.warn;
@@ -623,10 +1012,14 @@
       document.getElementById("metricSkip").textContent = data.counts.skip;
       document.getElementById("reportSource").textContent = `最新报告：${data.source}`;
       document.getElementById("reportTime").textContent = `更新时间：${data.updated_at}`;
-      renderIssueBoard(data.robots || []);
-      renderCameraStatus(data.robots || []);
-      renderCheckCards(data.robots || []);
-      renderDeveloperLogs(data.robots || []);
+      renderIssueBoard(state.reportRobots);
+      renderCameraStatus(state.reportRobots);
+      renderDeveloperLogs(state.reportRobots);
+    }
+
+    function updateRobotStatuses(robots) {
+      state.robotStatuses = Object.fromEntries((robots || []).map((robot) => [robot.inventory_hostname, robot]));
+      renderRobots();
     }
 
     function renderLocalChecks(data) {
@@ -644,13 +1037,183 @@
       `).join("");
       const warning = data.reason ? `
         <div class="local-warning">
-          <b>当前控制电脑未安装 Ansible，无法执行机器人批量检查和安装。</b>
+          <b>${escapeHtml(data.reason)}</b>
           <p>处理建议：</p>
-          <pre>sudo apt update
-sudo apt install -y ansible sshpass</pre>
+          <pre>${escapeHtml(data.suggestion || "请安装缺失依赖后重试。")}</pre>
         </div>
       ` : "";
       board.innerHTML = `${checks}${warning}`;
+    }
+
+    function serviceDisplayStatus(item) {
+      const status = String(item.status || "UNKNOWN").toUpperCase();
+      if (status === "QUERYING" || status === "NETWORK_DOWN") return status;
+      if (String(item.active_state || "").toLowerCase() === "active") return "RUNNING";
+      if (status === "OK") return "RUNNING";
+      return status;
+    }
+
+    function serviceDetailNamesForRobot(robot) {
+      const names = [...SERVICE_DETAIL_BASE_NAMES];
+      const handService = SERVICE_DETAIL_HAND_NAMES[String(robot?.end_effector || "").toLowerCase()];
+      if (handService) names.push(handService);
+      return names;
+    }
+
+    function serviceNamesForDetail(detail) {
+      return detail?.serviceNames || SERVICE_DETAIL_BASE_NAMES;
+    }
+
+    function serviceDetailPlaceholderServices(serviceNames, status = "QUERYING", reason = "正在查询服务状态……") {
+      return serviceNames.map((name) => ({
+        name,
+        status,
+        active_state: "",
+        enabled_state: "",
+        pid: 0,
+        reason
+      }));
+    }
+
+    function servicesForDetail(detail) {
+      const serviceNames = serviceNamesForDetail(detail);
+      const services = detail?.data ? detail.data.services || [] : detail?.services || [];
+      const byName = Object.fromEntries(services.map((item) => [item.name, item]));
+      return serviceNames.map((name) => byName[name] || serviceDetailPlaceholderServices([name])[0]);
+    }
+
+    function serviceDetailServicesMarkup(services) {
+      const rows = (services || []).map((item) => {
+        const displayStatus = serviceDisplayStatus(item);
+        return `
+          <div class="service-status-row ${statusClass(displayStatus)}" title="${escapeHtml(item.reason || "")}">
+            <span>${escapeHtml(item.name)}</span>
+            <span class="badge ${statusClass(displayStatus)}">${escapeHtml(statusText(displayStatus))}</span>
+          </div>
+        `;
+      }).join("");
+      return rows ? `<article class="service-status-card">${rows}</article>` : `<div class="empty">未读取到服务状态。</div>`;
+    }
+
+    function serviceDetailPanelMarkup(robot) {
+      const detail = state.serviceDetail || {};
+      const messageKind = detail.messageKind || "running";
+      const message = detail.message || "正在读取服务状态……";
+      return `
+        <section class="robot-service-detail" data-host="${escapeHtml(robot.inventory_hostname)}">
+          <div class="robot-service-detail-head">
+            <div>
+              <h3>${escapeHtml(robot.inventory_hostname)} 服务详情</h3>
+              <p>${escapeHtml(robotLabel(robot))}</p>
+            </div>
+            <button class="secondary close-service-detail" type="button">收起详情</button>
+          </div>
+          <div class="service-detail-message ${messageKind}">${escapeHtml(message)}</div>
+          <div class="service-status-board">${serviceDetailServicesMarkup(servicesForDetail(detail))}</div>
+        </section>
+      `;
+    }
+
+    function currentServiceDetailPanel() {
+      if (!state.serviceDetail) return null;
+      return [...document.querySelectorAll(".robot-service-detail")]
+        .find((panel) => panel.dataset.host === state.serviceDetail.host) || null;
+    }
+
+    function showServiceDetailMessage(kind, message) {
+      if (!state.serviceDetail) return;
+      state.serviceDetail.messageKind = kind;
+      state.serviceDetail.message = message || "";
+      const panel = currentServiceDetailPanel();
+      if (!panel) return;
+      const box = panel.querySelector(".service-detail-message");
+      box.className = `service-detail-message ${kind}`;
+      box.textContent = message || "";
+    }
+
+    function updateServiceDetailServiceRows(services) {
+      if (!state.serviceDetail) return;
+      state.serviceDetail.services = services;
+      const panel = currentServiceDetailPanel();
+      if (!panel) return;
+      panel.querySelector(".service-status-board").innerHTML = serviceDetailServicesMarkup(services);
+    }
+
+    function renderServiceDetail(data) {
+      if (!state.serviceDetail) return;
+      state.serviceDetail.data = data;
+      state.serviceDetail.serviceNames = data.service_names || state.serviceDetail.serviceNames;
+      state.serviceDetail.services = data.services || [];
+      showServiceDetailMessage("success", `更新时间：${data.checked_at || "-"}`);
+      const panel = currentServiceDetailPanel();
+      if (!panel) {
+        renderRobots();
+        return;
+      }
+      panel.querySelector(".service-status-board").innerHTML = serviceDetailServicesMarkup(data.services || []);
+    }
+
+    async function loadRobotServices() {
+      if (!state.serviceDetail || state.serviceLoading) return;
+      const host = state.serviceDetail.host;
+      state.serviceLoading = true;
+      if (!state.serviceDetail.data) {
+        updateServiceDetailServiceRows(serviceDetailPlaceholderServices(serviceNamesForDetail(state.serviceDetail), "QUERYING", "正在查询服务状态……"));
+      }
+      showServiceDetailMessage("running", "正在读取服务状态……");
+      try {
+        const data = await api(`/api/robots/${encodeURIComponent(host)}/services`, {
+          headers: serviceHeaders()
+        });
+        if (!state.serviceDetail || state.serviceDetail.host !== host) return;
+        renderServiceDetail(data);
+      } catch (error) {
+        if (state.serviceDetail?.host === host) {
+          updateServiceDetailServiceRows(serviceDetailPlaceholderServices(serviceNamesForDetail(state.serviceDetail), "NETWORK_DOWN", error.message || "网络不通，无法读取服务状态。"));
+          showServiceDetailMessage("fail", error.message);
+        }
+      } finally {
+        if (state.serviceDetail?.host === host) {
+          state.serviceLoading = false;
+        }
+      }
+    }
+
+    async function openServiceDetail(host) {
+      const robot = state.robots.find((item) => item.inventory_hostname === host);
+      if (!robot) return;
+      if (state.serviceDetail?.host === host) {
+        closeServiceDetail();
+        return;
+      }
+      closeServiceDetail(false);
+      const serviceNames = serviceDetailNamesForRobot(robot);
+      state.serviceDetail = {
+        host,
+        serviceNames,
+        data: null,
+        services: serviceDetailPlaceholderServices(serviceNames, "QUERYING", "正在查询服务状态……"),
+        messageKind: "running",
+        message: "正在读取服务状态……"
+      };
+      renderRobots();
+      await loadRobotServices();
+      if (!state.serviceDetail || state.serviceDetail.host !== host) return;
+      state.servicePolling = setInterval(() => {
+        loadRobotServices().catch((error) => showServiceDetailMessage("fail", error.message));
+      }, 7000);
+    }
+
+    function closeServiceDetail(hide = true) {
+      if (state.servicePolling) {
+        clearInterval(state.servicePolling);
+        state.servicePolling = null;
+      }
+      state.serviceDetail = null;
+      state.serviceLoading = false;
+      if (hide) {
+        renderRobots();
+      }
     }
 
     async function loadLocalChecks() {
@@ -662,13 +1225,63 @@ sudo apt install -y ansible sshpass</pre>
     async function loadRobots() {
       const data = await api("/api/robots");
       state.robots = data.robots;
+      if (state.serviceDetail && !state.robots.some((robot) => robot.inventory_hostname === state.serviceDetail.host)) {
+        closeServiceDetail(false);
+      }
       renderRobots();
+    }
+
+    async function loadRobotStatuses() {
+      const data = await api("/api/robots/status");
+      updateRobotStatuses(data.robots || []);
+      return data;
     }
 
     async function loadReports() {
       const data = await api("/api/report/latest");
       renderReports(data);
       return data;
+    }
+
+    function refreshSummaryText(refresh) {
+      if (!refresh) return "报告已重新读取。";
+      const failed = Number(refresh.business_failed || 0);
+      const base = `网络在线 ${refresh.network_online || 0}/${refresh.network_checked || 0} 台，已检查在线业务状态 ${refresh.business_checked || 0} 台`;
+      if (failed <= 0) return `${base}。`;
+      const reason = firstBusinessFailureReason(refresh);
+      return reason ? `${base}，${failed} 台业务状态未确认。首个原因：${reason}` : `${base}，${failed} 台业务状态未确认。`;
+    }
+
+    async function refreshLatestReport(options = {}) {
+      if (state.refreshing || state.jobRunning) return;
+      const headers = serviceHeaders();
+      const isInitial = Boolean(options.initial);
+      state.refreshing = true;
+      setRefreshButtonState();
+      setTaskBanner("running", isInitial ? "正在同步机器人状态" : "正在刷新最新报告", refreshStartMessage(headers));
+      try {
+        const data = await api("/api/refresh", {
+          method: "POST",
+          headers
+        });
+        renderReports(data);
+        const failed = Number(data.refresh?.business_failed || 0);
+        const missingPassword = !hasSshPassword(headers);
+        const title = failed > 0
+          ? (isInitial ? "状态同步完成，业务状态未完全确认" : "刷新完成，业务状态未完全确认")
+          : (isInitial ? "状态同步完成" : "刷新完成");
+        const detail = missingPassword && failed > 0
+          ? `${refreshSummaryText(data.refresh)} 请填写 SSH 密码后重新刷新。`
+          : refreshSummaryText(data.refresh);
+        setTaskBanner(failed > 0 ? "partial" : "success", title, detail);
+        return data;
+      } catch (error) {
+        setTaskBanner("fail", "刷新失败", error.message || "请稍后再试。");
+        throw error;
+      } finally {
+        state.refreshing = false;
+        setRefreshButtonState();
+      }
     }
 
     async function loadLogTail() {
@@ -694,6 +1307,11 @@ sudo apt install -y ansible sshpass</pre>
       if (!job.running) {
         clearInterval(state.polling);
         state.polling = null;
+        if (job.action === "hand_test") {
+          renderJob(job);
+          await loadLogTail();
+          return;
+        }
         const data = await loadReports();
         if (job.returncode !== null && job.returncode !== undefined) {
           renderJob(job);
@@ -730,6 +1348,206 @@ sudo apt install -y ansible sshpass</pre>
       document.getElementById("confirmOverlay").hidden = true;
     }
 
+    function cameraBindingRequestBody(passwords) {
+      return JSON.stringify({
+        robots: state.cameraBinding?.robots || [],
+        ssh_password: passwords.sshPassword,
+        sudo_password: passwords.sudoPassword
+      });
+    }
+
+    function setCameraBindingInspectStatus(kind, message) {
+      const status = document.getElementById("cameraBindingInspectStatus");
+      status.className = `camera-binding-status ${kind || ""}`;
+      status.textContent = message;
+    }
+
+    function renderCameraBindingGroups(categories) {
+      const board = document.getElementById("cameraBindingGroups");
+      if (!categories.length) {
+        board.innerHTML = '<p class="empty">未读取到摄像头分类信息。</p>';
+        return;
+      }
+      board.innerHTML = categories.map((category, index) => `
+        <section class="camera-binding-group">
+          <div class="camera-binding-group-head">
+            <div>
+              <b>类别 ${escapeHtml(category.index || index + 1)}</b>
+              <small>${escapeHtml(category.device_count || 0)} 个 video 节点</small>
+            </div>
+            <button class="secondary copy-camera-info-btn" type="button" data-category-index="${index}">复制信息</button>
+          </div>
+          <code>${escapeHtml(category.product || "未识别 ID_V4L_PRODUCT")}</code>
+          <pre>${escapeHtml(category.copy_text || "")}</pre>
+        </section>
+      `).join("");
+    }
+
+    async function inspectCameraBinding(passwords = validatePasswords()) {
+      if (!state.cameraBinding || !passwords) return;
+      const binding = state.cameraBinding;
+      const button = document.getElementById("inspectCameraBindingBtn");
+      button.disabled = true;
+      button.textContent = "读取中...";
+      setCameraBindingInspectStatus("running", "正在遍历 /dev/video* 并读取 udev 属性……");
+      document.getElementById("cameraBindingGroups").innerHTML = '<p class="empty">正在读取摄像头信息……</p>';
+      try {
+        const data = await api("/api/camera-binding/inspect", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: cameraBindingRequestBody(passwords)
+        });
+        if (state.cameraBinding !== binding) return;
+        state.cameraBinding.categories = data.categories || [];
+        renderCameraBindingGroups(state.cameraBinding.categories);
+        const message = data.category_count === 3
+          ? `读取到 ${data.device_count || 0} 个 video 节点，已按 ID_V4L_PRODUCT 分为 3 类。`
+          : `读取到 ${data.device_count || 0} 个 video 节点，当前分为 ${data.category_count || 0} 类，请检查摄像头连接和 ID_V4L_PRODUCT。`;
+        setCameraBindingInspectStatus(data.status === "OK" ? "success" : "warn", message);
+      } catch (error) {
+        if (state.cameraBinding !== binding) return;
+        setCameraBindingInspectStatus("fail", error.message);
+        document.getElementById("cameraBindingGroups").innerHTML = '<p class="empty">读取失败，请检查连接和密码后重试。</p>';
+        throw error;
+      } finally {
+        if (state.cameraBinding === binding) {
+          button.disabled = false;
+          button.textContent = "重新读取";
+        }
+      }
+    }
+
+    async function openCameraBinding() {
+      const selected = selectedRobots();
+      if (selected.length !== 1) {
+        setTaskBanner("fail", "无法检查摄像头绑定", "请只选择 1 台机器人后重试。");
+        return;
+      }
+      const passwords = validatePasswords();
+      if (!passwords) return;
+      const robot = selectedRobotObjects(selected)[0];
+      state.cameraBinding = { robots: selected, categories: [] };
+      document.getElementById("cameraBindingRobot").textContent = `当前机器人：${robot ? `${robotLabel(robot)}（${robot.inventory_hostname}）` : selected[0]}`;
+      document.getElementById("cameraBindingReloadStatus").className = "camera-binding-status";
+      document.getElementById("cameraBindingReloadStatus").textContent = "尚未执行。";
+      document.getElementById("cameraBindingReloadOutput").hidden = true;
+      document.getElementById("cameraBindingReloadOutput").textContent = "";
+      document.getElementById("cameraBindingOverlay").hidden = false;
+      await inspectCameraBinding(passwords);
+    }
+
+    function closeCameraBinding() {
+      state.cameraBinding = null;
+      document.getElementById("cameraBindingOverlay").hidden = true;
+    }
+
+    async function reloadCameraBindingRules() {
+      if (!state.cameraBinding) return;
+      const binding = state.cameraBinding;
+      const passwords = validatePasswords();
+      if (!passwords) return;
+      const button = document.getElementById("reloadCameraRulesBtn");
+      const status = document.getElementById("cameraBindingReloadStatus");
+      const output = document.getElementById("cameraBindingReloadOutput");
+      button.disabled = true;
+      button.textContent = "执行中...";
+      status.className = "camera-binding-status running";
+      status.textContent = "正在重载 udev 规则并检查 /dev/cam_*……";
+      output.hidden = true;
+      try {
+        const data = await api("/api/camera-binding/reload", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: cameraBindingRequestBody(passwords)
+        });
+        if (state.cameraBinding !== binding) return;
+        status.className = `camera-binding-status ${data.status === "OK" ? "success" : "fail"}`;
+        status.textContent = data.status === "OK" ? "规则已使能，设备绑定如下。" : `规则使能或设备检查失败（返回码 ${data.returncode}）。`;
+        output.textContent = data.output || "命令未返回输出。";
+        output.hidden = false;
+      } catch (error) {
+        if (state.cameraBinding !== binding) return;
+        status.className = "camera-binding-status fail";
+        status.textContent = error.message;
+        throw error;
+      } finally {
+        if (state.cameraBinding === binding) {
+          button.disabled = false;
+          button.textContent = "使能规则";
+        }
+      }
+    }
+
+    async function writeCameraBindingClipboard(text) {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        return;
+      }
+      const textarea = document.createElement("textarea");
+      textarea.value = text;
+      textarea.style.position = "fixed";
+      textarea.style.left = "-9999px";
+      document.body.appendChild(textarea);
+      textarea.select();
+      const copied = document.execCommand("copy");
+      textarea.remove();
+      if (!copied) throw new Error("浏览器不支持复制，请手动选择文本。");
+    }
+
+    async function copyCameraBindingText(text, button, defaultLabel) {
+      try {
+        await writeCameraBindingClipboard(text);
+        button.textContent = "已复制";
+      } catch (error) {
+        button.textContent = "复制失败";
+      }
+      setTimeout(() => {
+        button.textContent = defaultLabel;
+      }, 1200);
+    }
+
+    function showHandSelect(selected, robot) {
+      state.pendingHandTest = { selected, robot };
+      document.getElementById("handSelectRobot").textContent = `${robotLabel(robot)}（${robot.inventory_hostname}）`;
+      document.getElementById("handSelectType").textContent = robot.end_effector || "-";
+      document.getElementById("handSelectOverlay").hidden = false;
+    }
+
+    function hideHandSelect() {
+      state.pendingHandTest = null;
+      document.getElementById("handSelectOverlay").hidden = true;
+    }
+
+    function showHandTestOverlay(job = {}) {
+      state.handTestVisible = true;
+      document.getElementById("handTestOverlay").hidden = false;
+      renderHandTestOverlay(job);
+    }
+
+    function hideHandTestOverlay() {
+      state.handTestVisible = false;
+      document.getElementById("handTestOverlay").hidden = true;
+    }
+
+    function renderHandTestOverlay(job) {
+      if (job.action !== "hand_test" && !state.handTestVisible) return;
+      if (job.action !== "hand_test" && !job.running) return;
+      const overlay = document.getElementById("handTestOverlay");
+      const isHandJob = job.action === "hand_test";
+      if (isHandJob && (job.running || state.handTestVisible)) {
+        overlay.hidden = false;
+        state.handTestVisible = true;
+      }
+      document.getElementById("handTestRobot").textContent = job.robot_label || "-";
+      document.getElementById("handTestTarget").textContent = `${job.hand_type || "-"} · ${job.hand_side_cn || handSideLabel(job.hand_side) || "-"}`;
+      document.getElementById("handTestStatus").textContent = job.message || (job.running ? "运行中" : "已结束");
+      document.getElementById("handTestMessage").textContent = job.running
+        ? "请观察对应手是否在动。需要停止时点击取消测试。"
+        : "测试已结束，可关闭窗口。";
+      document.getElementById("cancelHandTestBtn").hidden = !job.running || !job.cancellable;
+      document.getElementById("closeHandTestBtn").hidden = !!job.running;
+    }
+
     function setAllRobotsChecked(checked) {
       document.getElementById("allRobots").checked = checked;
       document.getElementById("devAllRobots").checked = checked;
@@ -750,7 +1568,11 @@ sudo apt install -y ansible sshpass</pre>
     }
 
     async function startAction(action, selected, passwords) {
+      if (action === "hand_test") {
+        return startHandTest(selected, passwords, state.pendingHandTest?.side);
+      }
       setTaskBanner("running", "正在检查机器人连接……", "");
+      const serviceName = action === "service_restart" ? selectedServiceName() : "";
       const job = await api(`/api/run/${action}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -758,7 +1580,7 @@ sudo apt install -y ansible sshpass</pre>
           robots: apiRobotLimit(selected),
           ssh_password: passwords.sshPassword,
           sudo_password: passwords.sudoPassword,
-          service_name: action === "service_restart" ? selectedServiceName() : ""
+          service_name: serviceName
         })
       });
       renderJob(job);
@@ -770,12 +1592,66 @@ sudo apt install -y ansible sshpass</pre>
       }), 1000);
     }
 
+    async function startHandTest(selected, passwords, side) {
+      if (!side) {
+        setTaskBanner("fail", "执行失败", "请选择左手或右手。");
+        return;
+      }
+      setTaskBanner("running", "正在启动手测试……", "");
+      const job = await api("/api/run/hand_test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          robots: selected,
+          side,
+          ssh_password: passwords.sshPassword,
+          sudo_password: passwords.sudoPassword
+        })
+      });
+      renderJob(job);
+      showHandTestOverlay(job);
+      await loadLogTail();
+      setBusy(true);
+      if (state.polling) clearInterval(state.polling);
+      state.polling = setInterval(() => pollJob().catch((error) => {
+        setTaskBanner("fail", "执行失败", error.message);
+      }), 1000);
+    }
+
+    async function cancelHandTest() {
+      document.getElementById("cancelHandTestBtn").disabled = true;
+      try {
+        const job = await api("/api/hand-test/cancel", { method: "POST" });
+        renderJob(job);
+      } finally {
+        document.getElementById("cancelHandTestBtn").disabled = false;
+      }
+    }
+
     async function runAction(action) {
       const passwords = validatePasswords();
       if (!passwords) return;
       const selected = selectedRobots();
       if (!selected.length) {
         setTaskBanner("fail", "执行失败", "请先选择机器人。");
+        return;
+      }
+      if (action === "deploy_setup_agent" && selected.length !== 1) {
+        setTaskBanner("fail", "执行失败", "智能部署 / 修复第一版一次只能选择 1 台机器人。");
+        return;
+      }
+      if (action === "hand_test") {
+        const robots = selectedRobotObjects(selected);
+        if (robots.length !== 1) {
+          setTaskBanner("fail", "执行失败", "验证手是否能动一次只能选择 1 台机器人。");
+          return;
+        }
+        const robot = robots[0];
+        if (!["dex1", "brainco"].includes(String(robot.end_effector || "").toLowerCase())) {
+          setTaskBanner("fail", "执行失败", "当前机器人 end_effector 不是 dex1 或 brainco，无法测试手。");
+          return;
+        }
+        showHandSelect(selected, robot);
         return;
       }
       if (riskyActions.has(action)) {
@@ -797,13 +1673,16 @@ sudo apt install -y ansible sshpass</pre>
       });
       resetRobotForm();
       await loadRobots();
+      await loadRobotStatuses();
     });
     document.getElementById("cancelEditBtn").addEventListener("click", resetRobotForm);
     document.getElementById("allRobots").addEventListener("change", (event) => {
       setAllRobotsChecked(event.target.checked);
+      renderSelectedReportSections();
     });
     document.getElementById("devAllRobots").addEventListener("change", (event) => {
       setAllRobotsChecked(event.target.checked);
+      renderSelectedReportSections();
     });
     document.getElementById("samePassword").addEventListener("change", (event) => {
       setSamePasswordChecked(event.target.checked);
@@ -826,9 +1705,12 @@ sudo apt install -y ansible sshpass</pre>
     document.addEventListener("change", (event) => {
       if (event.target.classList && event.target.classList.contains("robot-choice")) {
         syncRobotChoice(event.target.value, event.target.checked);
+        renderSelectedReportSections();
       }
     });
-    document.getElementById("refreshBtn").addEventListener("click", loadReports);
+    document.getElementById("refreshBtn").addEventListener("click", () => {
+      refreshLatestReport().catch(() => {});
+    });
     document.querySelectorAll(".module-tab").forEach((button) => {
       button.addEventListener("click", () => switchModule(button.dataset.module));
     });
@@ -847,6 +1729,52 @@ sudo apt install -y ansible sshpass</pre>
     document.getElementById("confirmOverlay").addEventListener("click", (event) => {
       if (event.target.id === "confirmOverlay") hideConfirm();
     });
+    document.getElementById("closeCameraBindingBtn").addEventListener("click", closeCameraBinding);
+    document.getElementById("closeCameraBindingIconBtn").addEventListener("click", closeCameraBinding);
+    document.getElementById("cameraBindingOverlay").addEventListener("click", (event) => {
+      if (event.target.id === "cameraBindingOverlay") closeCameraBinding();
+    });
+    document.getElementById("inspectCameraBindingBtn").addEventListener("click", () => {
+      inspectCameraBinding().catch((error) => setTaskBanner("fail", "摄像头信息读取失败", error.message));
+    });
+    document.getElementById("reloadCameraRulesBtn").addEventListener("click", () => {
+      reloadCameraBindingRules().catch((error) => setTaskBanner("fail", "udev 规则使能失败", error.message));
+    });
+    document.getElementById("copyCameraRuleEditBtn").addEventListener("click", (event) => {
+      copyCameraBindingText(
+        "sudo vi /etc/udev/rules.d/99-usb-cameras.rules",
+        event.currentTarget,
+        "复制命令"
+      );
+    });
+    document.getElementById("cancelHandSelectBtn").addEventListener("click", hideHandSelect);
+    document.getElementById("handSelectOverlay").addEventListener("click", (event) => {
+      if (event.target.id === "handSelectOverlay") hideHandSelect();
+    });
+    document.querySelectorAll(".hand-side-actions button").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const pending = state.pendingHandTest;
+        if (!pending) return;
+        const passwords = validatePasswords();
+        if (!passwords) {
+          hideHandSelect();
+          return;
+        }
+        const side = button.dataset.side;
+        state.pendingHandTest = { ...pending, side };
+        hideHandSelect();
+        await startHandTest(pending.selected, passwords, side).catch((error) => {
+          const message = error.message === "缺少 SSH 或 sudo 密码"
+            ? "缺少 SSH 或 sudo 密码，请填写后重试。"
+            : error.message;
+          setTaskBanner("fail", "执行失败", message);
+        });
+      });
+    });
+    document.getElementById("cancelHandTestBtn").addEventListener("click", () => {
+      cancelHandTest().catch((error) => setTaskBanner("fail", "取消失败", error.message));
+    });
+    document.getElementById("closeHandTestBtn").addEventListener("click", hideHandTestOverlay);
     document.getElementById("confirmRunBtn").addEventListener("click", async () => {
       const pending = state.pendingAction;
       if (!pending) return;
@@ -865,7 +1793,7 @@ sudo apt install -y ansible sshpass</pre>
         setTaskBanner("fail", "执行失败", message);
       });
     });
-    document.querySelectorAll(".actions button, .service-actions button").forEach((button) => {
+    document.querySelectorAll(".actions button[data-action], .service-actions button[data-action]").forEach((button) => {
       button.addEventListener("click", () => runAction(button.dataset.action).catch((error) => {
         const message = error.message === "缺少 SSH 或 sudo 密码"
           ? "缺少 SSH 或 sudo 密码，请填写后重试。"
@@ -873,24 +1801,48 @@ sudo apt install -y ansible sshpass</pre>
         setTaskBanner("fail", "执行失败", message);
       }));
     });
+    document.addEventListener("click", (event) => {
+      const openButton = event.target.closest(".camera-binding-open-btn, .camera-recheck-btn");
+      if (openButton) {
+        openCameraBinding().catch((error) => setTaskBanner("fail", "摄像头信息读取失败", error.message));
+        return;
+      }
+      const copyButton = event.target.closest(".copy-camera-info-btn");
+      if (!copyButton || !state.cameraBinding) return;
+      const category = state.cameraBinding.categories[Number(copyButton.dataset.categoryIndex)];
+      if (!category) return;
+      copyCameraBindingText(category.copy_text || "", copyButton, "复制信息");
+    });
 
     async function initializePage() {
-      const [, reportData, job] = await Promise.all([loadRobots(), loadReports(), api("/api/job"), loadLocalChecks()]);
+      await loadRobots();
+      const [, reportData, job] = await Promise.all([loadRobotStatuses(), loadReports(), api("/api/job"), loadLocalChecks()]);
       await loadLogTail();
       renderJob(job);
+      if (state.statusPolling) clearInterval(state.statusPolling);
+      state.statusPolling = setInterval(() => {
+        loadRobotStatuses().catch((error) => {
+          document.getElementById("jobText").textContent = error.message;
+        });
+      }, 3000);
       if (job.running) {
         setBusy(true);
         if (state.polling) clearInterval(state.polling);
         state.polling = setInterval(() => pollJob().catch((error) => {
           setTaskBanner("fail", "执行失败", error.message);
         }), 1000);
-      } else if (job.returncode === null || job.returncode === undefined) {
-        summarizeLatestReport(reportData, job.message);
+      } else {
+        await refreshLatestReport({ initial: true }).catch(() => {
+          if (job.returncode === null || job.returncode === undefined) {
+            summarizeLatestReport(reportData, job.message);
+          }
+        });
       }
     }
 
     setSamePasswordChecked(true);
-    setAllRobotsChecked(true);
+    setAllRobotsChecked(false);
+    setRefreshButtonState();
     initializePage().catch((error) => {
       document.getElementById("jobText").textContent = error.message;
     });

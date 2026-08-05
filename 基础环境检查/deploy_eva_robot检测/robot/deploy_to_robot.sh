@@ -4,39 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 REMOTE_USER="${REMOTE_USER:-unitree}"
-REMOTE_HOST="${REMOTE_HOST:-}"
-
-# Optional target argument support.
-# Supported forms:
-#   ./deploy_to_robot.sh 192.168.90.68
-#   ./deploy_to_robot.sh unitree@192.168.90.68
-#   ./deploy_to_robot.sh unitree@192.168.90.68:~
-#   ./deploy_to_robot.sh unitree@192.168.90.68:/home/unitree
-#
-# Environment variables REMOTE_USER / REMOTE_HOST are still supported.
-if [ "$#" -gt 1 ]; then
-  printf '[deploy_to_robot] ERROR: Usage: %s [IP|user@IP|user@IP:~|user@IP:/home/unitree]\n' "$0" >&2
-  exit 1
-fi
-
-TARGET="${1:-}"
-if [ -n "$TARGET" ]; then
-  # Strip optional scp-style remote path suffix, e.g. ":~" or ":/home/unitree".
-  TARGET="${TARGET%%:*}"
-
-  if [[ "$TARGET" == *@* ]]; then
-    REMOTE_USER="${TARGET%@*}"
-    REMOTE_HOST="${TARGET#*@}"
-  else
-    REMOTE_HOST="$TARGET"
-  fi
-fi
-
-if [ -z "$REMOTE_HOST" ]; then
-  printf '[deploy_to_robot] ERROR: REMOTE_HOST is required. Pass an IP/user@IP argument or set REMOTE_HOST.\n' >&2
-  exit 1
-fi
-
+REMOTE_HOST="${REMOTE_HOST:-192.168.123.164}"
 REMOTE="${REMOTE_USER}@${REMOTE_HOST}"
 
 REMOTE_HOME="${REMOTE_HOME:-/home/unitree}"
@@ -54,14 +22,7 @@ SSH_OPTS=(
 )
 RSYNC_SSH="ssh ${SSH_OPTS[*]}"
 
-SKIP_IF_EXISTS_DIRS=(
-  "inspire_hand_sdk"
-  "unitree_sdk2_python"
-  "apk"
-)
-
 REPLACE_DIRS=(
-  "unitree_ros2"
   "g1_description"
   "teleop_server"
   "scripts"
@@ -106,13 +67,13 @@ check_ssh_connection() {
   trap close_ssh_connection EXIT
 }
 
-remote_dir_exists() {
-  local remote_dir="$1"
-  local quoted_dir status
-  quoted_dir="$(remote_quote "$remote_dir")"
+remote_file_exists() {
+  local remote_file="$1"
+  local quoted_file status
+  quoted_file="$(remote_quote "$remote_file")"
 
   set +e
-  ssh_run "test -d $quoted_dir"
+  ssh_run "test -f $quoted_file"
   status=$?
   set -e
 
@@ -123,9 +84,9 @@ remote_dir_exists() {
     return 1
   fi
   if [ "$status" -eq 255 ]; then
-    die "SSH connection to $REMOTE failed while checking $remote_dir"
+    die "SSH connection to $REMOTE failed while checking $remote_file"
   fi
-  die "Remote directory check failed for $remote_dir with exit code $status"
+  die "Remote file check failed for $remote_file with exit code $status"
 }
 
 sync_dir() {
@@ -145,18 +106,27 @@ sync_dir() {
     "$SCRIPT_DIR/$local_dir/" "$REMOTE:$remote_parent/$local_dir/"
 }
 
-copy_if_missing() {
-  local dir="$1"
-  local remote_dir="$REMOTE_HOME/$dir"
+copy_apk_debs_if_missing() {
+  local apk_dir="apk"
+  local local_apk_dir="$SCRIPT_DIR/$apk_dir"
+  local remote_apk_dir="$REMOTE_HOME/$apk_dir"
+  local deb deb_name remote_deb
 
-  if remote_dir_exists "$remote_dir"; then
-    log "Skip existing $remote_dir"
-    return
-  fi
+  [ -d "$local_apk_dir" ] || die "Local directory not found: $local_apk_dir"
+  ssh_run "mkdir -p $(remote_quote "$remote_apk_dir")"
 
-  log "Copy $dir -> $REMOTE:$remote_dir"
-  ssh_run "mkdir -p $(remote_quote "$REMOTE_HOME")"
-  sync_dir "$dir" "$REMOTE_HOME"
+  while IFS= read -r -d '' deb; do
+    deb_name="$(basename "$deb")"
+    remote_deb="$remote_apk_dir/$deb_name"
+
+    if remote_file_exists "$remote_deb"; then
+      log "Skip existing $remote_deb"
+      continue
+    fi
+
+    log "Copy $apk_dir/$deb_name -> $REMOTE:$remote_deb"
+    rsync -az -e "$RSYNC_SSH" "$deb" "$REMOTE:$remote_deb"
+  done < <(find "$local_apk_dir" -maxdepth 1 -type f -name '*.deb' -print0 | sort -z)
 }
 
 replace_dir() {
@@ -175,6 +145,17 @@ replace_dir() {
   sync_dir "$dir" "$remote_parent"
 }
 
+sync_unitree_ros2_if_needed() {
+  local setup_file="$REMOTE_HOME/unitree_ros2/cyclonedds_ws/install/setup.bash"
+
+  if remote_file_exists "$setup_file"; then
+    log "Skip existing unitree_ros2 because $setup_file exists"
+    return
+  fi
+
+  replace_dir "unitree_ros2"
+}
+
 copy_home_file() {
   local file="$1"
 
@@ -188,12 +169,11 @@ main() {
   require_command ssh
   require_command rsync
 
-  log "Deploying robot bundle to $REMOTE"
-  check_ssh_connection
+#  log "Deploying robot bundle to $REMOTE"
+#  check_ssh_connection
 
-  for dir in "${SKIP_IF_EXISTS_DIRS[@]}"; do
-    copy_if_missing "$dir"
-  done
+  copy_apk_debs_if_missing
+  sync_unitree_ros2_if_needed
 
   for dir in "${REPLACE_DIRS[@]}"; do
     replace_dir "$dir"

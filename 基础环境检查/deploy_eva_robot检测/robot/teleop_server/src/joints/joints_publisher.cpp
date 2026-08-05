@@ -14,6 +14,8 @@
 
 #include "joints/joints_publisher.h"
 
+#include "logging/logger.hpp"
+
 #include <algorithm>
 #include <utility>
 #include <vector>
@@ -35,9 +37,7 @@ JointsPublisher::JointsPublisher(
       joint_names_ = G1_23_DOF_JOINTS;
       break;
     case DEVICE_TYPE::G1_DUAL_ARM:
-      RCLCPP_WARN(
-          node_.get_logger(),
-          "G1_DUAL_ARM joint publishing is not implemented; only configured hand joints "
+      TELEOP_LOG_WARN("G1_DUAL_ARM joint publishing is not implemented; only configured hand joints "
           "will be published.");
       body_joint_count_ = 0;
       break;
@@ -57,9 +57,7 @@ JointsPublisher::JointsPublisher(
   joints_velocity_.resize(joints_count_, 0.0);
   joints_effort_.resize(joints_count_, 0.0);
 
-  RCLCPP_INFO(
-      node_.get_logger(),
-      "JointsPublisher started, body joints: %zu, hand type: %s, total joints: %zu",
+  TELEOP_LOG_INFO("JointsPublisher started, body joints: %zu, hand type: %s, total joints: %zu",
       body_joint_count_,
       teleop_server::to_string(config.hand_provider.type).c_str(),
       joints_count_);
@@ -106,10 +104,7 @@ void JointsPublisher::update_from_hand_provider()
   }
 
   if (hand_state_.position.size() != hand_state_provider_->joint_count()) {
-    RCLCPP_WARN_THROTTLE(
-        node_.get_logger(),
-        *node_.get_clock(),
-        2000,
+    TELEOP_LOG_WARN_THROTTLE(2000,
         "Hand provider returned %zu positions, expected %zu",
         hand_state_.position.size(),
         hand_state_provider_->joint_count());
@@ -162,9 +157,7 @@ rclcpp::QoS JointsPublisher::get_qos_from_topic(const std::string & topic) const
 
   depth = std::max(depth, static_cast<size_t>(DEFAULT_MIN_QOS_DEPTH));
   if (depth > DEFAULT_MAX_QOS_DEPTH) {
-    RCLCPP_WARN(
-        node_.get_logger(),
-        "Limiting history depth for topic '%s' to %zu (was %zu). You may want to increase "
+    TELEOP_LOG_WARN("Limiting history depth for topic '%s' to %zu (was %zu). You may want to increase "
         "the max_qos_depth parameter value.",
         topic.c_str(),
         DEFAULT_MAX_QOS_DEPTH,
@@ -179,9 +172,7 @@ rclcpp::QoS JointsPublisher::get_qos_from_topic(const std::string & topic) const
     qos.reliable();
   } else {
     if (reliability_reliable_endpoints_count > 0) {
-      RCLCPP_INFO(
-          node_.get_logger(),
-          "Some, but not all, publishers on topic '%s' are offering QoSReliabilityPolicy.RELIABLE."
+      TELEOP_LOG_INFO("Some, but not all, publishers on topic '%s' are offering QoSReliabilityPolicy.RELIABLE."
           "Falling back to QoSReliabilityPolicy.BEST_EFFORT as it will connect to all publishers",
           topic.c_str());
     }
@@ -194,9 +185,7 @@ rclcpp::QoS JointsPublisher::get_qos_from_topic(const std::string & topic) const
     qos.transient_local();
   } else {
     if (durability_transient_local_endpoints_count > 0) {
-      RCLCPP_INFO(
-          node_.get_logger(),
-          "Some, but not all, publishers on topic '%s' are offering "
+      TELEOP_LOG_INFO("Some, but not all, publishers on topic '%s' are offering "
           "QoSDurabilityPolicy.TRANSIENT_LOCAL. Falling back to "
           "QoSDurabilityPolicy.VOLATILE as it will connect to all publishers",
           topic.c_str());

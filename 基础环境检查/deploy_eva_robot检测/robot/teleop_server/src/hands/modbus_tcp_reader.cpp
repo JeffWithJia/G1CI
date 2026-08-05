@@ -14,6 +14,8 @@
 
 #include "hands/modbus_tcp_reader.hpp"
 
+#include "logging/logger.hpp"
+
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
@@ -29,15 +31,10 @@ namespace
 constexpr int kModbusFunctionReadHoldingRegisters = 0x03;
 }  // namespace
 
-ModbusTcpReader::ModbusTcpReader(
-    std::string ip,
-    uint16_t port,
-    uint8_t unit_id,
-    rclcpp::Logger logger)
+ModbusTcpReader::ModbusTcpReader(std::string ip, uint16_t port, uint8_t unit_id)
   : ip_(std::move(ip)),
     port_(port),
-    unit_id_(unit_id),
-    logger_(std::move(logger))
+    unit_id_(unit_id)
 {}
 
 ModbusTcpReader::~ModbusTcpReader()
@@ -118,7 +115,7 @@ bool ModbusTcpReader::ensure_connected()
 
   socket_fd_ = ::socket(AF_INET, SOCK_STREAM, 0);
   if (socket_fd_ < 0) {
-    RCLCPP_ERROR(logger_, "Failed to create Modbus socket for %s:%u", ip_.c_str(), port_);
+    TELEOP_LOG_ERROR("Failed to create Modbus socket for %s:%u", ip_.c_str(), port_);
     return false;
   }
 
@@ -132,15 +129,13 @@ bool ModbusTcpReader::ensure_connected()
   server_addr.sin_family = AF_INET;
   server_addr.sin_port = htons(port_);
   if (::inet_pton(AF_INET, ip_.c_str(), &server_addr.sin_addr) != 1) {
-    RCLCPP_ERROR(logger_, "Invalid Modbus IP: %s", ip_.c_str());
+    TELEOP_LOG_ERROR("Invalid Modbus IP: %s", ip_.c_str());
     disconnect();
     return false;
   }
 
   if (::connect(socket_fd_, reinterpret_cast<sockaddr *>(&server_addr), sizeof(server_addr)) != 0) {
-    RCLCPP_WARN(
-        logger_,
-        "Failed to connect Modbus server %s:%u, errno=%d",
+    TELEOP_LOG_WARN("Failed to connect Modbus server %s:%u, errno=%d",
         ip_.c_str(),
         port_,
         errno);

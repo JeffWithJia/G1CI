@@ -18,15 +18,13 @@
 #include <string>
 #include <vector>
 
-#include <rclcpp/rclcpp.hpp>
-
 namespace teleop_server
 {
 
 class ModbusTcpReader
 {
 public:
-  ModbusTcpReader(std::string ip, uint16_t port, uint8_t unit_id, rclcpp::Logger logger);
+  ModbusTcpReader(std::string ip, uint16_t port, uint8_t unit_id);
   ~ModbusTcpReader();
 
   bool read_holding_registers(
@@ -43,7 +41,6 @@ private:
   std::string ip_;
   uint16_t port_;
   uint8_t unit_id_;
-  rclcpp::Logger logger_;
   int socket_fd_{-1};
   uint16_t transaction_id_{0};
 };
