@@ -22,7 +22,9 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
-from urllib.parse import unquote, urlparse
+from urllib.error import HTTPError, URLError
+from urllib.parse import parse_qs, unquote, urlparse
+from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
 import pexpect
 import yaml
@@ -37,11 +39,25 @@ TRANSLATION_PATH = APP_DIR / "translation_map.yml"
 
 ROOT_REPORTS_DIR = ROOT_DIR / "reports"
 RAW_REPORTS_DIR = ROOT_REPORTS_DIR / "raw"
+DEVELOPER_REPORTS_DIR = ROOT_REPORTS_DIR / "developer"
 ROOT_LOGS_DIR = ROOT_DIR / "logs"
 LATEST_SUMMARY_PATH = ROOT_REPORTS_DIR / "latest_summary.json"
+DEVELOPER_LATEST_SUMMARY_PATH = ROOT_REPORTS_DIR / "developer_latest_summary.json"
+ROBOT_RECORD_PATH = ROOT_DIR / "data" / "robot-record.json"
+MAX_ROBOT_RECORD_BYTES = 20 * 1024 * 1024
+ROBOT_RECORD_LOCK = threading.Lock()
+ROBOT_RECORD_PROJECT_ID_PATTERN = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$")
+ROBOT_RECORD_API_KEY_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{32,128}$")
+ROBOT_RECORD_REMOTE_PATH_PATTERN = re.compile(r"^/api/v1/robot-record/projects/[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$")
 
 STATUS_ORDER = {"FAIL": 4, "UNREACHABLE": 4, "WARN": 3, "NO_REPORT": 2, "SKIP": 1, "OK": 0}
 CAMERA_TOPIC_MIN_RATE_HZ = 29.0
+CAMERA_TOPIC_SPECS = (
+    {"topic": "/cam_head/compressed_image", "label": "头部相机", "device": "/dev/cam_head"},
+    {"topic": "/cam_wrist_left/compressed_image", "label": "左腕相机", "device": "/dev/cam_wrist_left"},
+    {"topic": "/cam_wrist_right/compressed_image", "label": "右腕相机", "device": "/dev/cam_wrist_right"},
+)
+CAMERA_TOPIC_NAMES = {str(item["topic"]) for item in CAMERA_TOPIC_SPECS}
 COS_REQUIRED_SERVICES = ("cos_agent", "xrobotoolkit-pc-service", "cos_teleop")
 COS_ACTIVE_SERVICES = ("cos_agent", "cos_teleop")
 COS_XROBOT_SERVICE = "xrobotoolkit-pc-service"
@@ -52,6 +68,10 @@ CAMERA_BINDING_PROPERTY_KEYS = ("DEVNAME", "ID_PATH", "ID_V4L_PRODUCT", "ID_SERI
 DEPLOY_ACTION = "deploy_to_robot"
 DEPLOY_SETUP_AGENT_ACTION = "deploy_setup_agent"
 HAND_TEST_ACTION = "hand_test"
+JOB_SCOPE_OPERATION = "operation"
+JOB_SCOPE_DEVELOPER = "developer"
+JOB_SCOPES = {JOB_SCOPE_OPERATION, JOB_SCOPE_DEVELOPER}
+DEVELOPER_ACTIONS = {"cos_setup", "install", "check", DEPLOY_ACTION, DEPLOY_SETUP_AGENT_ACTION}
 HAND_TEST_SIDES = {"left", "right"}
 HAND_TEST_SIDE_LABELS = {"left": "左手", "right": "右手"}
 RESTARTABLE_SERVICES = {
@@ -237,32 +257,41 @@ AGENT_DIAGNOSIS_RULES = [
     },
 ]
 
-CURRENT_JOB: dict[str, Any] = {
-    "running": False,
-    "action": "",
-    "started_at": "",
-    "finished_at": "",
-    "returncode": None,
-    "message": "空闲",
-    "log_file": "",
-    "cmd": "",
-    "cwd": "",
-    "start_time": "",
-    "end_time": "",
-    "duration_seconds": None,
-    "report_file": "",
-    "phase": "idle",
-    "stages": [],
-    "current_stage": "",
-    "current_task": "",
-    "current_command": "",
-    "cancellable": False,
-    "cancel_requested": False,
-    "robot_label": "",
-    "hand_type": "",
-    "hand_side": "",
-    "hand_side_cn": "",
+def empty_job_state() -> dict[str, Any]:
+    return {
+        "running": False,
+        "action": "",
+        "robots": [],
+        "started_at": "",
+        "finished_at": "",
+        "returncode": None,
+        "message": "空闲",
+        "log_file": "",
+        "cmd": "",
+        "cwd": "",
+        "start_time": "",
+        "end_time": "",
+        "duration_seconds": None,
+        "report_file": "",
+        "phase": "idle",
+        "stages": [],
+        "current_stage": "",
+        "current_task": "",
+        "current_command": "",
+        "cancellable": False,
+        "cancel_requested": False,
+        "robot_label": "",
+        "hand_type": "",
+        "hand_side": "",
+        "hand_side_cn": "",
+    }
+
+
+CURRENT_JOBS: dict[str, dict[str, Any]] = {
+    JOB_SCOPE_OPERATION: empty_job_state(),
+    JOB_SCOPE_DEVELOPER: empty_job_state(),
 }
+JOB_CONTEXT = threading.local()
 JOB_LOCK = threading.Lock()
 PROCESS_LOCK = threading.Lock()
 REFRESH_LOCK = threading.Lock()
@@ -272,6 +301,27 @@ ROBOT_NETWORK_STATUS: dict[str, dict[str, Any]] = {}
 ROBOT_HEARTBEATS: dict[str, dict[str, Any]] = {}
 ROBOT_SERVICE_STATUS: dict[str, dict[str, Any]] = {}
 LATEST_REPORT_BUSINESS_CACHE: dict[str, Any] = {"signature": None, "robot_signature": None, "reports": {}}
+
+
+def job_scope_for_action(action: str) -> str:
+    return JOB_SCOPE_DEVELOPER if action in DEVELOPER_ACTIONS else JOB_SCOPE_OPERATION
+
+
+def normalize_job_scope(value: Any) -> str:
+    scope = str(value or JOB_SCOPE_OPERATION)
+    if scope not in JOB_SCOPES:
+        raise ValueError("任务 scope 只能是 operation 或 developer")
+    return scope
+
+
+def current_job(scope: str | None = None) -> dict[str, Any]:
+    resolved_scope = normalize_job_scope(scope or getattr(JOB_CONTEXT, "scope", JOB_SCOPE_OPERATION))
+    return CURRENT_JOBS[resolved_scope]
+
+
+def latest_summary_path(scope: str | None = None) -> Path:
+    resolved_scope = normalize_job_scope(scope or getattr(JOB_CONTEXT, "scope", JOB_SCOPE_OPERATION))
+    return DEVELOPER_LATEST_SUMMARY_PATH if resolved_scope == JOB_SCOPE_DEVELOPER else LATEST_SUMMARY_PATH
 
 STANDARD_STAGE_TEMPLATE = [
     ("connect", "连接机器人"),
@@ -349,7 +399,7 @@ def make_job_stages(action: str) -> list[dict[str, Any]]:
 
 
 def stage_index_locked(stage_id: str) -> int | None:
-    stages = CURRENT_JOB.get("stages")
+    stages = current_job().get("stages")
     if not isinstance(stages, list):
         return None
     for index, stage in enumerate(stages):
@@ -366,7 +416,7 @@ def candidate_stage_locked(*stage_ids: str) -> str:
 
 
 def first_pending_stage_locked() -> str:
-    stages = CURRENT_JOB.get("stages")
+    stages = current_job().get("stages")
     if not isinstance(stages, list):
         return ""
     for stage in stages:
@@ -395,9 +445,10 @@ def task_stage_from_text(text: str) -> str:
 
 
 def stage_id_for_job_update_locked(updates: dict[str, Any], explicit_stage_id: str) -> str:
-    action = str(updates.get("action") or CURRENT_JOB.get("action") or "")
-    phase = str(updates.get("phase") or CURRENT_JOB.get("phase") or "")
-    message = str(updates.get("message") or CURRENT_JOB.get("message") or "")
+    job = current_job()
+    action = str(updates.get("action") or job.get("action") or "")
+    phase = str(updates.get("phase") or job.get("phase") or "")
+    message = str(updates.get("message") or job.get("message") or "")
     task = str(updates.get("current_task") or message)
     mapped = explicit_stage_id or task_stage_from_text(task)
     if mapped:
@@ -427,7 +478,8 @@ def finish_stage_locked(stage: dict[str, Any], status: str, now_epoch: float) ->
 
 
 def update_job_stage_locked(stage_id: str, task: str = "", command: str = "") -> None:
-    stages = CURRENT_JOB.get("stages")
+    job = current_job()
+    stages = job.get("stages")
     if not isinstance(stages, list):
         return
     index = stage_index_locked(stage_id)
@@ -458,17 +510,17 @@ def update_job_stage_locked(stage_id: str, task: str = "", command: str = "") ->
         stage["elapsed_seconds"] = 0.0
     if task:
         stage["task"] = task
-        CURRENT_JOB["current_task"] = task
+        job["current_task"] = task
     if command:
         stage["command"] = command
-        CURRENT_JOB["current_command"] = command
-    CURRENT_JOB["current_stage"] = stage_id
+        job["current_command"] = command
+    job["current_stage"] = stage_id
 
 
 def merge_job_stage_items_locked(stage_id: str, items: list[dict[str, Any]]) -> None:
     if not items:
         return
-    stages = CURRENT_JOB.get("stages")
+    stages = current_job().get("stages")
     if not isinstance(stages, list):
         return
     index = stage_index_locked(stage_id)
@@ -522,7 +574,7 @@ def merge_job_stage_items_by_stage_locked(stage_items: dict[str, Any]) -> None:
 
 
 def finalize_job_stages_locked(final_phase: str) -> None:
-    stages = CURRENT_JOB.get("stages")
+    stages = current_job().get("stages")
     if not isinstance(stages, list):
         return
     now_epoch = time.time()
@@ -536,11 +588,12 @@ def finalize_job_stages_locked(final_phase: str) -> None:
             stage["status"] = "skipped"
 
 
-def job_payload_locked() -> dict[str, Any]:
+def job_payload_locked(scope: str | None = None) -> dict[str, Any]:
     now_epoch = time.time()
-    payload = dict(CURRENT_JOB)
+    job = current_job(scope)
+    payload = dict(job)
     stages = []
-    for stage in CURRENT_JOB.get("stages", []):
+    for stage in job.get("stages", []):
         if not isinstance(stage, dict):
             continue
         item = {key: value for key, value in stage.items() if not key.startswith("_")}
@@ -575,6 +628,7 @@ def cfg(*keys: str, default: Any = None) -> Any:
 def ensure_dirs() -> None:
     ROOT_REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     RAW_REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    DEVELOPER_REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     ROOT_LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
 
@@ -701,6 +755,195 @@ def write_json_file(path: Path, data: Any) -> None:
     with path.open("w", encoding="utf-8") as fh:
         json.dump(data, fh, ensure_ascii=False, indent=2)
         fh.write("\n")
+
+
+def validate_robot_record_data(value: Any) -> None:
+    if not isinstance(value, dict):
+        raise ValueError("机器人台帐数据必须是 JSON 对象")
+    robots = value.get("robots")
+    records = value.get("records")
+    issues = value.get("issues", [])
+    occurrences = value.get("problemOccurrences", [])
+    if not isinstance(robots, list) or len(robots) > 200:
+        raise ValueError("机器人台帐中的机器人清单无效")
+    if not isinstance(records, dict):
+        raise ValueError("机器人台帐中的历史记录无效")
+    if not isinstance(issues, list) or len(issues) > 50000:
+        raise ValueError("机器人台帐中的问题单列表无效")
+    if not isinstance(occurrences, list) or len(occurrences) > 100000:
+        raise ValueError("机器人台帐中的问题事件列表无效")
+
+
+def validate_robot_record_store(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise ValueError("机器人台帐数据必须是 JSON 对象")
+    if value.get("version") == 7 and isinstance(value.get("projects"), list):
+        projects = value["projects"]
+        if not projects or len(projects) > 50:
+            raise ValueError("机器人台帐中的项目列表无效")
+        active_project_id = value.get("activeProjectId")
+        seen_project_ids: set[str] = set()
+        for project in projects:
+            if not isinstance(project, dict):
+                raise ValueError("机器人台帐中的项目无效")
+            project_id = project.get("id")
+            project_name = project.get("name")
+            if not isinstance(project_id, str) or not ROBOT_RECORD_PROJECT_ID_PATTERN.fullmatch(project_id):
+                raise ValueError("机器人台帐中的项目 ID 无效")
+            if project_id in seen_project_ids:
+                raise ValueError("机器人台帐中的项目 ID 重复")
+            if not isinstance(project_name, str) or not project_name.strip() or len(project_name) > 60:
+                raise ValueError("机器人台帐中的项目名称无效")
+            validate_robot_record_data(project.get("data"))
+            seen_project_ids.add(project_id)
+        if active_project_id not in seen_project_ids:
+            raise ValueError("机器人台帐中的当前项目无效")
+    else:
+        validate_robot_record_data(value)
+    serialized = json.dumps(value, ensure_ascii=False)
+    if len(serialized.encode("utf-8")) > MAX_ROBOT_RECORD_BYTES:
+        raise ValueError("机器人台帐数据超过 20 MB，无法保存")
+    return json.loads(serialized)
+
+
+class NoRedirectHandler(HTTPRedirectHandler):
+    def redirect_request(self, req: Request, fp: Any, code: int, msg: str, headers: Any, newurl: str) -> None:
+        return None
+
+
+def read_remote_robot_record(api_url: Any, api_key: Any) -> dict[str, Any]:
+    url = str(api_url or "").strip()
+    token = str(api_key or "").strip()
+    if not url or len(url) > 2048:
+        raise ValueError("项目 API 地址无效")
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password or parsed.fragment:
+        raise ValueError("项目 API 地址仅支持不含账号密码的 HTTP 或 HTTPS 地址")
+    if not ROBOT_RECORD_REMOTE_PATH_PATTERN.fullmatch(parsed.path) or parsed.query:
+        raise ValueError("项目 API 地址路径无效")
+    if not ROBOT_RECORD_API_KEY_PATTERN.fullmatch(token):
+        raise ValueError("API Key 格式不正确")
+
+    request = Request(
+        url,
+        headers={"Authorization": f"Bearer {token}", "Accept": "application/json", "User-Agent": "OperatorConsole/2.0"},
+        method="GET",
+    )
+    try:
+        with build_opener(ProxyHandler({}), NoRedirectHandler).open(request, timeout=10) as response:
+            raw = response.read(MAX_ROBOT_RECORD_BYTES + 1)
+    except HTTPError as exc:
+        if exc.code == HTTPStatus.UNAUTHORIZED:
+            raise PermissionError("API Key 无效或已被轮换") from exc
+        if exc.code == HTTPStatus.NOT_FOUND:
+            raise FileNotFoundError("远程项目不存在，请检查接口地址") from exc
+        if 300 <= exc.code < 400:
+            raise ValueError("项目 API 不允许重定向") from exc
+        raise ConnectionError(f"项目 API 请求失败（HTTP {exc.code}）") from exc
+    except (URLError, TimeoutError, socket.timeout) as exc:
+        reason = getattr(exc, "reason", exc)
+        raise ConnectionError(f"无法连接项目 API：{reason}") from exc
+
+    if len(raw) > MAX_ROBOT_RECORD_BYTES:
+        raise ValueError("项目 API 返回的数据超过 20 MB")
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError("项目 API 返回的不是有效 JSON") from exc
+    if not isinstance(payload, dict) or payload.get("apiVersion") != "v1":
+        raise ValueError("项目 API 版本或返回格式无效")
+    project = payload.get("project")
+    if not isinstance(project, dict) or not isinstance(project.get("name"), str):
+        raise ValueError("项目 API 缺少项目信息")
+    validate_robot_record_data(payload.get("data"))
+    return {
+        "apiVersion": "v1",
+        "generatedAt": str(payload.get("generatedAt") or datetime.now().astimezone().isoformat()),
+        "project": {
+            "id": str(project.get("id") or ""),
+            "name": project["name"][:60],
+            "createdAt": str(project.get("createdAt") or ""),
+            "updatedAt": str(project.get("updatedAt") or ""),
+        },
+        "data": json.loads(json.dumps(payload["data"], ensure_ascii=False)),
+    }
+
+
+def load_robot_record() -> dict[str, Any]:
+    with ROBOT_RECORD_LOCK:
+        try:
+            store = validate_robot_record_store(read_json_file(ROBOT_RECORD_PATH))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ValueError(f"机器人台帐数据文件无法读取：{exc}") from exc
+    return {"store": store, "path": str(ROBOT_RECORD_PATH.relative_to(ROOT_DIR))}
+
+
+def save_robot_record(store: Any) -> dict[str, str]:
+    validated = validate_robot_record_store(store)
+    temporary_path = ROBOT_RECORD_PATH.with_suffix(".json.tmp")
+    with ROBOT_RECORD_LOCK:
+        write_json_file(temporary_path, validated)
+        os.replace(temporary_path, ROBOT_RECORD_PATH)
+    return {
+        "path": str(ROBOT_RECORD_PATH.relative_to(ROOT_DIR)),
+        "updatedAt": datetime.now().astimezone().isoformat(),
+    }
+
+
+def robot_record_status_by_code() -> dict[str, dict[str, str]]:
+    try:
+        store = load_robot_record()["store"]
+    except (OSError, ValueError, json.JSONDecodeError):
+        return {}
+
+    data = store
+    if store.get("version") == 7 and isinstance(store.get("projects"), list):
+        active_project_id = store.get("activeProjectId")
+        active_project = next(
+            (project for project in store["projects"] if project.get("id") == active_project_id),
+            None,
+        )
+        if not isinstance(active_project, dict) or not isinstance(active_project.get("data"), dict):
+            return {}
+        data = active_project["data"]
+
+    robot_codes = {
+        str(robot.get("id") or ""): str(robot.get("code") or "").strip()
+        for robot in data.get("robots", [])
+        if isinstance(robot, dict) and robot.get("id") and robot.get("code")
+    }
+    records = data.get("records", {})
+    if not robot_codes or not isinstance(records, dict):
+        return {}
+
+    today = datetime.now().date().isoformat()
+    statuses: dict[str, dict[str, str]] = {}
+    resolved_robot_ids: set[str] = set()
+    record_dates = (
+        key
+        for key in records
+        if isinstance(key, str) and re.fullmatch(r"\d{4}-\d{2}-\d{2}", key) and key <= today
+    )
+    for record_date in sorted(record_dates, reverse=True):
+        daily_records = records.get(record_date)
+        if not isinstance(daily_records, dict):
+            continue
+        for robot_id, record in daily_records.items():
+            if robot_id in resolved_robot_ids or robot_id not in robot_codes or not isinstance(record, dict):
+                continue
+            resolved_robot_ids.add(robot_id)
+            statuses[robot_codes[robot_id]] = {
+                "ledger_availability": str(record.get("availability") or ""),
+            }
+    return statuses
+
+
+def inventory_with_robot_record_status() -> list[dict[str, str]]:
+    statuses = robot_record_status_by_code()
+    robots = parse_inventory()
+    for robot in robots:
+        robot.update(statuses.get(str(robot.get("robot_id") or ""), {}))
+    return robots
 
 
 def translate_status(status: Any) -> str:
@@ -1405,11 +1648,7 @@ def has_cos_teleop_camera_warning(item: dict[str, Any]) -> bool:
 
 
 def camera_label_from_topic(topic: str) -> str:
-    mapping = {
-        "/cam_head/compressed_image": "头部相机",
-        "/cam_wrist_left/compressed_image": "左腕相机",
-        "/cam_wrist_right/compressed_image": "右腕相机",
-    }
+    mapping = {str(item["topic"]): str(item["label"]) for item in CAMERA_TOPIC_SPECS}
     return mapping.get(topic, topic)
 
 
@@ -1529,11 +1768,18 @@ def normalized_camera_status(report: dict[str, Any]) -> dict[str, float]:
 
     raw_status = report.get("camera_status")
     if isinstance(raw_status, dict):
-        return {
+        status = {
             "cam_head": float(raw_status.get("cam_head") or 0),
             "cam_left": float(raw_status.get("cam_left") or 0),
             "cam_right": float(raw_status.get("cam_right") or 0),
         }
+        selected_topic = str(report.get("camera_check_topic") or "")
+        selected_key = {
+            "/cam_head/compressed_image": "cam_head",
+            "/cam_wrist_left/compressed_image": "cam_left",
+            "/cam_wrist_right/compressed_image": "cam_right",
+        }.get(selected_topic)
+        return {selected_key: status[selected_key]} if selected_key else status
 
     status = {"cam_head": 0.0, "cam_left": 0.0, "cam_right": 0.0}
     if not isinstance(report.get("camera_topics"), list):
@@ -1573,6 +1819,9 @@ def normalized_camera_topics(report: dict[str, Any], camera_status: dict[str, fl
         ("cam_left", "/cam_wrist_left/compressed_image", "左腕相机"),
         ("cam_right", "/cam_wrist_right/compressed_image", "右腕相机"),
     ]
+    selected_topic = str(report.get("camera_check_topic") or "")
+    if selected_topic:
+        topic_specs = [item for item in topic_specs if item[1] == selected_topic]
     raw_items = report.get("camera_topics")
     by_topic: dict[str, dict[str, Any]] = {}
     if isinstance(raw_items, list):
@@ -1599,6 +1848,9 @@ def normalized_camera_topics(report: dict[str, Any], camera_status: dict[str, fl
             "reason": translate_phrase(reason or ("" if rate_hz > 0 else "camera topic no data")),
             "suggestion": translate_phrase(suggestion or ("" if rate_hz > 0 else f"检查{label} Type-C 连接或重启 cos_teleop.service")),
         }
+        for metadata_key in ("sample_seconds", "adaptive_decision"):
+            if metadata_key in existing:
+                item[metadata_key] = existing[metadata_key]
         normalized.append(item)
     return normalized
 
@@ -1760,10 +2012,11 @@ def service_stage_items_from_reports(reports: list[dict[str, Any]]) -> list[dict
     return items
 
 
-def latest_service_stage_items() -> list[dict[str, Any]]:
-    if not LATEST_SUMMARY_PATH.exists():
+def latest_service_stage_items(scope: str | None = None) -> list[dict[str, Any]]:
+    path = latest_summary_path(scope)
+    if not path.exists():
         return []
-    data = read_json_file(LATEST_SUMMARY_PATH)
+    data = read_json_file(path)
     reports = [data] if isinstance(data, dict) else [item for item in data if isinstance(item, dict)] if isinstance(data, list) else []
     return service_stage_items_from_reports(reports)
 
@@ -1786,6 +2039,8 @@ def camera_stage_items_from_reports(reports: list[dict[str, Any]]) -> list[dict[
                 {
                     "key": f"{host}:topic:{topic}",
                     "label": f"{host}：{label}（{topic}）",
+                    "host": host,
+                    "topic": topic,
                     "status": stage_item_status_from_report(str(camera.get("status") or "")),
                     "detail": str(camera.get("reason") or camera.get("detail") or ""),
                 }
@@ -1793,10 +2048,11 @@ def camera_stage_items_from_reports(reports: list[dict[str, Any]]) -> list[dict[
     return items
 
 
-def latest_camera_stage_items() -> list[dict[str, Any]]:
-    if not LATEST_SUMMARY_PATH.exists():
+def latest_camera_stage_items(scope: str | None = None) -> list[dict[str, Any]]:
+    path = latest_summary_path(scope)
+    if not path.exists():
         return []
-    data = read_json_file(LATEST_SUMMARY_PATH)
+    data = read_json_file(path)
     reports = [data] if isinstance(data, dict) else [item for item in data if isinstance(item, dict)] if isinstance(data, list) else []
     return camera_stage_items_from_reports(reports)
 
@@ -1876,11 +2132,11 @@ def parse_ansible_progress(text: str) -> dict[str, Any]:
             message = f"正在执行：{task_name}"
             task_stage_id = task_stage_from_text(task_name)
             if task_name == "启动相机频率检查":
-                display_task_name = "正在采样相机帧率（约 8 秒）"
+                display_task_name = "正在并行采样相机帧率（低帧率持续上升时最长 40 秒）"
                 message = display_task_name
                 task_stage_id = "ros2"
             elif task_name == "等待相机频率检查完成":
-                display_task_name = "正在等待三路相机帧率结果"
+                display_task_name = "正在等待相机帧率结果"
                 message = display_task_name
                 task_stage_id = "ros2"
             elif task_name in {"记录相机频率状态", "输出相机频率检查结果"}:
@@ -1932,6 +2188,8 @@ def parse_ansible_progress(text: str) -> dict[str, Any]:
                     {
                         "key": f"{host}:topic:{topic}",
                         "label": f"{host}：{display}{suffix}",
+                        "host": host,
+                        "topic": topic,
                         "status": camera_item_status,
                     },
                 )
@@ -1953,6 +2211,8 @@ def parse_ansible_progress(text: str) -> dict[str, Any]:
                 {
                     "key": f"{host}:topic:{topic}",
                     "label": f"{host}：{display}{suffix}",
+                    "host": host,
+                    "topic": topic,
                     "status": camera_stage_status_from_result(result_status),
                 },
             )
@@ -1994,6 +2254,8 @@ def report_source_for_action(action: str) -> Path:
         return RAW_REPORTS_DIR / "deploy_setup_agent_summary.json"
     if action == "cos_setup":
         return RAW_REPORTS_DIR / "cos_setup_summary.json"
+    if action in {"check", "install"}:
+        return DEVELOPER_REPORTS_DIR / "g1_env_summary.json"
     return ROOT_REPORTS_DIR / "g1_env_summary.json"
 
 
@@ -2277,15 +2539,17 @@ def normalize_report(report: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def latest_report_payload() -> dict[str, Any]:
+def latest_report_payload(scope: str = JOB_SCOPE_OPERATION) -> dict[str, Any]:
+    summary_path = latest_summary_path(scope)
     data: Any = []
-    source = str(LATEST_SUMMARY_PATH.relative_to(ROOT_DIR))
-    if LATEST_SUMMARY_PATH.exists():
-        data = read_json_file(LATEST_SUMMARY_PATH)
-    elif (ROOT_REPORTS_DIR / "g1_env_summary.json").exists():
-        data = read_json_file(ROOT_REPORTS_DIR / "g1_env_summary.json")
-        write_json_file(LATEST_SUMMARY_PATH, data)
-        source = "reports/g1_env_summary.json"
+    source = str(summary_path.relative_to(ROOT_DIR))
+    fallback_path = DEVELOPER_REPORTS_DIR / "g1_env_summary.json" if scope == JOB_SCOPE_DEVELOPER else ROOT_REPORTS_DIR / "g1_env_summary.json"
+    if summary_path.exists():
+        data = read_json_file(summary_path)
+    elif fallback_path.exists():
+        data = read_json_file(fallback_path)
+        write_json_file(summary_path, data)
+        source = str(fallback_path.relative_to(ROOT_DIR))
     reports = [data] if isinstance(data, dict) else [item for item in data if isinstance(item, dict)] if isinstance(data, list) else []
     robots = [normalize_report(item) for item in reports]
     counts = {"total": len(robots), "ok": 0, "warn": 0, "fail": 0, "skip": 0}
@@ -2300,7 +2564,7 @@ def latest_report_payload() -> dict[str, Any]:
         else:
             counts["warn"] += 1
     robots.sort(key=lambda item: (-STATUS_ORDER.get(item["status"], 2), item["inventory_hostname"]))
-    updated_at = datetime.fromtimestamp(LATEST_SUMMARY_PATH.stat().st_mtime).strftime("%Y-%m-%d %H:%M:%S") if LATEST_SUMMARY_PATH.exists() else "-"
+    updated_at = datetime.fromtimestamp(summary_path.stat().st_mtime).strftime("%Y-%m-%d %H:%M:%S") if summary_path.exists() else "-"
     return {"counts": counts, "robots": robots, "source": source, "updated_at": updated_at}
 
 
@@ -2324,10 +2588,11 @@ def camera_warning_message(issues: list[dict[str, Any]]) -> str:
     return f"{label_text}图像无数据或频率异常，建议检查对应相机连接或重启 cos_teleop.service。"
 
 
-def latest_action_outcome() -> tuple[int, str, str]:
-    if not LATEST_SUMMARY_PATH.exists():
+def latest_action_outcome(scope: str | None = None) -> tuple[int, str, str]:
+    path = latest_summary_path(scope)
+    if not path.exists():
         return 1, "执行失败：未生成报告。", "fail"
-    data = read_json_file(LATEST_SUMMARY_PATH)
+    data = read_json_file(path)
     reports = [data] if isinstance(data, dict) else [item for item in data if isinstance(item, dict)] if isinstance(data, list) else []
     robots = [normalize_report(item) for item in reports]
     if not robots:
@@ -2355,7 +2620,13 @@ def latest_action_outcome() -> tuple[int, str, str]:
     if any(str(item.get("mode", "")) == CAMERA_CHECK_ACTION for item in reports if isinstance(item, dict)):
         host_names = [robot["inventory_hostname"] for robot in robots if robot.get("inventory_hostname")]
         host_label = host_names[0] if len(host_names) == 1 else "所有机器人"
-        return 0, f"执行成功：{host_label} 三路相机帧率正常。", "success"
+        selected_topics = {
+            str(item.get("camera_check_topic") or "")
+            for item in reports
+            if isinstance(item, dict) and item.get("camera_check_topic")
+        }
+        camera_label = camera_label_from_topic(next(iter(selected_topics))) if len(selected_topics) == 1 else "三路相机"
+        return 0, f"执行成功：{host_label} {camera_label}帧率正常。", "success"
     if any(str(item.get("mode", "")) in SERVICE_ACTIONS for item in reports if isinstance(item, dict)):
         host_names = [robot["inventory_hostname"] for robot in robots if robot.get("inventory_hostname")]
         host_label = host_names[0] if len(host_names) == 1 else "所有机器人"
@@ -2372,18 +2643,19 @@ def copy_raw_jsons(pattern: str) -> None:
 
 def update_latest_from_action(action: str, execution: dict[str, Any]) -> None:
     source = report_source_for_action(action)
-    if action != "cos_setup":
+    summary_path = latest_summary_path(job_scope_for_action(action))
+    if job_scope_for_action(action) == JOB_SCOPE_OPERATION:
         copy_raw_jsons("g1_robot_*.json")
     if source.exists():
         data = read_json_file(source)
         reports = [data] if isinstance(data, dict) else [item for item in data if isinstance(item, dict)] if isinstance(data, list) else []
-        write_json_file(LATEST_SUMMARY_PATH, attach_execution_metadata(reports, execution))
+        write_json_file(summary_path, attach_execution_metadata(reports, execution))
         if action == "cos_setup":
             for item in RAW_REPORTS_DIR.glob("cos_setup_*.json"):
                 if item.name != "cos_setup_summary.json":
                     shutil.copy2(item, RAW_REPORTS_DIR / item.name)
         return
-    write_json_file(LATEST_SUMMARY_PATH, build_execution_summary(action, execution))
+    write_json_file(summary_path, build_execution_summary(action, execution))
 
 
 def selected_inventory_robots(selected: list[str]) -> list[dict[str, str]]:
@@ -2403,6 +2675,23 @@ def selected_inventory_robots(selected: list[str]) -> list[dict[str, str]]:
         for robot in parse_inventory()
         if not names or robot["inventory_hostname"] in names or robot.get("robot_id") in selected_ids or robot.get("ansible_host") in names
     ]
+
+
+def requested_robot_names(selected: list[str]) -> list[str]:
+    resolved = [robot["inventory_hostname"] for robot in selected_inventory_robots(selected)]
+    if resolved:
+        return resolved
+    return [str(item).strip() for item in selected if str(item).strip()]
+
+
+def conflicting_job_locked(scope: str, robot_names: list[str]) -> dict[str, Any] | None:
+    other_scope = JOB_SCOPE_DEVELOPER if scope == JOB_SCOPE_OPERATION else JOB_SCOPE_OPERATION
+    other_job = current_job(other_scope)
+    if not other_job.get("running"):
+        return None
+    if set(robot_names).intersection(str(item) for item in other_job.get("robots", [])):
+        return other_job
+    return None
 
 
 def unreachable_report(robot: dict[str, str], action: str, detail: str = "") -> dict[str, Any]:
@@ -2450,7 +2739,8 @@ def precheck_ssh(robots: list[dict[str, str]], action: str) -> tuple[list[dict[s
 
 def merge_latest_summary(action: str, execution: dict[str, Any], extra_reports: list[dict[str, Any]]) -> None:
     source = report_source_for_action(action)
-    if action != "cos_setup":
+    summary_path = latest_summary_path(job_scope_for_action(action))
+    if job_scope_for_action(action) == JOB_SCOPE_OPERATION:
         copy_raw_jsons("g1_robot_*.json")
     reports: list[dict[str, Any]] = []
     if source.exists():
@@ -2461,7 +2751,7 @@ def merge_latest_summary(action: str, execution: dict[str, Any], extra_reports: 
     by_host = {robot_identity(item): item for item in reports}
     for item in extra_reports:
         by_host[robot_identity(item)] = item
-    write_json_file(LATEST_SUMMARY_PATH, attach_execution_metadata(list(by_host.values()), execution))
+    write_json_file(summary_path, attach_execution_metadata(list(by_host.values()), execution))
 
 
 def attach_execution_metadata(reports: list[dict[str, Any]], execution: dict[str, Any]) -> list[dict[str, Any]]:
@@ -3015,8 +3305,9 @@ def refresh_latest_report_with_status(ssh_password: str = "", sudo_password: str
         REFRESH_LOCK.release()
 
 
-def service_action_playbook(action: str, service_name: str = "") -> Path:
+def service_action_playbook(action: str, service_name: str = "", camera_topic: str = "") -> Path:
     playbook_path = Path("/tmp") / f"operator_console_{action}.yml"
+    camera_topics = [dict(item) for item in CAMERA_TOPIC_SPECS if not camera_topic or item["topic"] == camera_topic]
     restart_line = ""
     if action == "service_restart":
         restart_line = f"""
@@ -3044,8 +3335,12 @@ def service_action_playbook(action: str, service_name: str = "") -> Path:
     service_report_file: "{(ROOT_REPORTS_DIR / "g1_env_summary.json")}"
     service_action: "{action}"
     service_restart_name: "{service_name}"
+    camera_check_topic: {json.dumps(camera_topic, ensure_ascii=False)}
     camera_topic_min_rate_hz: {CAMERA_TOPIC_MIN_RATE_HZ:.1f}
     camera_topic_sample_seconds: 8
+    camera_topic_extend_seconds: 4
+    camera_topic_max_sample_seconds: 40
+    camera_topic_growth_epsilon_hz: 0.05
     camera_status_default:
       cam_head: 0
       cam_left: 0
@@ -3064,16 +3359,7 @@ def service_action_playbook(action: str, service_name: str = "") -> Path:
         )
         or service_restart_name == 'cos_teleop.service'
       }}}}
-    camera_topics:
-      - topic: /cam_head/compressed_image
-        label: 头部相机
-        device: /dev/cam_head
-      - topic: /cam_wrist_left/compressed_image
-        label: 左腕相机
-        device: /dev/cam_wrist_left
-      - topic: /cam_wrist_right/compressed_image
-        label: 右腕相机
-        device: /dev/cam_wrist_right
+    camera_topics: {json.dumps(camera_topics, ensure_ascii=False)}
 
   tasks:
 {restart_line}
@@ -3340,6 +3626,9 @@ def service_action_playbook(action: str, service_name: str = "") -> Path:
         device="{{{{ item.device | default('') }}}}"
         min_rate="{{{{ camera_topic_min_rate_hz }}}}"
         sample_seconds="{{{{ camera_topic_sample_seconds | int }}}}"
+        extend_seconds="{{{{ camera_topic_extend_seconds | int }}}}"
+        max_sample_seconds="{{{{ camera_topic_max_sample_seconds | int }}}}"
+        growth_epsilon="{{{{ camera_topic_growth_epsilon_hz }}}}"
         if [ -n "$device" ] && [ ! -e "$device" ]; then
           printf 'camera_device_missing: %s\\n' "$device"
           exit 2
@@ -3347,7 +3636,53 @@ def service_action_playbook(action: str, service_name: str = "") -> Path:
         hz_output_file="$(mktemp)"
         ros2 topic hz "$topic" > "$hz_output_file" 2>&1 &
         hz_pid=$!
+        cleanup_hz() {{
+          if kill -0 "$hz_pid" >/dev/null 2>&1; then
+            kill "$hz_pid" >/dev/null 2>&1 || true
+            wait "$hz_pid" >/dev/null 2>&1 || true
+          fi
+          rm -f "$hz_output_file"
+        }}
+        trap cleanup_hz EXIT
         sleep "$sample_seconds"
+        elapsed_seconds="$sample_seconds"
+        hz_rates="$(sed -n 's/.*average rate:[[:space:]]*\\([0-9][0-9.]*\\).*/\\1/p' "$hz_output_file")"
+        hz_rate="$(printf '%s\\n' "$hz_rates" | tail -n 1)"
+        previous_rate="$(printf '%s\\n' "$hz_rates" | tail -n 2 | head -n 1)"
+        adaptive_decision="initial_sample"
+
+        if [ -z "$hz_rate" ]; then
+          adaptive_decision="no_data"
+        elif awk "BEGIN {{ exit !($hz_rate >= $min_rate) }}"; then
+          adaptive_decision="passed_initial"
+        elif [ -n "$previous_rate" ] && awk "BEGIN {{ exit !($hz_rate > $previous_rate + $growth_epsilon) }}"; then
+          adaptive_decision="rising"
+          while [ "$elapsed_seconds" -lt "$max_sample_seconds" ]; do
+            remaining_seconds=$((max_sample_seconds - elapsed_seconds))
+            next_sleep="$extend_seconds"
+            if [ "$remaining_seconds" -lt "$next_sleep" ]; then
+              next_sleep="$remaining_seconds"
+            fi
+            previous_rate="$hz_rate"
+            sleep "$next_sleep"
+            elapsed_seconds=$((elapsed_seconds + next_sleep))
+            next_rate="$(sed -n 's/.*average rate:[[:space:]]*\\([0-9][0-9.]*\\).*/\\1/p' "$hz_output_file" | tail -n 1)"
+            if [ -z "$next_rate" ] || ! awk "BEGIN {{ exit !($next_rate > $previous_rate + $growth_epsilon) }}"; then
+              [ -n "$next_rate" ] && hz_rate="$next_rate"
+              adaptive_decision="stopped_not_rising"
+              break
+            fi
+            hz_rate="$next_rate"
+            if awk "BEGIN {{ exit !($hz_rate >= $min_rate) }}"; then
+              adaptive_decision="recovered"
+              break
+            fi
+            adaptive_decision="rising_until_limit"
+          done
+        else
+          adaptive_decision="stopped_not_rising"
+        fi
+
         if kill -0 "$hz_pid" >/dev/null 2>&1; then
           kill "$hz_pid" >/dev/null 2>&1 || true
           wait "$hz_pid" >/dev/null 2>&1 || true
@@ -3357,9 +3692,10 @@ def service_action_playbook(action: str, service_name: str = "") -> Path:
           hz_rc=$?
         fi
         hz_output="$(cat "$hz_output_file" 2>/dev/null || true)"
-        rm -f "$hz_output_file"
         printf '%s\\n' "$hz_output"
-        hz_rate="$(printf '%s\\n' "$hz_output" | sed -n 's/.*average rate:[[:space:]]*\\([0-9][0-9.]*\\).*/\\1/p' | tail -n 1)"
+        printf '__CAMERA_HZ_ADAPTIVE__ rate_hz=%s sampled_seconds=%s decision=%s\\n' "${{hz_rate:-0}}" "$elapsed_seconds" "$adaptive_decision"
+        trap - EXIT
+        rm -f "$hz_output_file"
         if [ -z "$hz_rate" ]; then
           printf 'ros_hz_warning: no average rate received on %s rc=%s\\n' "$topic" "$hz_rc"
           exit 1
@@ -3374,7 +3710,7 @@ def service_action_playbook(action: str, service_name: str = "") -> Path:
       loop: "{{{{ camera_topics }}}}"
       loop_control:
         label: "{{{{ item.label }}}}（{{{{ item.topic }}}}）"
-      async: 25
+      async: 55
       poll: 0
       register: camera_topic_hz_jobs
       changed_when: false
@@ -3389,7 +3725,7 @@ def service_action_playbook(action: str, service_name: str = "") -> Path:
         label: "{{{{ item.item.label | default('相机') }}}}（{{{{ item.item.topic | default(item.ansible_job_id) }}}}）"
       register: camera_topic_hz_checks
       until: camera_topic_hz_checks.finished
-      retries: 20
+      retries: 50
       delay: 1
       changed_when: false
       failed_when: false
@@ -3423,7 +3759,12 @@ def service_action_playbook(action: str, service_name: str = "") -> Path:
         camera_topic_results: "{{{{ camera_topic_results + [camera_topic_result] }}}}"
       vars:
         camera_topic_rate_matches: "{{{{ item.stdout | default('') | regex_findall('average rate:\\\\s*([0-9]+(?:\\\\.[0-9]+)?)') }}}}"
-        camera_topic_rate_hz: "{{{{ (camera_topic_rate_matches | first | default('0', true)) | float }}}}"
+        camera_topic_adaptive_rate_matches: "{{{{ item.stdout | default('') | regex_findall('__CAMERA_HZ_ADAPTIVE__ rate_hz=([0-9]+(?:\\\\.[0-9]+)?)') }}}}"
+        camera_topic_rate_hz: "{{{{ (camera_topic_adaptive_rate_matches | last | default(camera_topic_rate_matches | last | default('0', true), true)) | float }}}}"
+        camera_topic_sample_matches: "{{{{ item.stdout | default('') | regex_findall('__CAMERA_HZ_ADAPTIVE__ rate_hz=[0-9]+(?:\\\\.[0-9]+)? sampled_seconds=([0-9]+)') }}}}"
+        camera_topic_decision_matches: "{{{{ item.stdout | default('') | regex_findall('__CAMERA_HZ_ADAPTIVE__ rate_hz=[0-9]+(?:\\\\.[0-9]+)? sampled_seconds=[0-9]+ decision=([a-z_]+)') }}}}"
+        camera_topic_sampled_seconds: "{{{{ (camera_topic_sample_matches | last | default(camera_topic_sample_seconds, true)) | int }}}}"
+        camera_topic_adaptive_decision: "{{{{ camera_topic_decision_matches | last | default('initial_sample', true) }}}}"
         camera_topic_ok: "{{{{ camera_topic_rate_hz | float >= camera_topic_min_rate_hz | default(0.0) | float }}}}"
         camera_topic_low_rate: "{{{{ camera_topic_rate_hz | float > 0 and camera_topic_rate_hz | float < camera_topic_min_rate_hz | default(0.0) | float }}}}"
         camera_topic_status: "{{{{ 'OK' if camera_topic_ok | bool else 'WARN' if camera_topic_low_rate | bool else 'FAIL' }}}}"
@@ -3431,9 +3772,9 @@ def service_action_playbook(action: str, service_name: str = "") -> Path:
         camera_topic_suggestion: "{{{{ '检查' ~ item.item.label ~ '帧率是否稳定，确认相机连接、系统负载和 cos_teleop.service 状态。' if camera_topic_low_rate | bool else '检查' ~ item.item.label ~ ' Type-C 连接或重启 cos_teleop.service' }}}}"
         camera_topic_detail: >-
           {{{{
-            'average rate: ' ~ camera_topic_rate_hz ~ ' Hz'
+            'average rate: ' ~ camera_topic_rate_hz ~ ' Hz; adaptive sample: ' ~ camera_topic_sampled_seconds ~ 's (' ~ camera_topic_adaptive_decision ~ ')'
             if camera_topic_ok | bool
-            else 'average rate: ' ~ camera_topic_rate_hz ~ ' Hz below minimum ' ~ camera_topic_min_rate_hz ~ ' Hz'
+            else 'average rate: ' ~ camera_topic_rate_hz ~ ' Hz below minimum ' ~ camera_topic_min_rate_hz ~ ' Hz; adaptive sample: ' ~ camera_topic_sampled_seconds ~ 's (' ~ camera_topic_adaptive_decision ~ ')'
             if camera_topic_low_rate | bool
             else 'timeout ' ~ camera_topic_sample_seconds ~ 's ros2 topic hz ' ~ item.item.topic ~ ' did not receive messages'
           }}}}
@@ -3443,7 +3784,9 @@ def service_action_playbook(action: str, service_name: str = "") -> Path:
               'topic': item.item.topic,
               'label': item.item.label,
               'status': camera_topic_status,
-              'rate_hz': camera_topic_rate_hz | float
+              'rate_hz': camera_topic_rate_hz | float,
+              'sample_seconds': camera_topic_sampled_seconds | int,
+              'adaptive_decision': camera_topic_adaptive_decision
             }}
             | combine({{}} if camera_topic_status == 'OK' else {{
               'reason': camera_topic_reason,
@@ -3477,7 +3820,9 @@ def service_action_playbook(action: str, service_name: str = "") -> Path:
               'topic': item.topic,
               'label': item.label,
               'status': existing_camera_topic.get('status', 'FAIL'),
-              'rate_hz': existing_camera_topic.get('rate_hz', 0) | float
+              'rate_hz': existing_camera_topic.get('rate_hz', 0) | float,
+              'sample_seconds': existing_camera_topic.get('sample_seconds', camera_topic_sample_seconds) | int,
+              'adaptive_decision': existing_camera_topic.get('adaptive_decision', 'not_checked')
             }}
             | combine({{}} if existing_camera_topic.get('status', 'FAIL') == 'OK' else {{
               'reason': existing_camera_topic.get('reason', 'camera topic no data'),
@@ -3566,6 +3911,7 @@ def service_action_playbook(action: str, service_name: str = "") -> Path:
           ansible_host: "{{{{ ansible_host | default(inventory_hostname) }}}}"
           robot_id: "{{{{ robot_id | default('unknown') }}}}"
           mode: "{{{{ service_action }}}}"
+          camera_check_topic: "{{{{ camera_check_topic }}}}"
           system_services_status: "{{{{ system_services_status }}}}"
           camera_streams_status: "{{{{ camera_streams_status }}}}"
           overall_status: >-
@@ -3621,7 +3967,12 @@ def service_action_playbook(action: str, service_name: str = "") -> Path:
     return playbook_path
 
 
-def build_ansible_command(action: str, robots: list[str], service_name: str = "") -> tuple[list[str], Path]:
+def build_ansible_command(
+    action: str,
+    robots: list[str],
+    service_name: str = "",
+    camera_topic: str = "",
+) -> tuple[list[str], Path]:
     inventory = str(inventory_path())
     ansible_timeout = str(int(cfg("ansible", "ansible_timeout", default=15)))
     common = [
@@ -3636,13 +3987,20 @@ def build_ansible_command(action: str, robots: list[str], service_name: str = ""
         json.dumps({"ansible_ssh_common_args": ssh_common_args()}, ensure_ascii=False),
     ]
     if action == "check":
-        cmd = [*common, str(resolve_root_path(str(cfg("ansible", "check_playbook", default="check_base_env.yml"))))]
+        cmd = [
+            *common,
+            str(resolve_root_path(str(cfg("ansible", "check_playbook", default="check_base_env.yml")))),
+            "-e",
+            f"g1_report_dir={DEVELOPER_REPORTS_DIR}",
+        ]
     elif action == "install":
         cmd = [
             *common,
             str(resolve_root_path(str(cfg("ansible", "check_playbook", default="check_base_env.yml")))),
             "-e",
             "g1_mode=install",
+            "-e",
+            f"g1_report_dir={DEVELOPER_REPORTS_DIR}",
         ]
     elif action == "cos_setup":
         cmd = [
@@ -3652,7 +4010,7 @@ def build_ansible_command(action: str, robots: list[str], service_name: str = ""
             f"cos_setup_report_dir={RAW_REPORTS_DIR}",
         ]
     elif action in SERVICE_ACTIONS:
-        cmd = [*common, str(service_action_playbook(action, service_name))]
+        cmd = [*common, str(service_action_playbook(action, service_name, camera_topic))]
     else:
         raise ValueError("未知操作")
     clean_robots = [item for item in robots if item]
@@ -3685,6 +4043,7 @@ def set_job(**updates: Any) -> None:
     current_task = str(updates.pop("current_task", "") or "")
     stage_items = updates.pop("stage_items", {})
     with JOB_LOCK:
+        job = current_job()
         starting_new = (
             updates.get("running") is True
             and updates.get("returncode") is None
@@ -3692,7 +4051,7 @@ def set_job(**updates: Any) -> None:
         )
         if starting_new:
             action = str(updates.get("action") or "")
-            CURRENT_JOB.update(
+            job.update(
                 {
                     "stages": make_job_stages(action),
                     "current_stage": "",
@@ -3706,36 +4065,36 @@ def set_job(**updates: Any) -> None:
                     "hand_side_cn": "",
                 }
             )
-        CURRENT_JOB.update(updates)
+        job.update(updates)
         if current_task:
-            CURRENT_JOB["current_task"] = current_task
+            job["current_task"] = current_task
         elif "message" in updates:
-            CURRENT_JOB["current_task"] = str(updates.get("message") or "")
+            job["current_task"] = str(updates.get("message") or "")
         if "cmd" in updates:
-            CURRENT_JOB["current_command"] = str(updates.get("cmd") or "")
-        if CURRENT_JOB.get("running"):
+            job["current_command"] = str(updates.get("cmd") or "")
+        if job.get("running"):
             stage_id = stage_id_for_job_update_locked(
                 {
                     **updates,
-                    "current_task": current_task or CURRENT_JOB.get("current_task", ""),
+                    "current_task": current_task or job.get("current_task", ""),
                 },
                 explicit_stage_id,
             )
             if stage_id:
                 update_job_stage_locked(
                     stage_id,
-                    task=current_task or str(updates.get("message") or CURRENT_JOB.get("current_task") or ""),
-                    command=str(updates.get("cmd") or CURRENT_JOB.get("current_command") or ""),
+                    task=current_task or str(updates.get("message") or job.get("current_task") or ""),
+                    command=str(updates.get("cmd") or job.get("current_command") or ""),
                 )
             if isinstance(stage_items, dict):
                 merge_job_stage_items_by_stage_locked(stage_items)
         elif updates.get("running") is False:
-            finalize_job_stages_locked(str(CURRENT_JOB.get("phase") or updates.get("phase") or ""))
+            finalize_job_stages_locked(str(job.get("phase") or updates.get("phase") or ""))
 
 
 def job_cancel_requested() -> bool:
     with JOB_LOCK:
-        return bool(CURRENT_JOB.get("cancel_requested"))
+        return bool(current_job(JOB_SCOPE_OPERATION).get("cancel_requested"))
 
 
 def hand_test_command(robot: dict[str, str], side: str) -> tuple[list[str], Path, str]:
@@ -3768,11 +4127,12 @@ def selected_hand_test_robot(robots: list[str]) -> dict[str, str]:
 
 def cancel_current_job() -> dict[str, Any]:
     with JOB_LOCK:
-        if not CURRENT_JOB.get("running"):
-            return job_payload_locked()
-        if CURRENT_JOB.get("action") != HAND_TEST_ACTION:
+        job = current_job(JOB_SCOPE_OPERATION)
+        if not job.get("running"):
+            return job_payload_locked(JOB_SCOPE_OPERATION)
+        if job.get("action") != HAND_TEST_ACTION:
             raise ValueError("当前任务不支持从页面取消")
-        CURRENT_JOB.update(
+        job.update(
             {
                 "cancel_requested": True,
                 "message": "正在取消手测试，请稍候……",
@@ -3792,7 +4152,7 @@ def cancel_current_job() -> dict[str, Any]:
         except Exception:
             pass
     with JOB_LOCK:
-        return job_payload_locked()
+        return job_payload_locked(JOB_SCOPE_OPERATION)
 
 
 def update_job_from_log(log_file: Path, fallback: str = "任务仍在执行，请稍候……") -> dict[str, Any]:
@@ -4240,6 +4600,7 @@ def run_agent_cos_setup_phase(robot: dict[str, str], ssh_password: str, sudo_pas
 
 
 def run_deploy_setup_agent(robots: list[str], ssh_password: str, sudo_password: str) -> None:
+    JOB_CONTEXT.scope = JOB_SCOPE_DEVELOPER
     ensure_dirs()
     started_monotonic = time.monotonic()
     started = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -4265,6 +4626,7 @@ def run_deploy_setup_agent(robots: list[str], ssh_password: str, sudo_password: 
     set_job(
         running=True,
         action=DEPLOY_SETUP_AGENT_ACTION,
+        robots=[robot["inventory_hostname"] for robot in selected_inventory_robots(robots)],
         started_at=started,
         finished_at="",
         returncode=None,
@@ -4301,9 +4663,9 @@ def run_deploy_setup_agent(robots: list[str], ssh_password: str, sudo_password: 
         if robot:
             report = build_deploy_setup_agent_report(robot, final_status, message, diagnosis, phases, cos_report)
             write_deploy_setup_agent_report(report, robot)
-            write_json_file(LATEST_SUMMARY_PATH, attach_execution_metadata([report], execution))
+            write_json_file(latest_summary_path(JOB_SCOPE_DEVELOPER), attach_execution_metadata([report], execution))
         else:
-            write_json_file(LATEST_SUMMARY_PATH, build_execution_failure_summary(DEPLOY_SETUP_AGENT_ACTION, execution))
+            write_json_file(latest_summary_path(JOB_SCOPE_DEVELOPER), build_execution_failure_summary(DEPLOY_SETUP_AGENT_ACTION, execution))
         set_job(
             running=False,
             finished_at=end_time,
@@ -4386,6 +4748,7 @@ def run_deploy_setup_agent(robots: list[str], ssh_password: str, sudo_password: 
 
 
 def run_hand_test(robots: list[str], side: str, ssh_password: str, sudo_password: str) -> None:
+    JOB_CONTEXT.scope = JOB_SCOPE_OPERATION
     ensure_dirs()
     started_monotonic = time.monotonic()
     started = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -4420,6 +4783,7 @@ def run_hand_test(robots: list[str], side: str, ssh_password: str, sudo_password
         set_job(
             running=True,
             action=HAND_TEST_ACTION,
+            robots=[robot["inventory_hostname"]],
             started_at=started,
             finished_at="",
             returncode=None,
@@ -4549,7 +4913,15 @@ def run_hand_test(robots: list[str], side: str, ssh_password: str, sudo_password
         )
 
 
-def run_action(action: str, robots: list[str], ssh_password: str, sudo_password: str, service_name: str = "") -> None:
+def run_action(
+    action: str,
+    robots: list[str],
+    ssh_password: str,
+    sudo_password: str,
+    service_name: str = "",
+    camera_topic: str = "",
+) -> None:
+    JOB_CONTEXT.scope = job_scope_for_action(action)
     if action == DEPLOY_SETUP_AGENT_ACTION:
         run_deploy_setup_agent(robots, ssh_password, sudo_password)
         return
@@ -4561,6 +4933,7 @@ def run_action(action: str, robots: list[str], ssh_password: str, sudo_password:
     set_job(
         running=True,
         action=action,
+        robots=[robot["inventory_hostname"] for robot in selected_inventory_robots(robots)],
         started_at=started,
         finished_at="",
         returncode=None,
@@ -4626,7 +4999,7 @@ def run_action(action: str, robots: list[str], ssh_password: str, sudo_password:
                 }
             )
             write_json_file(RAW_REPORTS_DIR / f"{started}_{action}_execution.json", execution)
-            write_json_file(LATEST_SUMMARY_PATH, attach_execution_metadata(unreachable_reports, execution))
+            write_json_file(latest_summary_path(job_scope_for_action(action)), attach_execution_metadata(unreachable_reports, execution))
             set_job(
                 running=False,
                 finished_at=end_time,
@@ -4688,7 +5061,7 @@ def run_action(action: str, robots: list[str], ssh_password: str, sudo_password:
                 }
             )
             write_json_file(RAW_REPORTS_DIR / f"{started}_{action}_execution.json", execution)
-            write_json_file(LATEST_SUMMARY_PATH, build_single_execution_report(action, execution, robot))
+            write_json_file(latest_summary_path(JOB_SCOPE_DEVELOPER), build_single_execution_report(action, execution, robot))
 
             set_job(
                 running=False,
@@ -4701,7 +5074,7 @@ def run_action(action: str, robots: list[str], ssh_password: str, sudo_password:
             )
             return
 
-        cmd, cwd = build_ansible_command(action, reachable_names, service_name)
+        cmd, cwd = build_ansible_command(action, reachable_names, service_name, camera_topic)
         execution.update({"robots": reachable_names, "command": shlex.join(cmd), "cwd": str(cwd)})
         set_job(message="正在执行脚本……", cmd=execution["command"], cwd=str(cwd), phase="running")
 
@@ -4803,7 +5176,7 @@ def run_action(action: str, robots: list[str], ssh_password: str, sudo_password:
             }
         )
         write_json_file(RAW_REPORTS_DIR / f"{started}_{action}_execution.json", execution)
-        write_json_file(LATEST_SUMMARY_PATH, build_execution_failure_summary(action, execution))
+        write_json_file(latest_summary_path(job_scope_for_action(action)), build_execution_failure_summary(action, execution))
         set_job(
             running=False,
             finished_at=end_time,
@@ -4823,18 +5196,20 @@ def latest_log() -> dict[str, str]:
     return {"path": str(latest), "content": latest.read_text(encoding="utf-8", errors="replace")}
 
 
-def current_log_path() -> Path | None:
+def current_log_path(scope: str | None = None) -> Path | None:
     with JOB_LOCK:
-        value = str(CURRENT_JOB.get("log_file") or "")
+        value = str(current_job(scope).get("log_file") or "")
     if value:
         path = Path(value)
         return path if path.exists() else None
+    if scope is not None:
+        return None
     logs = sorted(ROOT_LOGS_DIR.glob("*.log"), key=lambda path: path.stat().st_mtime, reverse=True)
     return logs[0] if logs else None
 
 
-def log_tail_payload(line_count: int = 100) -> dict[str, Any]:
-    path = current_log_path()
+def log_tail_payload(line_count: int = 100, scope: str | None = None) -> dict[str, Any]:
+    path = current_log_path(scope)
     if not path:
         return {"path": "", "content": "", "last_lines": [], "updated_at": "-"}
     content = path.read_text(encoding="utf-8", errors="replace")
@@ -4882,22 +5257,42 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         if parsed.path == "/":
             self.send_file(TEMPLATES_DIR / "index.html", "text/html; charset=utf-8")
+        elif parsed.path == "/api/robot-record":
+            try:
+                self.send_json(load_robot_record())
+            except ValueError as exc:
+                self.send_json({"error": str(exc)}, HTTPStatus.INTERNAL_SERVER_ERROR)
         elif parsed.path == "/api/robots/status":
             self.send_json(robots_status_payload())
         elif parsed.path.startswith("/api/robots/") and parsed.path.endswith("/services"):
             hostname = unquote(parsed.path.removeprefix("/api/robots/").removesuffix("/services").strip("/"))
             self.send_robot_services(hostname)
         elif parsed.path == "/api/robots":
-            self.send_json({"robots": parse_inventory()})
+            self.send_json({"robots": inventory_with_robot_record_status()})
         elif parsed.path in ("/api/report/latest", "/api/reports"):
-            self.send_json(latest_report_payload())
+            try:
+                scope = normalize_job_scope(parse_qs(parsed.query).get("scope", [JOB_SCOPE_OPERATION])[0])
+            except ValueError as exc:
+                self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+                return
+            self.send_json(latest_report_payload(scope))
         elif parsed.path == "/api/logs/latest":
             self.send_json(latest_log())
         elif parsed.path == "/api/logs/tail":
-            self.send_json(log_tail_payload())
+            try:
+                scope = normalize_job_scope(parse_qs(parsed.query).get("scope", [JOB_SCOPE_OPERATION])[0])
+            except ValueError as exc:
+                self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+                return
+            self.send_json(log_tail_payload(scope=scope))
         elif parsed.path == "/api/job":
+            try:
+                scope = normalize_job_scope(parse_qs(parsed.query).get("scope", [JOB_SCOPE_OPERATION])[0])
+            except ValueError as exc:
+                self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+                return
             with JOB_LOCK:
-                self.send_json(job_payload_locked())
+                self.send_json(job_payload_locked(scope))
         elif parsed.path == "/api/local/checks":
             self.send_json(local_dependency_status())
         elif parsed.path.startswith("/static/"):
@@ -4908,6 +5303,24 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
         try:
+            if parsed.path == "/api/robot-record":
+                self.send_json(save_robot_record(self.read_payload().get("store")))
+                return
+            if parsed.path == "/api/robot-record/remote":
+                payload = self.read_payload()
+                try:
+                    remote = read_remote_robot_record(payload.get("url"), payload.get("apiKey"))
+                except PermissionError as exc:
+                    self.send_json({"error": str(exc)}, HTTPStatus.UNAUTHORIZED)
+                    return
+                except FileNotFoundError as exc:
+                    self.send_json({"error": str(exc)}, HTTPStatus.NOT_FOUND)
+                    return
+                except ConnectionError as exc:
+                    self.send_json({"error": str(exc)}, HTTPStatus.BAD_GATEWAY)
+                    return
+                self.send_json(remote)
+                return
             if parsed.path == "/api/robots":
                 self.send_json({"robots": add_robot(self.read_payload())}, HTTPStatus.CREATED)
                 return
@@ -5051,17 +5464,26 @@ class Handler(BaseHTTPRequestHandler):
         robots = payload.get("robots") or []
         if not isinstance(robots, list):
             robots = []
+        scope = job_scope_for_action(action)
+        robot_names = requested_robot_names([str(item) for item in robots])
         if action == DEPLOY_SETUP_AGENT_ACTION:
             selected_for_agent = selected_inventory_robots([str(item) for item in robots])
             if len(selected_for_agent) != 1:
                 self.send_json({"error": "智能部署 / 修复第一版一次只能选择 1 台机器人"}, HTTPStatus.BAD_REQUEST)
                 return
         service_name = str(payload.get("service_name", "")).strip()
+        camera_topic = str(payload.get("camera_topic", "")).strip()
         if action == "service_restart" and service_name not in RESTARTABLE_SERVICES:
             self.send_json({"error": "请选择要重启的服务"}, HTTPStatus.BAD_REQUEST)
             return
         if action == "service_check" and service_name and service_name not in RESTARTABLE_SERVICES:
             self.send_json({"error": "请选择要复查的服务"}, HTTPStatus.BAD_REQUEST)
+            return
+        if camera_topic and (action != CAMERA_CHECK_ACTION or camera_topic not in CAMERA_TOPIC_NAMES):
+            self.send_json({"error": "请选择有效的摄像头 topic"}, HTTPStatus.BAD_REQUEST)
+            return
+        if action == CAMERA_CHECK_ACTION and camera_topic and len(robot_names) != 1:
+            self.send_json({"error": "单摄像头复查一次只能选择 1 台机器人"}, HTTPStatus.BAD_REQUEST)
             return
         ssh_password = str(payload.get("ssh_password", ""))
         sudo_password = str(payload.get("sudo_password", ""))
@@ -5069,14 +5491,34 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({"status": "FAIL", "message": "缺少 SSH 或 sudo 密码"}, HTTPStatus.BAD_REQUEST)
             return
         with JOB_LOCK:
-            if CURRENT_JOB.get("running"):
-                self.send_json({"error": "已有任务正在执行"}, HTTPStatus.CONFLICT)
+            job = current_job(scope)
+            if job.get("running"):
+                self.send_json({"error": "当前模块已有任务正在执行"}, HTTPStatus.CONFLICT)
                 return
-        thread = threading.Thread(target=run_action, args=(action, [str(item) for item in robots], ssh_password, sudo_password, service_name), daemon=True)
+            conflict = conflicting_job_locked(scope, robot_names)
+            if conflict:
+                conflict_names = "、".join(sorted(set(robot_names).intersection(str(item) for item in conflict.get("robots", []))))
+                self.send_json({"error": f"机器人 {conflict_names} 正在执行另一模块任务，请选择其他机器人或等待完成"}, HTTPStatus.CONFLICT)
+                return
+            job.update(
+                {
+                    "running": True,
+                    "action": action,
+                    "robots": robot_names,
+                    "returncode": None,
+                    "message": "任务正在启动……",
+                    "phase": "starting",
+                }
+            )
+        thread = threading.Thread(
+            target=run_action,
+            args=(action, [str(item) for item in robots], ssh_password, sudo_password, service_name, camera_topic),
+            daemon=True,
+        )
         thread.start()
         time.sleep(0.1)
         with JOB_LOCK:
-            self.send_json(job_payload_locked(), HTTPStatus.ACCEPTED)
+            self.send_json(job_payload_locked(scope), HTTPStatus.ACCEPTED)
 
     def start_hand_test(self, payload: dict[str, Any]) -> None:
         robots = payload.get("robots") or []
@@ -5100,9 +5542,26 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({"status": "FAIL", "message": "缺少 SSH 或 sudo 密码"}, HTTPStatus.BAD_REQUEST)
             return
         with JOB_LOCK:
-            if CURRENT_JOB.get("running"):
-                self.send_json({"error": "已有任务正在执行"}, HTTPStatus.CONFLICT)
+            robot_names = requested_robot_names([str(item) for item in robots])
+            job = current_job(JOB_SCOPE_OPERATION)
+            if job.get("running"):
+                self.send_json({"error": "操作模块已有任务正在执行"}, HTTPStatus.CONFLICT)
                 return
+            conflict = conflicting_job_locked(JOB_SCOPE_OPERATION, robot_names)
+            if conflict:
+                conflict_names = "、".join(sorted(set(robot_names).intersection(str(item) for item in conflict.get("robots", []))))
+                self.send_json({"error": f"机器人 {conflict_names} 正在执行开发者升级，请选择其他机器人或等待升级完成"}, HTTPStatus.CONFLICT)
+                return
+            job.update(
+                {
+                    "running": True,
+                    "action": HAND_TEST_ACTION,
+                    "robots": robot_names,
+                    "returncode": None,
+                    "message": "手测试正在启动……",
+                    "phase": "starting",
+                }
+            )
         thread = threading.Thread(
             target=run_hand_test,
             args=([str(item) for item in robots], side, ssh_password, sudo_password),
@@ -5111,7 +5570,7 @@ class Handler(BaseHTTPRequestHandler):
         thread.start()
         time.sleep(0.1)
         with JOB_LOCK:
-            self.send_json(job_payload_locked(), HTTPStatus.ACCEPTED)
+            self.send_json(job_payload_locked(JOB_SCOPE_OPERATION), HTTPStatus.ACCEPTED)
 
 
 def main() -> None:

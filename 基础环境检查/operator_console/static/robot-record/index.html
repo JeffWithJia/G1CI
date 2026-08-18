@@ -1,0 +1,583 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>现场机器人状态记录</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <header class="app-header">
+      <div class="title-group">
+        <p class="eyebrow">现场机器人日常记录</p>
+        <div class="title-row">
+          <h1 id="projectName">湾谷机器人状态看板</h1>
+          <button id="renameProjectBtn" class="title-edit-button" type="button" title="修改看板名称" aria-label="修改看板名称"><i data-lucide="pencil"></i></button>
+        </div>
+      </div>
+      <div class="header-toolbar">
+        <div class="header-actions" aria-label="日期和常用操作">
+          <button id="projectApiBtn" class="ghost-button" type="button"><i data-lucide="refresh-cw"></i>项目 API</button>
+          <div class="date-field">
+            <span>日期</span>
+            <span class="date-picker-trigger">
+              <input id="dateInput" type="text" readonly aria-haspopup="dialog" aria-controls="datePopover">
+              <button id="datePickerBtn" class="date-picker-button" type="button" title="选择日期" aria-label="选择日期">
+                <i data-lucide="calendar-days"></i>
+              </button>
+            </span>
+          </div>
+          <button id="taxonomyBtn" type="button"><i data-lucide="tags"></i>故障分类</button>
+          <button id="settingsBtn" type="button"><i data-lucide="bot"></i>机器人清单</button>
+        </div>
+      </div>
+      <div id="datePopover" class="date-popover" popover aria-label="选择日期和日志周期">
+        <select id="trendRangeSelect" hidden aria-hidden="true">
+          <option value="week">本周</option>
+          <option value="previousWeek">上周</option>
+          <option value="month">本月</option>
+          <option value="previousMonth">上月</option>
+          <option value="custom">自定义</option>
+        </select>
+        <div class="date-popover-header">
+          <button id="previousCalendarMonthBtn" class="date-nav-button" type="button" title="上个月" aria-label="上个月"><i data-lucide="chevron-left"></i></button>
+          <strong id="datePickerMonthLabel"></strong>
+          <button id="nextCalendarMonthBtn" class="date-nav-button" type="button" title="下个月" aria-label="下个月"><i data-lucide="chevron-right"></i></button>
+        </div>
+        <div class="date-weekdays" aria-hidden="true">
+          <span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span>
+        </div>
+        <div id="datePickerDays" class="date-picker-days" role="grid"></div>
+        <div id="trendCustomRange" class="date-custom-range" hidden>
+          <label><span>开始日期</span><input id="trendCustomStart" type="date"></label>
+          <label><span>结束日期</span><input id="trendCustomEnd" type="date"></label>
+          <button id="applyTrendCustomBtn" class="primary-button" type="button">应用范围</button>
+        </div>
+        <div class="date-picker-actions">
+          <button id="clearDateRangeBtn" type="button" aria-label="清除日志日期范围">清除</button>
+          <button type="button" data-trend-range="previousWeek">上周</button>
+          <button type="button" data-trend-range="month">本月</button>
+          <button type="button" data-trend-range="previousMonth">上月</button>
+          <button id="customDateRangeBtn" type="button" data-trend-range="custom">自定义</button>
+        </div>
+      </div>
+    </header>
+
+    <main class="app-main">
+      <section class="stats-grid" aria-label="状态汇总">
+        <article class="stat-card stat-available">
+          <span class="stat-label">正常率</span>
+          <strong id="availabilityRate">0%</strong>
+          <span id="availableCount">0 / 11 正常</span>
+        </article>
+        <article class="stat-card stat-normal">
+          <span class="stat-label">正常</span>
+          <strong id="normalCount">0</strong>
+          <span id="normalRobotCodes" class="stat-robot-codes">暂无</span>
+        </article>
+        <article class="stat-card stat-disabled">
+          <span class="stat-label">停用</span>
+          <strong id="disabledCount">0</strong>
+          <div class="stat-status-list" aria-label="停用状态机器人">
+            <p id="repairingSummary" hidden></p>
+            <p id="afterSalesSummary" hidden></p>
+            <p id="awayRepairSummary" hidden></p>
+          </div>
+        </article>
+        <article class="stat-card stat-issues">
+          <span class="stat-label">未关闭问题</span>
+          <strong id="issueRobotCount">0</strong>
+          <span id="openIssueCount">涉及 0 台机器人</span>
+        </article>
+        <article class="stat-card stat-new-issues">
+          <span class="stat-label">当日新增</span>
+          <strong id="todayIssueCount">0</strong>
+          <span id="overdueIssueCount">0 项动作逾期</span>
+        </article>
+      </section>
+
+      <section class="weekly-panel" aria-labelledby="weeklyTitle">
+        <div class="problem-dashboard-header">
+          <div>
+            <h2 id="weeklyTitle">问题记录</h2>
+            <p id="weeklyPeriodLabel">按所选日期范围汇总</p>
+          </div>
+          <div class="queue-header-actions">
+            <span id="weeklyImportState" class="save-state">暂无问题记录</span>
+            <details id="exportMenu" class="export-menu">
+              <summary><i data-lucide="download"></i>导出 / 导入<i class="export-menu-chevron" data-lucide="chevron-down"></i></summary>
+              <div class="export-menu-items" role="menu">
+                <button id="reportBtn" type="button" role="menuitem"><i data-lucide="image"></i>日报图</button>
+                <button id="exportCsvBtn" type="button" role="menuitem"><i data-lucide="file-spreadsheet"></i>导出 CSV</button>
+                <button id="exportJsonBtn" type="button" role="menuitem"><i data-lucide="database-backup"></i>备份 JSON</button>
+                <button id="importJsonBtn" type="button" role="menuitem"><i data-lucide="upload"></i>导入 JSON</button>
+                <input id="jsonFileInput" type="file" accept="application/json" hidden>
+              </div>
+            </details>
+            <button id="weeklyReportBtn" type="button" disabled><i data-lucide="image"></i>生成记录图</button>
+          </div>
+        </div>
+
+        <div class="problem-kpi-grid" aria-label="所选范围问题概况">
+          <article class="problem-kpi total-robots">
+            <span class="problem-kpi-icon"><i data-lucide="bot"></i></span>
+            <div>
+              <span>机器人总数</span>
+              <strong id="problemRobotTotal">0 台</strong>
+              <small id="problemRobotStatus">0 台正常</small>
+            </div>
+          </article>
+          <article class="problem-kpi total-issues">
+            <span class="problem-kpi-icon"><i data-lucide="triangle-alert"></i></span>
+            <div>
+              <span id="problemIssueTotalLabel">本周问题总数</span>
+              <strong id="weeklyIssueTotal">0 次</strong>
+              <small id="problemIssueCompare">前一周期暂无数据</small>
+            </div>
+          </article>
+          <article class="problem-kpi top-issue">
+            <span class="problem-kpi-icon"><i data-lucide="circle-alert"></i></span>
+            <div>
+              <span>TOP 问题</span>
+              <strong id="problemTopIssue">暂无</strong>
+              <small id="problemTopIssueMeta">0 次 · 0%</small>
+            </div>
+          </article>
+          <article class="problem-kpi affected-robots">
+            <span class="problem-kpi-icon"><i data-lucide="shield-alert"></i></span>
+            <div>
+              <span>受影响机器人</span>
+              <strong id="problemAffectedRobots">0 台</strong>
+              <small id="problemAffectedRatio">占比 0%</small>
+            </div>
+          </article>
+        </div>
+
+        <div class="problem-analysis-grid">
+          <section class="problem-analysis-card pareto-card" aria-labelledby="weeklyIssueChartTitle">
+            <div class="problem-card-heading">
+              <h3 id="weeklyIssueChartTitle">问题统计（Pareto）</h3>
+              <div class="problem-legend" aria-label="问题等级">
+                <span><i class="serious"></i>严重</span>
+                <span><i class="warning"></i>警告</span>
+                <span><i class="normal"></i>一般</span>
+                <span><i class="cumulative"></i>累计占比</span>
+              </div>
+            </div>
+            <div id="weeklyIssueChart" class="pareto-chart"></div>
+          </section>
+
+          <div class="problem-secondary-grid">
+            <section class="problem-analysis-card ranking-card" aria-labelledby="weeklyRobotChartTitle">
+              <div class="problem-card-heading">
+                <h3 id="weeklyRobotChartTitle">机器人问题频次排行</h3>
+                <span id="weeklyRobotTotal" class="ranking-total">0 台</span>
+                <button id="viewAllRobotDetailsBtn" class="text-command" type="button">查看全部<i data-lucide="arrow-down"></i></button>
+              </div>
+              <div class="ranking-columns" aria-hidden="true"><span>机器人 ID</span><span>问题次数</span><span>状态</span></div>
+              <div id="weeklyRobotChart" class="robot-ranking"></div>
+            </section>
+
+            <section class="problem-analysis-card compare-card" aria-labelledby="weeklyCompareTitle">
+              <div class="problem-card-heading">
+                <h3 id="weeklyCompareTitle">本周 vs 前两周问题对比</h3>
+              </div>
+              <div id="weeklyCompareChart" class="weekly-compare"></div>
+            </section>
+          </div>
+        </div>
+
+        <section class="problem-analysis-card system-pareto-card" aria-labelledby="weeklySystemChartTitle">
+          <div class="problem-card-heading">
+            <div>
+              <h3 id="weeklySystemChartTitle">故障来源（系统 Pareto）</h3>
+              <small>按一级系统分类汇总，分类来自日报清洗结果</small>
+            </div>
+            <span id="weeklySystemTotal" class="ranking-total">0 个系统</span>
+          </div>
+          <div id="weeklySystemChart" class="pareto-chart system-pareto-chart"></div>
+        </section>
+      </section>
+
+      <section id="problemRobotSection" class="problem-robot-section" aria-labelledby="weeklyRobotDetailsTitle">
+        <div class="problem-dashboard-header">
+          <div>
+            <h2 id="weeklyRobotDetailsTitle">机器人明细</h2>
+            <p>点击卡片查看对应机器人的问题历史</p>
+          </div>
+          <div class="robot-section-actions">
+            <div class="problem-legend" aria-label="机器人风险等级">
+              <span><i class="serious"></i>高风险</span>
+              <span><i class="warning"></i>关注</span>
+              <span><i class="normal"></i>轻微</span>
+            </div>
+            <span id="weeklyDetailCount" class="save-state">0 台</span>
+            <button id="scrollRobotCardsBtn" class="icon-tool-button" type="button" title="查看更多机器人" aria-label="查看更多机器人"><i data-lucide="chevron-right"></i></button>
+          </div>
+        </div>
+        <div id="weeklyRobotDetails" class="robot-card-strip"></div>
+      </section>
+
+      <section class="issue-queue-panel" aria-labelledby="issueQueueTitle">
+        <div class="section-header">
+          <div>
+            <h2 id="issueQueueTitle">当前工作队列</h2>
+            <p>按 P0、影响采集、逾期和优先级排序，处理记录会保留完整时间线。</p>
+          </div>
+          <div class="queue-header-actions">
+            <span id="issueQueueCount" class="save-state">0 项</span>
+            <button id="newIssueBtn" class="primary-button" type="button"><i data-lucide="plus"></i>记录问题</button>
+          </div>
+        </div>
+        <div id="issueQueue" class="issue-queue"></div>
+      </section>
+
+      <section class="work-area">
+        <section class="table-panel" aria-labelledby="dailyTableTitle">
+          <div class="section-header">
+            <div>
+              <h2 id="dailyTableTitle">今日巡检</h2>
+              <p id="visibleRowsLabel">11 台机器人</p>
+              <p id="storagePathLabel" class="storage-path">数据：data/robot-record.json</p>
+            </div>
+            <span id="autosaveState" class="save-state">已准备</span>
+          </div>
+          <div class="table-scroll">
+            <table class="robot-table">
+              <thead>
+                <tr>
+                  <th>机器人</th>
+                  <th>可用状态</th>
+                  <th>维修状态</th>
+                  <th>当前问题</th>
+                  <th>负责人 / 下一步</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="robotTableBody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <aside class="side-column" aria-label="重点和历史">
+          <section class="side-panel">
+            <div class="section-header compact">
+              <h2>问题历史</h2>
+              <select id="historyRobotSelect" aria-label="选择机器人查看历史"></select>
+            </div>
+            <div id="historyList" class="history-list"></div>
+          </section>
+        </aside>
+      </section>
+    </main>
+
+    <dialog id="projectDialog" class="app-dialog project-dialog">
+      <form id="projectForm" class="dialog-card">
+        <div class="dialog-header">
+          <div>
+            <h2>修改看板名称</h2>
+            <p>名称会显示在看板左上角。</p>
+          </div>
+          <button class="ghost-button" data-close-project-dialog type="button">关闭</button>
+        </div>
+        <label class="project-name-field">
+          <span>看板名称</span>
+          <input id="projectNameInput" maxlength="60" required autocomplete="off" placeholder="湾谷机器人状态看板">
+        </label>
+        <div class="dialog-actions">
+          <button class="ghost-button" data-close-project-dialog type="button">取消</button>
+          <button class="primary-button" type="submit">保存名称</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="projectApiDialog" class="app-dialog project-api-dialog">
+      <form method="dialog" class="dialog-card">
+        <div class="dialog-header">
+          <div>
+            <h2>读取项目 API</h2>
+            <p id="projectApiName">湾谷机器人状态看板</p>
+          </div>
+          <button class="ghost-button" value="cancel" type="submit">关闭</button>
+        </div>
+        <div class="project-api-content">
+          <div class="project-api-status-row">
+            <span>读取状态</span>
+            <strong id="projectApiStatus" class="save-state">尚未读取</strong>
+          </div>
+          <label>
+            <span>接口地址</span>
+            <span class="project-api-value">
+              <input id="projectApiUrl" type="url" autocomplete="url" placeholder="http://10.178.170.5:43921/api/v1/robot-record/projects/project-a">
+            </span>
+          </label>
+          <label>
+            <span>API Key</span>
+            <span class="project-api-value">
+              <input id="projectApiToken" type="password" autocomplete="off">
+              <button id="toggleProjectApiTokenBtn" class="icon-tool-button" type="button" title="显示 API Key" aria-label="显示 API Key"><i data-lucide="eye"></i></button>
+            </span>
+          </label>
+          <div class="project-api-status-row">
+            <span>远程项目</span>
+            <strong id="projectApiRemoteName">-</strong>
+          </div>
+          <div class="project-api-status-row">
+            <span>数据时间</span>
+            <strong id="projectApiUpdatedAt">-</strong>
+          </div>
+          <p id="projectApiError" class="project-api-error" hidden></p>
+        </div>
+        <div class="dialog-actions project-api-actions">
+          <button id="clearProjectApiBtn" class="ghost-button" type="button"><i data-lucide="trash-2"></i>清除配置</button>
+          <button class="ghost-button" value="cancel" type="submit">关闭</button>
+          <button id="refreshProjectApiBtn" class="primary-button" type="button"><i data-lucide="refresh-cw"></i>刷新 API</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="settingsDialog" class="app-dialog">
+      <form method="dialog" class="dialog-card">
+        <div class="dialog-header">
+          <div>
+            <h2>机器人清单</h2>
+            <p>可添加、删除或修改机器人，保存后同步到项目数据文件。</p>
+          </div>
+          <div class="dialog-header-actions">
+            <button id="addRobotBtn" class="ghost-button" type="button"><i data-lucide="plus"></i>添加机器人</button>
+            <button class="ghost-button" value="cancel" type="submit">关闭</button>
+          </div>
+        </div>
+        <div id="robotSettingsList" class="robot-settings"></div>
+        <div class="dialog-actions">
+          <button id="resetRobotsBtn" class="danger-button" type="button">恢复默认</button>
+          <button id="saveRobotsBtn" class="primary-button" value="default" type="button">保存清单</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="taxonomyDialog" class="app-dialog taxonomy-dialog">
+      <form method="dialog" class="dialog-card">
+        <div class="dialog-header">
+          <div>
+            <h2>故障分类</h2>
+            <p>三级分类</p>
+          </div>
+          <button class="ghost-button" value="cancel" type="submit">关闭</button>
+        </div>
+        <div class="taxonomy-grid">
+          <section class="taxonomy-level">
+            <div class="taxonomy-level-heading"><span>一级</span><strong>系统</strong></div>
+            <div id="taxonomySystemList" class="taxonomy-list" role="listbox" aria-label="系统分类"></div>
+            <label class="taxonomy-label-field"><span>显示名称</span><input id="taxonomySystemLabel"></label>
+          </section>
+          <section class="taxonomy-level">
+            <div class="taxonomy-level-heading"><span>二级</span><strong>模块</strong></div>
+            <div id="taxonomyModuleList" class="taxonomy-list" role="listbox" aria-label="模块分类"></div>
+            <label class="taxonomy-label-field"><span>显示名称</span><input id="taxonomyModuleLabel"></label>
+          </section>
+          <section class="taxonomy-level taxonomy-fault-level">
+            <div class="taxonomy-level-heading">
+              <div><span>三级</span><strong>标准故障</strong></div>
+              <button id="addTaxonomyFaultBtn" class="icon-tool-button" type="button" title="添加标准故障" aria-label="添加标准故障"><i data-lucide="plus"></i></button>
+            </div>
+            <div id="taxonomyFaultList" class="taxonomy-fault-list"></div>
+          </section>
+        </div>
+        <div class="dialog-actions">
+          <button id="resetTaxonomyBtn" class="ghost-button" type="button">恢复默认</button>
+          <button id="saveTaxonomyBtn" class="primary-button" type="button">保存分类</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="issueDialog" class="app-dialog">
+      <form id="issueForm" class="dialog-card issue-form">
+        <div class="dialog-header">
+          <div>
+            <h2>记录问题</h2>
+            <p>先记录现场事实，根因和解决方案可以在处理过程中补充。</p>
+          </div>
+          <button class="ghost-button" data-close-issue-dialog type="button">关闭</button>
+        </div>
+        <div class="issue-form-grid">
+          <label>
+            <span>机器人</span>
+            <select id="issueRobotId" required></select>
+          </label>
+          <label>
+            <span>发生时间</span>
+            <input id="issueOccurredAt" type="datetime-local" required>
+          </label>
+          <label>
+            <span>系统分类</span>
+            <select id="issueCategory" disabled></select>
+          </label>
+          <label>
+            <span>模块分类</span>
+            <select id="issueModule" disabled></select>
+          </label>
+          <label>
+            <span>故障等级</span>
+            <select id="issueFaultSeverity" disabled></select>
+          </label>
+          <label>
+            <span>处理优先级</span>
+            <select id="issueSeverity" required></select>
+          </label>
+          <label class="issue-form-wide">
+            <span>现场现象</span>
+            <textarea id="issueSymptom" required placeholder="例如：切换走跑模式约 1 分钟后无操作突然倒地"></textarea>
+          </label>
+          <label>
+            <span>负责人</span>
+            <input id="issueOwner" placeholder="可稍后补充">
+          </label>
+          <label>
+            <span>计划完成</span>
+            <input id="issueDueDate" type="date">
+          </label>
+          <label class="issue-form-wide">
+            <span>下一步</span>
+            <textarea id="issueNextAction" placeholder="例如：提交日志给供应商并完成 20 次走跑验证"></textarea>
+          </label>
+          <label class="check-field">
+            <input id="issueImpactsCollection" type="checkbox">
+            <span>影响正常采集</span>
+          </label>
+          <label class="check-field">
+            <input id="issueIsP0" type="checkbox">
+            <span>人工标记为 P0</span>
+          </label>
+        </div>
+        <div class="dialog-actions">
+          <button class="ghost-button" data-close-issue-dialog type="button">取消</button>
+          <button class="primary-button" type="submit">创建问题单</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="issueDetailDialog" class="app-dialog">
+      <form id="issueDetailForm" class="dialog-card issue-detail-form">
+        <div class="dialog-header">
+          <div>
+            <h2 id="issueDetailTitle">问题详情</h2>
+            <p id="issueDetailMeta"></p>
+          </div>
+          <button class="ghost-button" data-close-issue-detail type="button">关闭</button>
+        </div>
+        <div id="issueDetailSummary" class="issue-detail-summary"></div>
+        <div class="issue-management-grid">
+          <label>
+            <span>当前阶段</span>
+            <select id="issueDetailStatus"></select>
+          </label>
+          <label>
+            <span>处理优先级</span>
+            <select id="issueDetailSeverity"></select>
+          </label>
+          <label>
+            <span>系统分类</span>
+            <select id="issueDetailCategory"></select>
+          </label>
+          <label>
+            <span>模块分类</span>
+            <select id="issueDetailModule"></select>
+          </label>
+          <label>
+            <span>故障等级</span>
+            <select id="issueDetailFaultSeverity"></select>
+          </label>
+          <label>
+            <span>负责人</span>
+            <input id="issueDetailOwner">
+          </label>
+          <label>
+            <span>计划完成</span>
+            <input id="issueDetailDueDate" type="date">
+          </label>
+          <label class="issue-form-wide">
+            <span>下一步</span>
+            <textarea id="issueDetailNextAction"></textarea>
+          </label>
+          <button id="saveIssueDetailBtn" class="ghost-button issue-save-button" type="button">保存当前信息</button>
+        </div>
+        <section class="issue-timeline-section" aria-labelledby="issueTimelineTitle">
+          <div class="issue-timeline-header">
+            <div>
+              <h3 id="issueTimelineTitle">处理时间线</h3>
+              <p>每次追加都会保留时间和处理内容。</p>
+            </div>
+          </div>
+          <div id="issueTimeline" class="issue-timeline"></div>
+          <label class="issue-update-field">
+            <span>追加处理记录</span>
+            <textarea id="issueUpdateNote" placeholder="填写本次排查、处理或验证结果"></textarea>
+          </label>
+        </section>
+        <div class="dialog-actions issue-detail-actions">
+          <button id="addIssueUpdateBtn" class="ghost-button" type="button">追加进展</button>
+          <button id="recoverIssueBtn" class="ghost-button" type="button">标记已恢复</button>
+          <button id="closeIssueBtn" class="primary-button" type="button">验证并关闭</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="weeklyReportDialog" class="app-dialog">
+      <form method="dialog" class="dialog-card report-dialog">
+        <div class="dialog-header">
+          <div>
+            <h2>机器人问题记录</h2>
+            <p id="weeklyReportPeriod"></p>
+          </div>
+          <button class="ghost-button" value="cancel" type="submit">关闭</button>
+        </div>
+        <div class="report-preview-shell">
+          <canvas id="weeklyReportCanvas" class="report-canvas" aria-label="机器人问题记录图片预览"></canvas>
+        </div>
+        <details class="report-text-details">
+          <summary>记录文本</summary>
+          <textarea id="weeklyReportText" readonly></textarea>
+        </details>
+        <div class="dialog-actions">
+          <button id="copyWeeklyReportTextBtn" class="ghost-button" type="button">复制文本</button>
+          <button id="downloadWeeklyReportImageBtn" class="ghost-button" type="button">下载 PNG</button>
+          <button id="copyWeeklyReportImageBtn" class="primary-button" type="button">复制图片</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="reportDialog" class="app-dialog">
+      <form method="dialog" class="dialog-card report-dialog">
+        <div class="dialog-header">
+          <div>
+            <h2>日报图片</h2>
+            <p>图片会按当前日期和完整机器人清单生成。</p>
+          </div>
+          <button class="ghost-button" value="cancel" type="submit">关闭</button>
+        </div>
+        <div class="report-preview-shell">
+          <canvas id="reportCanvas" class="report-canvas" aria-label="日报图片预览"></canvas>
+        </div>
+        <details class="report-text-details">
+          <summary>备用文本</summary>
+          <textarea id="reportText" readonly></textarea>
+        </details>
+        <div class="dialog-actions">
+          <button id="copyReportTextBtn" class="ghost-button" type="button">复制文本</button>
+          <button id="downloadReportImageBtn" class="ghost-button" type="button">下载 PNG</button>
+          <button id="copyReportImageBtn" class="primary-button" type="button">复制图片</button>
+        </div>
+      </form>
+    </dialog>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+    <script src="lucide.js"></script>
+    <script src="project-data.js"></script>
+    <script src="record-data.js"></script>
+    <script src="problem-data.js"></script>
+    <script src="weekly-data.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,33 @@
+$ /usr/bin/ansible-playbook -k -K -T 15 -i '/home/jeff/coscene/code/codex/G1CI/基础环境检查/inventory.ini' -e '{"ansible_ssh_common_args": "-o PreferredAuthentications=password -o PubkeyAuthentication=no -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -o ConnectionAttempts=1"}' /tmp/operator_console_service_check.yml --limit g1_robot_061
+cwd=/home/jeff/coscene/code/codex/G1CI/基础环境检查
+
+SSH password: 
+[operator_console] detected SSH password prompt, password sent
+
+BECOME password[defaults to SSH password]: 
+[operator_console] detected BECOME password prompt, sudo password sent
+
+
+PLAY [Operator console service action] *****************************************
+
+TASK [Select services for this robot] ******************************************
+[0;32mok: [g1_robot_061][0m
+
+TASK [初始化服务检查结果] ***************************************************************
+[0;32mok: [g1_robot_061][0m
+
+TASK [检查服务] ********************************************************************
+[0;31mfailed: [g1_robot_061] (item=cos_agent.service) => {"ansible_loop_var": "item", "item": "cos_agent.service", "msg": "Data could not be sent to remote host \"192.168.90.61\". Make sure this host can be reached over ssh: kex_exchange_identification: Connection closed by remote host\r\nConnection closed by 192.168.90.61 port 22\r\n", "unreachable": true}[0m
+[0;31mfailed: [g1_robot_061] (item=cos_teleop.service) => {"ansible_loop_var": "item", "item": "cos_teleop.service", "msg": "Data could not be sent to remote host \"192.168.90.61\". Make sure this host can be reached over ssh: kex_exchange_identification: Connection closed by remote host\r\nConnection closed by 192.168.90.61 port 22\r\n", "unreachable": true}[0m
+[0;31mfailed: [g1_robot_061] (item=xrobotoolkit-pc-service.service) => {"ansible_loop_var": "item", "item": "xrobotoolkit-pc-service.service", "msg": "Data could not be sent to remote host \"192.168.90.61\". Make sure this host can be reached over ssh: kex_exchange_identification: Connection closed by remote host\r\nConnection closed by 192.168.90.61 port 22\r\n", "unreachable": true}[0m
+[0;31mfailed: [g1_robot_061] (item=dex1_gripper.service) => {"ansible_loop_var": "item", "item": "dex1_gripper.service", "msg": "Data could not be sent to remote host \"192.168.90.61\". Make sure this host can be reached over ssh: kex_exchange_identification: Connection closed by remote host\r\nConnection closed by 192.168.90.61 port 22\r\n", "unreachable": true}[0m
+[1;31mfatal: [g1_robot_061]: UNREACHABLE! => {"changed": false, "msg": "All items completed", "results": [{"ansible_loop_var": "item", "item": "cos_agent.service", "msg": "Data could not be sent to remote host \"192.168.90.61\". Make sure this host can be reached over ssh: kex_exchange_identification: Connection closed by remote host\r\nConnection closed by 192.168.90.61 port 22\r\n", "unreachable": true}, {"ansible_loop_var": "item", "item": "cos_teleop.service", "msg": "Data could not be sent to remote host \"192.168.90.61\". Make sure this host can be reached over ssh: kex_exchange_identification: Connection closed by remote host\r\nConnection closed by 192.168.90.61 port 22\r\n", "unreachable": true}, {"ansible_loop_var": "item", "item": "xrobotoolkit-pc-service.service", "msg": "Data could not be sent to remote host \"192.168.90.61\". Make sure this host can be reached over ssh: kex_exchange_identification: Connection closed by remote host\r\nConnection closed by 192.168.90.61 port 22\r\n", "unreachable": true}, {"ansible_loop_var": "item", "item": "dex1_gripper.service", "msg": "Data could not be sent to remote host \"192.168.90.61\". Make sure this host can be reached over ssh: kex_exchange_identification: Connection closed by remote host\r\nConnection closed by 192.168.90.61 port 22\r\n", "unreachable": true}], "skip_reason": "Host g1_robot_061 is unreachable"}[0m
+
+TASK [Build service result map] ************************************************
+[0;31mfatal: [g1_robot_061]: FAILED! => {"msg": "The task includes an option with an undefined variable. The error was: 'dict object' has no attribute 'stdout'\n\nThe error appears to be in '/tmp/operator_console_service_check.yml': line 198, column 7, but may\nbe elsewhere in the file depending on the exact syntax problem.\n\nThe offending line appears to be:\n\n\n    - name: Build service result map\n      ^ here\n"}[0m
+
+PLAY RECAP *********************************************************************
+[0;31mg1_robot_061[0m               : [0;32mok=2   [0m changed=0    [1;31munreachable=1   [0m [0;31mfailed=1   [0m [0;36mskipped=1   [0m rescued=0    ignored=0   
+
+
+returncode=2

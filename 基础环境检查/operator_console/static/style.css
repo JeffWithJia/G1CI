@@ -85,6 +85,23 @@ main {
   display: block;
 }
 
+body.robot-record-active main {
+  max-width: none;
+  padding: 0;
+}
+
+.robot-record-module,
+#robotRecordFrame {
+  width: 100%;
+}
+
+#robotRecordFrame {
+  display: block;
+  height: max(720px, calc(100vh - 116px));
+  border: 0;
+  background: #f5f7fa;
+}
+
 .panel {
   background: #ffffff;
   border: 1px solid #dfe4ec;
@@ -289,6 +306,12 @@ select {
 .robot-row-item.active-detail {
   background: #f8fbff;
   border-color: #9db8d9;
+}
+
+#robotList .operation-robot-pill.ledger-disabled,
+.robot-row-item.ledger-disabled {
+  border-color: #b8c0ca;
+  background: #eef1f4;
 }
 
 .actions {
@@ -1374,11 +1397,18 @@ pre.stderr {
 
   #robotList .operation-robot-pill {
     gap: 6px;
+    grid-template-areas:
+      "check robot-id robot-ip"
+      ". robot-meta robot-meta"
+      ". robot-status robot-status";
+    grid-template-columns: auto max-content minmax(0, 1fr);
     padding: 8px;
   }
 
   #robotList .operation-robot-status {
+    flex-wrap: wrap;
     gap: 4px;
+    justify-content: flex-start;
   }
 
   #robotList .operation-robot-status .badge {

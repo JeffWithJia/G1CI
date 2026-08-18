@@ -48,6 +48,9 @@
     cos_apt_update_timeout_seconds: 180
     cos_apt_acquire_retries: 2
     cos_apt_http_timeout_seconds: 30
+    cos_setup_execution_timeout_seconds: 1500
+    cos_setup_build_timeout_seconds: 900
+    cos_setup_heartbeat_interval_seconds: 30
 
   tasks:
     - name: Record cos_setup start time
@@ -560,15 +563,23 @@
       become: true
       when: cos_journald_config.changed | bool
 
-    - name: Run cos_setup.sh first attempt
+    - name: 执行 cos_setup.sh ROS2 构建（最长 {{ cos_setup_execution_timeout_seconds | int }} 秒，详细进度写入机器人 cos_logs）
       ansible.builtin.shell: |
         set -o pipefail
         cd {{ cos_setup_dir }}
         log_file="{{ cos_setup_log_dir }}/cos_setup_{{ inventory_hostname }}_first_attempt.log"
         : > "$log_file"
-        printf '[ansible] starting %s/%s at %s\n' "{{ cos_setup_dir }}" "{{ cos_setup_file }}" "$(date -Iseconds)" | tee -a "$log_file"
-        stdbuf -oL -eL ./{{ cos_setup_file }} 2>&1 | tee -a "$log_file"
+        printf '[ansible] starting %s/%s at %s (timeout=%ss, live_log=%s)\n' "{{ cos_setup_dir }}" "{{ cos_setup_file }}" "$(date -Iseconds)" "{{ cos_setup_execution_timeout_seconds | int }}" "$log_file" | tee -a "$log_file"
+        timeout --signal=TERM --kill-after=30s "{{ cos_setup_execution_timeout_seconds | int }}s" \
+          env \
+            COS_HEARTBEAT_INTERVAL_SECONDS="{{ cos_setup_heartbeat_interval_seconds | int }}" \
+            COS_BUILD_TIMEOUT_SECONDS="{{ cos_setup_build_timeout_seconds | int }}" \
+            COS_PLAYBOOK_MANAGED_STEPS=1 \
+          stdbuf -oL -eL ./{{ cos_setup_file }} 2>&1 | tee -a "$log_file"
         rc=${PIPESTATUS[0]}
+        if [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then
+          printf '[ansible] ERROR: cos_setup exceeded %ss and was terminated (执行超时，已终止); live_log=%s\n' "{{ cos_setup_execution_timeout_seconds | int }}" "$log_file" | tee -a "$log_file" >&2
+        fi
         printf '[ansible] finished %s/%s at %s rc=%s log=%s\n' "{{ cos_setup_dir }}" "{{ cos_setup_file }}" "$(date -Iseconds)" "$rc" "$log_file" | tee -a "$log_file"
         exit "$rc"
       args:
@@ -617,15 +628,23 @@
         - cos_setup_first.rc | default(127) != 0
         - not ansible_check_mode
 
-    - name: Run cos_setup.sh retry after librealsense cleanup
+    - name: librealsense 清理后重试 cos_setup.sh ROS2 构建（最长 {{ cos_setup_execution_timeout_seconds | int }} 秒，详细进度写入机器人 cos_logs）
       ansible.builtin.shell: |
         set -o pipefail
         cd {{ cos_setup_dir }}
         log_file="{{ cos_setup_log_dir }}/cos_setup_{{ inventory_hostname }}_retry_attempt.log"
         : > "$log_file"
-        printf '[ansible] starting %s/%s retry at %s\n' "{{ cos_setup_dir }}" "{{ cos_setup_file }}" "$(date -Iseconds)" | tee -a "$log_file"
-        stdbuf -oL -eL ./{{ cos_setup_file }} 2>&1 | tee -a "$log_file"
+        printf '[ansible] starting %s/%s retry at %s (timeout=%ss, live_log=%s)\n' "{{ cos_setup_dir }}" "{{ cos_setup_file }}" "$(date -Iseconds)" "{{ cos_setup_execution_timeout_seconds | int }}" "$log_file" | tee -a "$log_file"
+        timeout --signal=TERM --kill-after=30s "{{ cos_setup_execution_timeout_seconds | int }}s" \
+          env \
+            COS_HEARTBEAT_INTERVAL_SECONDS="{{ cos_setup_heartbeat_interval_seconds | int }}" \
+            COS_BUILD_TIMEOUT_SECONDS="{{ cos_setup_build_timeout_seconds | int }}" \
+            COS_PLAYBOOK_MANAGED_STEPS=1 \
+          stdbuf -oL -eL ./{{ cos_setup_file }} 2>&1 | tee -a "$log_file"
         rc=${PIPESTATUS[0]}
+        if [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then
+          printf '[ansible] ERROR: cos_setup retry exceeded %ss and was terminated (重试执行超时，已终止); live_log=%s\n' "{{ cos_setup_execution_timeout_seconds | int }}" "$log_file" | tee -a "$log_file" >&2
+        fi
         printf '[ansible] finished %s/%s retry at %s rc=%s log=%s\n' "{{ cos_setup_dir }}" "{{ cos_setup_file }}" "$(date -Iseconds)" "$rc" "$log_file" | tee -a "$log_file"
         exit "$rc"
       args:

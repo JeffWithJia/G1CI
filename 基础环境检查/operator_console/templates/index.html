@@ -18,6 +18,7 @@
     <nav class="module-tabs" aria-label="页面模块">
       <button class="module-tab active" type="button" data-module="operation">操作模块</button>
       <button class="module-tab" type="button" data-module="robots">机器人管理</button>
+      <button class="module-tab" type="button" data-module="robotRecord">机器人台帐</button>
       <button class="module-tab" type="button" data-module="developer">开发者模块</button>
     </nav>
   </header>
@@ -146,6 +147,14 @@
 
         <div id="robotTable" class="robot-table"></div>
       </section>
+    </section>
+
+    <section id="robotRecordModule" class="module-pane robot-record-module">
+      <iframe
+        id="robotRecordFrame"
+        src="/static/robot-record/index.html"
+        title="机器人台帐"
+      ></iframe>
     </section>
 
     <section id="developerModule" class="module-pane">
@@ -328,6 +337,11 @@
 
   <script>
     const CAMERA_TOPIC_MIN_RATE_HZ = 29;
+    const CAMERA_TOPIC_LABELS = {
+      "/cam_head/compressed_image": "头部相机",
+      "/cam_wrist_left/compressed_image": "左腕相机",
+      "/cam_wrist_right/compressed_image": "右腕相机"
+    };
     const SERVICE_DETAIL_BASE_NAMES = [
       "cos_agent.service",
       "cos_teleop.service",
@@ -340,14 +354,16 @@
     const state = {
       robots: [],
       robotStatuses: {},
-      polling: null,
+      polling: { operation: null, developer: null },
       statusPolling: null,
       servicePolling: null,
       serviceDetail: null,
       serviceLoading: false,
       refreshing: false,
-      jobRunning: false,
+      jobRunning: { operation: false, developer: false },
+      jobs: { operation: null, developer: null },
       reportRobots: [],
+      developerReportRobots: [],
       operationRobotListExpanded: false,
       developerRobotListExpanded: false,
       lastLogContent: "",
@@ -369,6 +385,7 @@
       hand_test: "验证手是否能动"
     };
     const riskyActions = new Set(["deploy_setup_agent", "deploy_to_robot", "cos_setup", "install", "check", "service_restart"]);
+    const developerActions = new Set(["deploy_setup_agent", "deploy_to_robot", "cos_setup", "install", "check"]);
     const confirmCopy = {
       deploy_setup_agent: {
         title: "确认智能部署 / 修复？",
@@ -439,6 +456,56 @@
       if (!response.ok) throw new Error(data.message || data.error || "请求失败");
       return data;
     }
+
+    const robotRecordFrame = document.getElementById("robotRecordFrame");
+
+    function announceRobotRecordHost() {
+      robotRecordFrame.contentWindow?.postMessage({
+        channel: "robot-record",
+        action: "host-ready"
+      }, "*");
+    }
+
+    robotRecordFrame.addEventListener("load", announceRobotRecordHost);
+    window.addEventListener("message", async (event) => {
+      const request = event.data;
+      if (event.source !== robotRecordFrame.contentWindow || request?.channel !== "robot-record" || !request.id) return;
+      try {
+        let result;
+        if (request.action === "load") {
+          result = await api("/api/robot-record");
+        } else if (request.action === "save") {
+          result = await api("/api/robot-record", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ store: request.store })
+          });
+          await loadRobots();
+        } else if (request.action === "remote-load") {
+          result = await api("/api/robot-record/remote", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ url: request.url, apiKey: request.apiKey })
+          });
+        } else {
+          throw new Error("不支持的机器人台帐操作");
+        }
+        robotRecordFrame.contentWindow?.postMessage({
+          channel: "robot-record",
+          id: request.id,
+          ok: true,
+          result
+        }, "*");
+      } catch (error) {
+        robotRecordFrame.contentWindow?.postMessage({
+          channel: "robot-record",
+          id: request.id,
+          ok: false,
+          error: error.message || "机器人台帐操作失败"
+        }, "*");
+      }
+    });
+    announceRobotRecordHost();
 
     function escapeHtml(value) {
       return String(value).replace(/[&<>"']/g, (char) => ({
@@ -556,28 +623,68 @@
 
     function switchModule(name) {
       state.activeModule = name;
+      document.body.classList.toggle("robot-record-active", name === "robotRecord");
       document.querySelectorAll(".module-tab").forEach((button) => {
         button.classList.toggle("active", button.dataset.module === name);
       });
       document.querySelectorAll(".module-pane").forEach((pane) => {
         pane.classList.toggle("active", pane.id === `${name}Module`);
       });
+      if (name === "robotRecord") {
+        robotRecordFrame.contentWindow?.postMessage({
+          channel: "robot-record",
+          action: "refresh-api"
+        }, "*");
+      }
+      updateHeaderJobText();
+    }
+
+    function jobScopeForAction(action) {
+      return developerActions.has(action) ? "developer" : "operation";
+    }
+
+    function showActionFailure(action, message) {
+      if (jobScopeForAction(action) === "developer") {
+        if (activeJobScope() === "developer") {
+          document.getElementById("jobText").textContent = `执行失败：${message}`;
+        }
+        return;
+      }
+      setTaskBanner("fail", "执行失败", message);
+    }
+
+    function activeJobScope() {
+      return state.activeModule === "developer" ? "developer" : "operation";
+    }
+
+    function updateHeaderJobText() {
+      const job = state.jobs[activeJobScope()];
+      if (!job) return;
+      const title = bannerTitleFromJob(job);
+      const detail = job.message && job.message !== title ? job.message : "";
+      document.getElementById("jobText").textContent = `${title}${detail ? "：" + detail : ""}`;
     }
 
     function setRefreshButtonState() {
       const button = document.getElementById("refreshBtn");
-      button.disabled = state.refreshing || state.jobRunning;
+      const operationRunning = state.jobRunning.operation;
+      button.disabled = state.refreshing || operationRunning;
       button.textContent = state.refreshing
         ? "刷新中..."
-        : state.jobRunning
+        : operationRunning
           ? "任务运行中"
           : "刷新最新报告";
     }
 
-    function setBusy(running) {
-      state.jobRunning = !!running;
-      document.querySelectorAll(".actions button, .service-actions button").forEach((btn) => btn.disabled = running);
-      document.getElementById("serviceRestartName").disabled = running;
+    function setBusy(scope, running) {
+      state.jobRunning[scope] = !!running;
+      const selector = scope === "developer"
+        ? ".developer-actions button"
+        : ".operation-actions button, .service-actions button";
+      document.querySelectorAll(selector).forEach((btn) => btn.disabled = running);
+      if (scope === "operation") {
+        document.getElementById("serviceRestartName").disabled = running;
+      }
       setRefreshButtonState();
     }
 
@@ -618,10 +725,28 @@
       return `${elapsed.toFixed(elapsed % 1 === 0 ? 0 : 1)} 秒`;
     }
 
+    function cameraStageItemField(item, field) {
+      const direct = String(item?.[field] || "").trim();
+      if (direct) return direct;
+      const key = String(item?.key || "");
+      const marker = ":topic:";
+      const markerIndex = key.indexOf(marker);
+      if (markerIndex < 0) return "";
+      return field === "host" ? key.slice(0, markerIndex) : key.slice(markerIndex + marker.length);
+    }
+
     function renderStageAction(stage) {
       if (stage?.id !== "ros2") return "";
-      const disabled = state.jobRunning || state.refreshing ? " disabled" : "";
-      return `<button class="stage-inline-action camera-recheck-btn" type="button"${disabled}>检查摄像头绑定</button>`;
+      const problemItems = (Array.isArray(stage.items) ? stage.items : []).filter((item) => {
+        const status = String(item?.status || "").toLowerCase();
+        return ["failed", "warn"].includes(status) && CAMERA_TOPIC_LABELS[cameraStageItemField(item, "topic")];
+      });
+      if (problemItems.length !== 1) return "";
+      const topic = cameraStageItemField(problemItems[0], "topic");
+      const host = cameraStageItemField(problemItems[0], "host");
+      if (!topic || !host) return "";
+      const disabled = state.jobRunning.operation || state.refreshing ? " disabled" : "";
+      return `<button class="stage-inline-action camera-hz-recheck-btn" type="button" data-camera-topic="${escapeHtml(topic)}" data-host="${escapeHtml(host)}"${disabled}>单独复测${escapeHtml(CAMERA_TOPIC_LABELS[topic])} Hz</button>`;
     }
 
     function stageItemSymbol(item) {
@@ -685,7 +810,9 @@
       const banner = document.getElementById("taskBanner");
       banner.className = `task-banner ${kind}`;
       banner.innerHTML = `<strong>${escapeHtml(title)}</strong><span>${escapeHtml(detail || "")}</span>${meta ? `<small>${escapeHtml(meta)}</small>` : ""}`;
-      document.getElementById("jobText").textContent = `${title}${detail ? "：" + detail : ""}`;
+      if (activeJobScope() === "operation") {
+        document.getElementById("jobText").textContent = `${title}${detail ? "：" + detail : ""}`;
+      }
     }
 
     function bannerDetailForIssue(issue) {
@@ -718,21 +845,27 @@
       return "当前无任务运行";
     }
 
-    function renderJob(job) {
-      setBusy(job.running);
+    function renderJob(job, scope = "operation") {
+      state.jobs[scope] = job;
+      setBusy(scope, job.running);
+      if (scope === "developer") {
+        updateHeaderJobText();
+        return;
+      }
       const title = bannerTitleFromJob(job);
       const detail = job.message && job.message !== title ? job.message : "";
       setTaskBanner(bannerKindFromJob(job), title, detail, formatDuration(job.duration_seconds));
       renderTaskProgress(job);
       renderHandTestOverlay(job);
+      updateHeaderJobText();
     }
 
-    function validatePasswords() {
+    function validatePasswords(action = "") {
       const sshPassword = document.getElementById("sshPassword").value.trim() || document.getElementById("devSshPassword").value.trim();
       const samePassword = document.getElementById("samePassword").checked;
       const sudoPassword = samePassword ? sshPassword : (document.getElementById("sudoPassword").value.trim() || document.getElementById("devSudoPassword").value.trim());
       if (!sshPassword || !sudoPassword) {
-        setTaskBanner("fail", "执行失败", "请先输入 SSH 密码和 sudo 密码后再执行任务。");
+        showActionFailure(action, "请先输入 SSH 密码和 sudo 密码后再执行任务。");
         return null;
       }
       return { sshPassword, sudoPassword };
@@ -804,7 +937,8 @@
           const disabledAttr = allChecked ? "disabled" : "";
           const host = robot.ansible_host || "-";
           const meta = `${robot.inventory_hostname} · ${robot.end_effector || "-"}`;
-          label.className = "robot-pill operation-robot-pill";
+          const ledgerDisabled = targetId === "robotList" && robot.ledger_availability === "disabled";
+          label.className = `robot-pill operation-robot-pill${ledgerDisabled ? " ledger-disabled" : ""}`;
           label.innerHTML = `
             <input class="robot-choice" type="checkbox" value="${escapeHtml(robot.inventory_hostname)}" ${checkedAttr} ${disabledAttr}>
             <span class="operation-robot-id">ID ${escapeHtml(robot.robot_id || "-")}</span>
@@ -835,8 +969,9 @@
       }
       table.innerHTML = managementRobotList().map((robot) => {
         const isDetailOpen = state.serviceDetail?.host === robot.inventory_hostname;
+        const ledgerDisabled = robot.ledger_availability === "disabled";
         return `
-          <div class="robot-row-item ${isDetailOpen ? "active-detail" : ""}">
+          <div class="robot-row-item${isDetailOpen ? " active-detail" : ""}${ledgerDisabled ? " ledger-disabled" : ""}">
             <b>ID ${escapeHtml(robot.robot_id || "-")}</b>
             <span>${escapeHtml(robot.ansible_host || "-")}</span>
             <span>${escapeHtml(robot.end_effector || "-")}</span>
@@ -916,7 +1051,7 @@
 
     function renderSelectedReportSections() {
       renderIssueBoard(state.reportRobots);
-      renderDeveloperLogs(state.reportRobots);
+      renderDeveloperLogs(state.developerReportRobots);
     }
 
     function renderIssueBoard(robots) {
@@ -1000,7 +1135,14 @@
       }).join("");
     }
 
-    function renderReports(data) {
+    function renderReports(data, scope = "operation") {
+      if (scope === "developer") {
+        state.developerReportRobots = data.robots || [];
+        document.getElementById("reportSource").textContent = `最新报告：${data.source}`;
+        document.getElementById("reportTime").textContent = `更新时间：${data.updated_at}`;
+        renderDeveloperLogs(state.developerReportRobots);
+        return;
+      }
       state.reportRobots = data.robots || [];
       if (Array.isArray(data.robot_statuses)) {
         updateRobotStatuses(data.robot_statuses);
@@ -1010,11 +1152,8 @@
       document.getElementById("metricWarn").textContent = data.counts.warn;
       document.getElementById("metricFail").textContent = data.counts.fail;
       document.getElementById("metricSkip").textContent = data.counts.skip;
-      document.getElementById("reportSource").textContent = `最新报告：${data.source}`;
-      document.getElementById("reportTime").textContent = `更新时间：${data.updated_at}`;
       renderIssueBoard(state.reportRobots);
       renderCameraStatus(state.reportRobots);
-      renderDeveloperLogs(state.reportRobots);
     }
 
     function updateRobotStatuses(robots) {
@@ -1237,9 +1376,9 @@
       return data;
     }
 
-    async function loadReports() {
-      const data = await api("/api/report/latest");
-      renderReports(data);
+    async function loadReports(scope = "operation") {
+      const data = await api(`/api/report/latest?scope=${encodeURIComponent(scope)}`);
+      renderReports(data, scope);
       return data;
     }
 
@@ -1253,7 +1392,7 @@
     }
 
     async function refreshLatestReport(options = {}) {
-      if (state.refreshing || state.jobRunning) return;
+      if (state.refreshing || state.jobRunning.operation) return;
       const headers = serviceHeaders();
       const isInitial = Boolean(options.initial);
       state.refreshing = true;
@@ -1285,7 +1424,7 @@
     }
 
     async function loadLogTail() {
-      const data = await api("/api/logs/tail");
+      const data = await api("/api/logs/tail?scope=developer");
       state.lastLogContent = (data.content || "").split(/\r?\n/).slice(-100).join("\n");
       const log = document.getElementById("liveLog");
       log.textContent = state.lastLogContent || "暂无实时日志。";
@@ -1298,27 +1437,37 @@
       return data;
     }
 
-    async function pollJob() {
-      const [job] = await Promise.all([api("/api/job"), loadLogTail()]);
-      renderJob(job);
+    async function pollJob(scope) {
+      const requests = [api(`/api/job?scope=${encodeURIComponent(scope)}`)];
+      if (scope === "developer") requests.push(loadLogTail());
+      const [job] = await Promise.all(requests);
+      renderJob(job, scope);
       if (job.running) {
         return;
       }
       if (!job.running) {
-        clearInterval(state.polling);
-        state.polling = null;
-        if (job.action === "hand_test") {
-          renderJob(job);
-          await loadLogTail();
+        clearInterval(state.polling[scope]);
+        state.polling[scope] = null;
+        if (scope === "operation" && job.action === "hand_test") {
+          renderJob(job, scope);
           return;
         }
-        const data = await loadReports();
-        if (job.returncode !== null && job.returncode !== undefined) {
-          renderJob(job);
-        } else {
+        const data = await loadReports(scope);
+        if (scope === "operation" && (job.returncode === null || job.returncode === undefined)) {
           summarizeLatestReport(data, job.message);
         }
       }
+    }
+
+    function startJobPolling(scope) {
+      if (state.polling[scope]) clearInterval(state.polling[scope]);
+      state.polling[scope] = setInterval(() => pollJob(scope).catch((error) => {
+        if (scope === "operation") {
+          setTaskBanner("fail", "执行失败", error.message);
+        } else if (activeJobScope() === "developer") {
+          document.getElementById("jobText").textContent = `执行失败：${error.message}`;
+        }
+      }), 1000);
     }
 
     function selectedServiceName() {
@@ -1567,29 +1716,41 @@
       });
     }
 
-    async function startAction(action, selected, passwords) {
+    async function startAction(action, selected, passwords, cameraTopic = "") {
       if (action === "hand_test") {
         return startHandTest(selected, passwords, state.pendingHandTest?.side);
       }
-      setTaskBanner("running", "正在检查机器人连接……", "");
+      const scope = jobScopeForAction(action);
+      if (scope === "operation") {
+        setTaskBanner("running", "正在检查机器人连接……", "");
+      }
       const serviceName = action === "service_restart" ? selectedServiceName() : "";
       const job = await api(`/api/run/${action}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          robots: apiRobotLimit(selected),
+          robots: cameraTopic ? selected : apiRobotLimit(selected),
           ssh_password: passwords.sshPassword,
           sudo_password: passwords.sudoPassword,
-          service_name: serviceName
+          service_name: serviceName,
+          camera_topic: cameraTopic
         })
       });
-      renderJob(job);
-      await loadLogTail();
-      setBusy(true);
-      if (state.polling) clearInterval(state.polling);
-      state.polling = setInterval(() => pollJob().catch((error) => {
-        setTaskBanner("fail", "执行失败", error.message);
-      }), 1000);
+      renderJob(job, scope);
+      if (scope === "developer") await loadLogTail();
+      startJobPolling(scope);
+    }
+
+    async function recheckSingleCamera(button) {
+      const topic = String(button.dataset.cameraTopic || "");
+      const host = String(button.dataset.host || "");
+      if (!CAMERA_TOPIC_LABELS[topic] || !host) {
+        throw new Error("单摄像头复测参数无效。");
+      }
+      const passwords = validatePasswords("camera_check");
+      if (!passwords) return;
+      setTaskBanner("running", `正在准备复测${CAMERA_TOPIC_LABELS[topic]}……`, "");
+      await startAction("camera_check", [host], passwords, topic);
     }
 
     async function startHandTest(selected, passwords, side) {
@@ -1608,36 +1769,31 @@
           sudo_password: passwords.sudoPassword
         })
       });
-      renderJob(job);
+      renderJob(job, "operation");
       showHandTestOverlay(job);
-      await loadLogTail();
-      setBusy(true);
-      if (state.polling) clearInterval(state.polling);
-      state.polling = setInterval(() => pollJob().catch((error) => {
-        setTaskBanner("fail", "执行失败", error.message);
-      }), 1000);
+      startJobPolling("operation");
     }
 
     async function cancelHandTest() {
       document.getElementById("cancelHandTestBtn").disabled = true;
       try {
         const job = await api("/api/hand-test/cancel", { method: "POST" });
-        renderJob(job);
+        renderJob(job, "operation");
       } finally {
         document.getElementById("cancelHandTestBtn").disabled = false;
       }
     }
 
     async function runAction(action) {
-      const passwords = validatePasswords();
+      const passwords = validatePasswords(action);
       if (!passwords) return;
       const selected = selectedRobots();
       if (!selected.length) {
-        setTaskBanner("fail", "执行失败", "请先选择机器人。");
+        showActionFailure(action, "请先选择机器人。");
         return;
       }
       if (action === "deploy_setup_agent" && selected.length !== 1) {
-        setTaskBanner("fail", "执行失败", "智能部署 / 修复第一版一次只能选择 1 台机器人。");
+        showActionFailure(action, "智能部署 / 修复第一版一次只能选择 1 台机器人。");
         return;
       }
       if (action === "hand_test") {
@@ -1778,19 +1934,19 @@
     document.getElementById("confirmRunBtn").addEventListener("click", async () => {
       const pending = state.pendingAction;
       if (!pending) return;
-      const passwords = validatePasswords();
+      const action = pending.action;
+      const passwords = validatePasswords(action);
       if (!passwords) {
         hideConfirm();
         return;
       }
-      const action = pending.action;
       const selected = pending.selected;
       hideConfirm();
       await startAction(action, selected, passwords).catch((error) => {
         const message = error.message === "缺少 SSH 或 sudo 密码"
           ? "缺少 SSH 或 sudo 密码，请填写后重试。"
           : error.message;
-        setTaskBanner("fail", "执行失败", message);
+        showActionFailure(action, message);
       });
     });
     document.querySelectorAll(".actions button[data-action], .service-actions button[data-action]").forEach((button) => {
@@ -1798,11 +1954,16 @@
         const message = error.message === "缺少 SSH 或 sudo 密码"
           ? "缺少 SSH 或 sudo 密码，请填写后重试。"
           : error.message;
-        setTaskBanner("fail", "执行失败", message);
+        showActionFailure(button.dataset.action, message);
       }));
     });
     document.addEventListener("click", (event) => {
-      const openButton = event.target.closest(".camera-binding-open-btn, .camera-recheck-btn");
+      const hzRecheckButton = event.target.closest(".camera-hz-recheck-btn");
+      if (hzRecheckButton) {
+        recheckSingleCamera(hzRecheckButton).catch((error) => setTaskBanner("fail", "摄像头 Hz 复测失败", error.message));
+        return;
+      }
+      const openButton = event.target.closest(".camera-binding-open-btn");
       if (openButton) {
         openCameraBinding().catch((error) => setTaskBanner("fail", "摄像头信息读取失败", error.message));
         return;
@@ -1816,27 +1977,34 @@
 
     async function initializePage() {
       await loadRobots();
-      const [, reportData, job] = await Promise.all([loadRobotStatuses(), loadReports(), api("/api/job"), loadLocalChecks()]);
+      const [, reportData, , operationJob, developerJob] = await Promise.all([
+        loadRobotStatuses(),
+        loadReports("operation"),
+        loadReports("developer"),
+        api("/api/job?scope=operation"),
+        api("/api/job?scope=developer"),
+        loadLocalChecks()
+      ]);
       await loadLogTail();
-      renderJob(job);
+      renderJob(operationJob, "operation");
+      renderJob(developerJob, "developer");
       if (state.statusPolling) clearInterval(state.statusPolling);
       state.statusPolling = setInterval(() => {
         loadRobotStatuses().catch((error) => {
           document.getElementById("jobText").textContent = error.message;
         });
       }, 3000);
-      if (job.running) {
-        setBusy(true);
-        if (state.polling) clearInterval(state.polling);
-        state.polling = setInterval(() => pollJob().catch((error) => {
-          setTaskBanner("fail", "执行失败", error.message);
-        }), 1000);
+      if (operationJob.running) {
+        startJobPolling("operation");
       } else {
         await refreshLatestReport({ initial: true }).catch(() => {
-          if (job.returncode === null || job.returncode === undefined) {
-            summarizeLatestReport(reportData, job.message);
+          if (operationJob.returncode === null || operationJob.returncode === undefined) {
+            summarizeLatestReport(reportData, operationJob.message);
           }
         });
+      }
+      if (developerJob.running) {
+        startJobPolling("developer");
       }
     }
 
