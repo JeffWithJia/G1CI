@@ -1,0 +1,467 @@
+{
+    "ansible_host": "192.168.90.61",
+    "camera_topics": [
+        {
+            "label": "\u5934\u90e8\u76f8\u673a",
+            "rate_hz": 0.0,
+            "reason": "\u5934\u90e8\u76f8\u673a\u65e0\u6570\u636e",
+            "status": "WARN",
+            "suggestion": "\u68c0\u67e5\u5934\u90e8\u76f8\u673a Type-C \u8fde\u63a5\u6216\u91cd\u542f cos_teleop.service",
+            "topic": "/cam_head/compressed_image"
+        },
+        {
+            "label": "\u5de6\u8155\u76f8\u673a",
+            "rate_hz": 0.0,
+            "reason": "\u5de6\u8155\u76f8\u673a\u65e0\u6570\u636e",
+            "status": "WARN",
+            "suggestion": "\u68c0\u67e5\u5de6\u8155\u76f8\u673a Type-C \u8fde\u63a5\u6216\u91cd\u542f cos_teleop.service",
+            "topic": "/cam_wrist_left/compressed_image"
+        },
+        {
+            "label": "\u53f3\u8155\u76f8\u673a",
+            "rate_hz": 0.0,
+            "reason": "\u53f3\u8155\u76f8\u673a\u65e0\u6570\u636e",
+            "status": "WARN",
+            "suggestion": "\u68c0\u67e5\u53f3\u8155\u76f8\u673a Type-C \u8fde\u63a5\u6216\u91cd\u542f cos_teleop.service",
+            "topic": "/cam_wrist_right/compressed_image"
+        }
+    ],
+    "card": {
+        "issue_count": "4",
+        "issue_text": "[WARN] /cam_head/compressed_image - \u5934\u90e8\u76f8\u673a\u65e0\u6570\u636e | [WARN] /cam_wrist_left/compressed_image - \u5de6\u8155\u76f8\u673a\u65e0\u6570\u636e | [WARN] /cam_wrist_right/compressed_image - \u53f3\u8155\u76f8\u673a\u65e0\u6570\u636e | [WARN] cos_teleop camera log - cos_teleop \u670d\u52a1\u6b63\u5728\u8fd0\u884c\uff0c\u4f46\u65e5\u5fd7\u4e2d\u5b58\u5728\u76f8\u673a\u8bfb\u53d6\u6216\u521d\u59cb\u5316\u5f02\u5e38\u3002",
+        "issues": [
+            {
+                "detail": "timeout 5 ros2 topic hz /cam_head/compressed_image did not receive messages",
+                "name": "/cam_head/compressed_image",
+                "reason": "\u5934\u90e8\u76f8\u673a\u65e0\u6570\u636e",
+                "source": "check",
+                "status": "WARN",
+                "suggestion": "\u68c0\u67e5\u5934\u90e8\u76f8\u673a Type-C \u8fde\u63a5\u6216\u91cd\u542f cos_teleop.service",
+                "summary": "[WARN] /cam_head/compressed_image - \u5934\u90e8\u76f8\u673a\u65e0\u6570\u636e"
+            },
+            {
+                "detail": "timeout 5 ros2 topic hz /cam_wrist_left/compressed_image did not receive messages",
+                "name": "/cam_wrist_left/compressed_image",
+                "reason": "\u5de6\u8155\u76f8\u673a\u65e0\u6570\u636e",
+                "source": "check",
+                "status": "WARN",
+                "suggestion": "\u68c0\u67e5\u5de6\u8155\u76f8\u673a Type-C \u8fde\u63a5\u6216\u91cd\u542f cos_teleop.service",
+                "summary": "[WARN] /cam_wrist_left/compressed_image - \u5de6\u8155\u76f8\u673a\u65e0\u6570\u636e"
+            },
+            {
+                "detail": "timeout 5 ros2 topic hz /cam_wrist_right/compressed_image did not receive messages",
+                "name": "/cam_wrist_right/compressed_image",
+                "reason": "\u53f3\u8155\u76f8\u673a\u65e0\u6570\u636e",
+                "source": "check",
+                "status": "WARN",
+                "suggestion": "\u68c0\u67e5\u53f3\u8155\u76f8\u673a Type-C \u8fde\u63a5\u6216\u91cd\u542f cos_teleop.service",
+                "summary": "[WARN] /cam_wrist_right/compressed_image - \u53f3\u8155\u76f8\u673a\u65e0\u6570\u636e"
+            },
+            {
+                "detail": "[teleop_server_node-1] [WARN] [0007680229.718087008] [teleop_server]: Failed to open V4L2 device for camera[1] /dev/cam_wrist_left: No such file or directory\n[teleop_server_node-1] [ERROR] [0007680229.718118656] [teleop_server]: Failed to initialize V4L2 direct MJPEG capture for camera[1]: /dev/cam_wrist_left\n[teleop_server_node-1] [WARN] [0007680229.718191328] [teleop_server]: Failed to open V4L2 device for camera[2] /dev/cam_wrist_right: No such file or directory\n[teleop_server_node-1] [ERROR] [0007680229.718211872] [teleop_server]: Failed to initialize V4L2 direct MJPEG capture for camera[2]: /dev/cam_wrist_right\n[teleop_server_node-1] [WARN] [0007680229.719716128] [teleop_server]: Failed to open V4L2 device for camera[2] /dev/cam_wrist_right: No such file or directory\n[teleop_server_node-1] [ERROR] [0007680229.719742464] [teleop_server]: Failed to initialize V4L2 direct MJPEG capture for camera[2]: /dev/cam_wrist_right\n[teleop_server_node-1] [WARN] [0007680229.720048384] [teleop_server]: Failed to open V4L2 device for camera[1] /dev/cam_wrist_left: No such file or directory\n[teleop_server_node-1] [ERROR] [0007680229.720085472] [teleop_server]: Failed to initialize V4L2 direct MJPEG capture for camera[1]: /dev/cam_wrist_left\n[teleop_server_node-1] [WARN] [0007680259.720961920] [teleop_server]: Failed to open V4L2 device for camera[1] /dev/cam_wrist_left: No such file or directory\n[teleop_server_node-1] [ERROR] [0007680259.720994176] [teleop_server]: Failed to initialize V4L2 direct MJPEG capture for camera[1]: /dev/cam_wrist_left\n[teleop_server_node-1] [WARN] [0007680259.789388416] [teleop_server]: Failed to open V4L2 device for camera[2] /dev/cam_wrist_right: No such file or directory\n[teleop_server_node-1] [ERROR] [0007680259.789423648] [teleop_server]: Failed to initialize V4L2 direct MJPEG capture for camera[2]: /dev/cam_wrist_right\n[teleop_server_node-1] [WARN] [0007680289.745561920] [teleop_server]: Failed to open V4L2 device for camera[1] /dev/cam_wrist_left: No such file or directory\n[teleop_server_node-1] [ERROR] [0007680289.745596928] [teleop_server]: Failed to initialize V4L2 direct MJPEG capture for camera[1]: /dev/cam_wrist_left\n[teleop_server_node-1] [WARN] [0007680289.812406784] [teleop_server]: Failed to open V4L2 device for camera[2] /dev/cam_wrist_right: No such file or directory\n[teleop_server_node-1] [ERROR] [0007680289.812436896] [teleop_server]: Failed to initialize V4L2 direct MJPEG capture for camera[2]: /dev/cam_wrist_right",
+                "name": "cos_teleop camera log",
+                "reason": "cos_teleop \u670d\u52a1\u6b63\u5728\u8fd0\u884c\uff0c\u4f46\u65e5\u5fd7\u4e2d\u5b58\u5728\u76f8\u673a\u8bfb\u53d6\u6216\u521d\u59cb\u5316\u5f02\u5e38\u3002",
+                "source": "check",
+                "status": "WARN",
+                "suggestion": "\u8bf7\u5c1d\u8bd5\u91cd\u542f cos_teleop.service\uff1b\u5982\u679c\u4ecd\u5f02\u5e38\uff0c\u8bf7\u68c0\u67e5\u76f8\u673a Type-C \u8fde\u63a5\u3001udev \u6620\u5c04\u3001\u76f8\u673a\u8bbe\u5907\u72b6\u6001\u6216\u76f8\u673a\u662f\u5426\u88ab\u5360\u7528\u3002",
+                "summary": "[WARN] cos_teleop camera log - cos_teleop \u670d\u52a1\u6b63\u5728\u8fd0\u884c\uff0c\u4f46\u65e5\u5fd7\u4e2d\u5b58\u5728\u76f8\u673a\u8bfb\u53d6\u6216\u521d\u59cb\u5316\u5f02\u5e38\u3002"
+            }
+        ],
+        "status": "OK",
+        "subtitle": "robot_id=61, end_effector=dex1, mode=install",
+        "title": "g1_robot_061 (192.168.90.61)"
+    },
+    "checks": [
+        {
+            "detail": "/home/unitree/g1_setup",
+            "name": "g1_setup directory",
+            "status": "OK"
+        },
+        {
+            "detail": "/home/unitree/g1_setup/unitree_sdk2",
+            "name": "unitree_sdk2 source",
+            "status": "OK"
+        },
+        {
+            "detail": "/home/unitree/miniconda3/bin/conda",
+            "name": "Conda engine",
+            "status": "OK"
+        },
+        {
+            "detail": "/home/unitree/miniconda3/envs/tv/bin/python",
+            "name": "conda env tv",
+            "status": "OK"
+        },
+        {
+            "detail": "Python 3.10.20",
+            "name": "tv python version",
+            "reason": "",
+            "status": "OK",
+            "stderr": "",
+            "stdout": "Python 3.10.20",
+            "suggestion": ""
+        },
+        {
+            "detail": "import cv2",
+            "name": "Python cv2",
+            "status": "OK",
+            "stderr": "",
+            "stdout": ""
+        },
+        {
+            "detail": "import zmq",
+            "name": "Python zmq",
+            "status": "OK",
+            "stderr": "",
+            "stdout": ""
+        },
+        {
+            "detail": "import logging_mp",
+            "name": "Python logging_mp",
+            "status": "OK",
+            "stderr": "",
+            "stdout": ""
+        },
+        {
+            "detail": "import av",
+            "name": "Python av",
+            "status": "OK",
+            "stderr": "",
+            "stdout": ""
+        },
+        {
+            "detail": "import numpy",
+            "name": "Python numpy",
+            "status": "OK",
+            "stderr": "",
+            "stdout": ""
+        },
+        {
+            "detail": "/usr/local/lib/libunitree_sdk2.a",
+            "name": "unitree_sdk2 library",
+            "status": "OK"
+        },
+        {
+            "detail": "/usr/local/lib/cmake/unitree_sdk2/unitree_sdk2Config.cmake",
+            "name": "unitree_sdk2 cmake config",
+            "status": "OK"
+        },
+        {
+            "detail": "/usr/local/include/unitree/idl/go2/MotorCmds_.hpp",
+            "name": "unitree_sdk2 go2 header",
+            "status": "OK"
+        },
+        {
+            "detail": "build-essential",
+            "name": "apt build-essential",
+            "status": "OK"
+        },
+        {
+            "detail": "cmake",
+            "name": "apt cmake",
+            "status": "OK"
+        },
+        {
+            "detail": "make",
+            "name": "apt make",
+            "status": "OK"
+        },
+        {
+            "detail": "libeigen3-dev",
+            "name": "apt libeigen3-dev",
+            "status": "OK"
+        },
+        {
+            "detail": "libspdlog-dev",
+            "name": "apt libspdlog-dev",
+            "status": "OK"
+        },
+        {
+            "detail": "libfmt-dev",
+            "name": "apt libfmt-dev",
+            "status": "OK"
+        },
+        {
+            "detail": "libboost-all-dev",
+            "name": "apt libboost-all-dev",
+            "status": "OK"
+        },
+        {
+            "detail": "libyaml-cpp-dev",
+            "name": "apt libyaml-cpp-dev",
+            "status": "OK"
+        },
+        {
+            "detail": "/home/unitree/g1_setup/remote",
+            "name": "remote image binary",
+            "status": "OK"
+        },
+        {
+            "detail": "/etc/udev/rules.d/99-usb-cameras.rules",
+            "name": "camera udev rules",
+            "status": "OK"
+        },
+        {
+            "detail": "/dev/cam_head",
+            "name": "/dev/cam_head",
+            "status": "OK"
+        },
+        {
+            "detail": "/dev/cam_wrist_left",
+            "name": "/dev/cam_wrist_left",
+            "status": "OK"
+        },
+        {
+            "detail": "/dev/cam_wrist_right",
+            "name": "/dev/cam_wrist_right",
+            "status": "OK"
+        },
+        {
+            "detail": "timeout 5 ros2 topic hz /cam_head/compressed_image did not receive messages",
+            "name": "/cam_head/compressed_image",
+            "reason": "\u5934\u90e8\u76f8\u673a\u65e0\u6570\u636e",
+            "status": "WARN",
+            "stderr": "timeout: failed to run command \u2018ros2\u2019: No such file or directory",
+            "stdout": "",
+            "suggestion": "\u68c0\u67e5\u5934\u90e8\u76f8\u673a Type-C \u8fde\u63a5\u6216\u91cd\u542f cos_teleop.service"
+        },
+        {
+            "detail": "timeout 5 ros2 topic hz /cam_wrist_left/compressed_image did not receive messages",
+            "name": "/cam_wrist_left/compressed_image",
+            "reason": "\u5de6\u8155\u76f8\u673a\u65e0\u6570\u636e",
+            "status": "WARN",
+            "stderr": "timeout: failed to run command \u2018ros2\u2019: No such file or directory",
+            "stdout": "",
+            "suggestion": "\u68c0\u67e5\u5de6\u8155\u76f8\u673a Type-C \u8fde\u63a5\u6216\u91cd\u542f cos_teleop.service"
+        },
+        {
+            "detail": "timeout 5 ros2 topic hz /cam_wrist_right/compressed_image did not receive messages",
+            "name": "/cam_wrist_right/compressed_image",
+            "reason": "\u53f3\u8155\u76f8\u673a\u65e0\u6570\u636e",
+            "status": "WARN",
+            "stderr": "timeout: failed to run command \u2018ros2\u2019: No such file or directory",
+            "stdout": "",
+            "suggestion": "\u68c0\u67e5\u53f3\u8155\u76f8\u673a Type-C \u8fde\u63a5\u6216\u91cd\u542f cos_teleop.service"
+        },
+        {
+            "detail": "[teleop_server_node-1] [WARN] [0007680229.718087008] [teleop_server]: Failed to open V4L2 device for camera[1] /dev/cam_wrist_left: No such file or directory\n[teleop_server_node-1] [ERROR] [0007680229.718118656] [teleop_server]: Failed to initialize V4L2 direct MJPEG capture for camera[1]: /dev/cam_wrist_left\n[teleop_server_node-1] [WARN] [0007680229.718191328] [teleop_server]: Failed to open V4L2 device for camera[2] /dev/cam_wrist_right: No such file or directory\n[teleop_server_node-1] [ERROR] [0007680229.718211872] [teleop_server]: Failed to initialize V4L2 direct MJPEG capture for camera[2]: /dev/cam_wrist_right\n[teleop_server_node-1] [WARN] [0007680229.719716128] [teleop_server]: Failed to open V4L2 device for camera[2] /dev/cam_wrist_right: No such file or directory\n[teleop_server_node-1] [ERROR] [0007680229.719742464] [teleop_server]: Failed to initialize V4L2 direct MJPEG capture for camera[2]: /dev/cam_wrist_right\n[teleop_server_node-1] [WARN] [0007680229.720048384] [teleop_server]: Failed to open V4L2 device for camera[1] /dev/cam_wrist_left: No such file or directory\n[teleop_server_node-1] [ERROR] [0007680229.720085472] [teleop_server]: Failed to initialize V4L2 direct MJPEG capture for camera[1]: /dev/cam_wrist_left\n[teleop_server_node-1] [WARN] [0007680259.720961920] [teleop_server]: Failed to open V4L2 device for camera[1] /dev/cam_wrist_left: No such file or directory\n[teleop_server_node-1] [ERROR] [0007680259.720994176] [teleop_server]: Failed to initialize V4L2 direct MJPEG capture for camera[1]: /dev/cam_wrist_left\n[teleop_server_node-1] [WARN] [0007680259.789388416] [teleop_server]: Failed to open V4L2 device for camera[2] /dev/cam_wrist_right: No such file or directory\n[teleop_server_node-1] [ERROR] [0007680259.789423648] [teleop_server]: Failed to initialize V4L2 direct MJPEG capture for camera[2]: /dev/cam_wrist_right\n[teleop_server_node-1] [WARN] [0007680289.745561920] [teleop_server]: Failed to open V4L2 device for camera[1] /dev/cam_wrist_left: No such file or directory\n[teleop_server_node-1] [ERROR] [0007680289.745596928] [teleop_server]: Failed to initialize V4L2 direct MJPEG capture for camera[1]: /dev/cam_wrist_left\n[teleop_server_node-1] [WARN] [0007680289.812406784] [teleop_server]: Failed to open V4L2 device for camera[2] /dev/cam_wrist_right: No such file or directory\n[teleop_server_node-1] [ERROR] [0007680289.812436896] [teleop_server]: Failed to initialize V4L2 direct MJPEG capture for camera[2]: /dev/cam_wrist_right",
+            "name": "cos_teleop camera log",
+            "reason": "cos_teleop \u670d\u52a1\u6b63\u5728\u8fd0\u884c\uff0c\u4f46\u65e5\u5fd7\u4e2d\u5b58\u5728\u76f8\u673a\u8bfb\u53d6\u6216\u521d\u59cb\u5316\u5f02\u5e38\u3002",
+            "status": "WARN",
+            "stderr": "",
+            "stdout": "[teleop_server_node-1] [WARN] [0007680229.718087008] [teleop_server]: Failed to open V4L2 device for camera[1] /dev/cam_wrist_left: No such file or directory\n[teleop_server_node-1] [ERROR] [0007680229.718118656] [teleop_server]: Failed to initialize V4L2 direct MJPEG capture for camera[1]: /dev/cam_wrist_left\n[teleop_server_node-1] [WARN] [0007680229.718191328] [teleop_server]: Failed to open V4L2 device for camera[2] /dev/cam_wrist_right: No such file or directory\n[teleop_server_node-1] [ERROR] [0007680229.718211872] [teleop_server]: Failed to initialize V4L2 direct MJPEG capture for camera[2]: /dev/cam_wrist_right\n[teleop_server_node-1] [WARN] [0007680229.719716128] [teleop_server]: Failed to open V4L2 device for camera[2] /dev/cam_wrist_right: No such file or directory\n[teleop_server_node-1] [ERROR] [0007680229.719742464] [teleop_server]: Failed to initialize V4L2 direct MJPEG capture for camera[2]: /dev/cam_wrist_right\n[teleop_server_node-1] [WARN] [0007680229.720048384] [teleop_server]: Failed to open V4L2 device for camera[1] /dev/cam_wrist_left: No such file or directory\n[teleop_server_node-1] [ERROR] [0007680229.720085472] [teleop_server]: Failed to initialize V4L2 direct MJPEG capture for camera[1]: /dev/cam_wrist_left\n[teleop_server_node-1] [WARN] [0007680259.720961920] [teleop_server]: Failed to open V4L2 device for camera[1] /dev/cam_wrist_left: No such file or directory\n[teleop_server_node-1] [ERROR] [0007680259.720994176] [teleop_server]: Failed to initialize V4L2 direct MJPEG capture for camera[1]: /dev/cam_wrist_left\n[teleop_server_node-1] [WARN] [0007680259.789388416] [teleop_server]: Failed to open V4L2 device for camera[2] /dev/cam_wrist_right: No such file or directory\n[teleop_server_node-1] [ERROR] [0007680259.789423648] [teleop_server]: Failed to initialize V4L2 direct MJPEG capture for camera[2]: /dev/cam_wrist_right\n[teleop_server_node-1] [WARN] [0007680289.745561920] [teleop_server]: Failed to open V4L2 device for camera[1] /dev/cam_wrist_left: No such file or directory\n[teleop_server_node-1] [ERROR] [0007680289.745596928] [teleop_server]: Failed to initialize V4L2 direct MJPEG capture for camera[1]: /dev/cam_wrist_left\n[teleop_server_node-1] [WARN] [0007680289.812406784] [teleop_server]: Failed to open V4L2 device for camera[2] /dev/cam_wrist_right: No such file or directory\n[teleop_server_node-1] [ERROR] [0007680289.812436896] [teleop_server]: Failed to initialize V4L2 direct MJPEG capture for camera[2]: /dev/cam_wrist_right",
+            "suggestion": "\u8bf7\u5c1d\u8bd5\u91cd\u542f cos_teleop.service\uff1b\u5982\u679c\u4ecd\u5f02\u5e38\uff0c\u8bf7\u68c0\u67e5\u76f8\u673a Type-C \u8fde\u63a5\u3001udev \u6620\u5c04\u3001\u76f8\u673a\u8bbe\u5907\u72b6\u6001\u6216\u76f8\u673a\u662f\u5426\u88ab\u5360\u7528\u3002"
+        },
+        {
+            "detail": "dex1 check pipeline disabled by enable_dex1=false",
+            "name": "dex1 checks",
+            "status": "SKIP"
+        },
+        {
+            "detail": "active",
+            "name": "cos_agent active",
+            "status": "OK",
+            "stderr": "",
+            "stdout": "__SETUP_SERVICE__ name=cos_agent.service active=1 active_rc=0 status_rc=0\nactive\n\u25cf cos_agent.service - coScene agent ROS2 Node\n     Loaded: loaded (/etc/systemd/system/cos_agent.service; enabled; vendor preset: enabled)\n     Active: active (running) since Tue 2024-06-18 04:29:44 CST; 1 years 11 months ago\n   Main PID: 1014 (ros2)\n      Tasks: 22 (limit: 18143)\n     Memory: 71.1M\n     CGroup: /system.slice/cos_agent.service\n             \u251c\u25001014 /usr/bin/python3 /opt/ros/foxy/bin/ros2 launch agent agent.launch.py\n             \u2514\u25002030 /opt/ros/foxy/lib/agent/agent_node --ros-args -r __node:=agent_node --params-file /tmp/launch_params_yw4vjbas\n\nJun 18 04:29:44 ubuntu systemd[1]: Started coScene agent ROS2 Node.\nMar 31 05:23:48 ubuntu bash[1014]: [INFO] [launch]: All log files can be found below /home/unitree/.ros/log/1970-03-31-05-23-48-566485-ubuntu-1014\nMar 31 05:23:48 ubuntu bash[1014]: [INFO] [launch]: Default logging verbosity is set to INFO\nMar 31 05:23:48 ubuntu bash[1014]: [INFO] [agent_node-1]: process started with pid [2030]\nMar 31 05:23:48 ubuntu bash[1014]: [agent_node-1] [INFO] [0007680228.831601600] [agent]: GIT HASH: 3b79b82ad16859b4b425ab438c167e81ba597a76\nMar 31 05:23:48 ubuntu bash[1014]: [agent_node-1] \u2554\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2557\nMar 31 05:23:48 ubuntu bash[1014]: [agent_node-1] \u2551              coScene Agent Started - ROS 2, version: 0.4.10              \u2551\nMar 31 05:23:48 ubuntu bash[1014]: [agent_node-1] \u255a\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u255d\nMar 31 05:23:48 ubuntu bash[1014]: [agent_node-1] [INFO] [0007680228.836844896] [agent]: try to connect nats server...\nMar 31 05:24:04 ubuntu bash[1014]: [agent_node-1] [INFO] [0007680244.450148608] [agent]: connect nats success!"
+        },
+        {
+            "detail": "active",
+            "name": "cos_teleop active",
+            "status": "OK",
+            "stderr": "",
+            "stdout": "__SETUP_SERVICE__ name=cos_teleop.service active=1 active_rc=0 status_rc=0\nactive\n\u25cf cos_teleop.service - coScene teleop_server ROS2 Node\n     Loaded: loaded (/etc/systemd/system/cos_teleop.service; enabled; vendor preset: enabled)\n     Active: active (running) since Tue 2024-06-18 04:29:45 CST; 1 years 11 months ago\n   Main PID: 1318 (ros2)\n      Tasks: 62 (limit: 18143)\n     Memory: 204.2M\n     CGroup: /system.slice/cos_teleop.service\n             \u251c\u25001318 /usr/bin/python3 /opt/ros/foxy/bin/ros2 launch teleop_server teleop_server.launch.py urdf_file:=/home/unitree/cos_ws/src/g1_description/g1_29dof_mode_15_with_dex1_1.urdf\n             \u251c\u25002026 /home/unitree/cos_ws/install/teleop_server/lib/teleop_server/teleop_server_node /home/unitree/cos_ws/install/teleop_server/share/teleop_server/config/teleop_server.yaml --ros-args\n             \u2514\u25002029 /opt/ros/foxy/lib/robot_state_publisher/robot_state_publisher /home/unitree/cos_ws/src/g1_description/g1_29dof_mode_15_with_dex1_1.urdf --ros-args\n\nMar 31 05:26:34 ubuntu bash[1318]: [teleop_server_node-1] [WARN] [0007680394.272757248] [teleop_server]: Waiting for Dex1 hand states\nMar 31 05:26:36 ubuntu bash[1318]: [teleop_server_node-1] [WARN] [0007680396.279127168] [teleop_server]: Waiting for Dex1 hand states\nMar 31 05:26:38 ubuntu bash[1318]: [teleop_server_node-1] [WARN] [0007680398.285474528] [teleop_server]: Waiting for Dex1 hand states\nMar 31 05:26:40 ubuntu bash[1318]: [teleop_server_node-1] [WARN] [0007680400.291708320] [teleop_server]: Waiting for Dex1 hand states\nMar 31 05:26:42 ubuntu bash[1318]: [teleop_server_node-1] [WARN] [0007680402.298057696] [teleop_server]: Waiting for Dex1 hand states\nMar 31 05:26:44 ubuntu bash[1318]: [teleop_server_node-1] [WARN] [0007680404.304359104] [teleop_server]: Waiting for Dex1 hand states\nMar 31 05:26:46 ubuntu bash[1318]: [teleop_server_node-1] [WARN] [0007680406.310887104] [teleop_server]: Waiting for Dex1 hand states\nMar 31 05:26:48 ubuntu bash[1318]: [teleop_server_node-1] [WARN] [0007680408.317150400] [teleop_server]: Waiting for Dex1 hand states\nJun 15 13:14:41 ubuntu bash[1318]: [robot_state_publisher-2] [WARN] [1781500481.004288992] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!\nJun 15 13:47:03 ubuntu bash[1318]: [robot_state_publisher-2] [WARN] [1781502423.003875072] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!"
+        },
+        {
+            "detail": "active",
+            "name": "xrobotoolkit-pc-service active",
+            "status": "OK",
+            "stderr": "",
+            "stdout": "__SETUP_SERVICE__ name=xrobotoolkit-pc-service.service active=1 active_rc=0 status_rc=0\nactive\n\u25cf xrobotoolkit-pc-service.service - XRoboToolkit PC Service\n     Loaded: loaded (/etc/systemd/system/xrobotoolkit-pc-service.service; enabled; vendor preset: enabled)\n     Active: active (running) since Tue 2024-06-18 04:29:45 CST; 1 years 11 months ago\n   Main PID: 1298 (RoboticsService)\n      Tasks: 23 (limit: 18143)\n     Memory: 31.7M\n     CGroup: /system.slice/xrobotoolkit-pc-service.service\n             \u2514\u25001298 ./RoboticsServiceProcess\n\nJun 18 04:29:44 ubuntu systemd[1]: Starting XRoboToolkit PC Service...\nJun 18 04:29:45 ubuntu systemd[1]: Started XRoboToolkit PC Service.\nJun 18 04:29:45 ubuntu runService.sh[1298]: release mode"
+        }
+    ],
+    "counts": {
+        "fail": "0",
+        "ok": "29",
+        "skip": "1",
+        "warn": "4"
+    },
+    "end_effector": "dex1",
+    "failed_items": [],
+    "host": "g1_robot_061",
+    "install_failed_items": [
+        {
+            "changed": false,
+            "detail": "all apt packages already installed",
+            "name": "common apt dependencies",
+            "rc": "0",
+            "reason": "",
+            "stderr": "",
+            "stdout": "",
+            "suggestion": ""
+        },
+        {
+            "changed": true,
+            "detail": "final import check passed using /home/unitree/miniconda3/envs/tv/bin/python; pip=/home/unitree/miniconda3/envs/tv/bin/pip; source=https://pypi.tuna.tsinghua.edu.cn/simple",
+            "name": "python packages",
+            "rc": "0",
+            "reason": "",
+            "stderr": "--- install environment stderr ---\\n\\n--- pip install stderr ---\\n\\n--- import recheck stderr ---\\n\\n---\\n\\n---\\n\\n---\\n\\n---\\n",
+            "stdout": "--- install environment ---\\nwhich python:\n/usr/bin/python\n\n/home/unitree/miniconda3/envs/tv/bin/python --version:\nPython 3.10.20\n\n/home/unitree/miniconda3/envs/tv/bin/pip --version:\npip 26.1.2 from /home/unitree/miniconda3/envs/tv/lib/python3.10/site-packages/pip (python 3.10)\\n--- pip install stdout ---\\nLooking in indexes: https://pypi.tuna.tsinghua.edu.cn/simple\nRequirement already satisfied: opencv-python in ./miniconda3/envs/tv/lib/python3.10/site-packages (4.13.0.92)\nRequirement already satisfied: pyzmq in ./miniconda3/envs/tv/lib/python3.10/site-packages (27.1.0)\nRequirement already satisfied: logging_mp in ./miniconda3/envs/tv/lib/python3.10/site-packages (0.2.1)\nRequirement already satisfied: av in ./miniconda3/envs/tv/lib/python3.10/site-packages (17.0.1)\nRequirement already satisfied: numpy in ./miniconda3/envs/tv/lib/python3.10/site-packages (2.2.6)\nRequirement already satisfied: rich>=13.0 in ./miniconda3/envs/tv/lib/python3.10/site-packages (from logging_mp) (15.0.0)\nRequirement already satisfied: markdown-it-py>=2.2.0 in ./miniconda3/envs/tv/lib/python3.10/site-packages (from rich>=13.0->logging_mp) (4.2.0)\nRequirement already satisfied: pygments<3.0.0,>=2.13.0 in ./miniconda3/envs/tv/lib/python3.10/site-packages (from rich>=13.0->logging_mp) (2.20.0)\nRequirement already satisfied: mdurl~=0.1 in ./miniconda3/envs/tv/lib/python3.10/site-packages (from markdown-it-py>=2.2.0->rich>=13.0->logging_mp) (0.1.2)\\n--- import recheck stdout ---\\n\\n---\\n\\n---\\n\\n---\\n\\n---\\n",
+            "suggestion": ""
+        }
+    ],
+    "install_results": [
+        {
+            "changed": true,
+            "detail": "stopped remote_start.service",
+            "name": "remote_start preflight stop",
+            "rc": 0,
+            "status": "OK",
+            "stderr": "",
+            "stdout": ""
+        },
+        {
+            "changed": false,
+            "detail": "all apt packages already installed",
+            "name": "common apt dependencies",
+            "rc": "0",
+            "reason": "",
+            "stderr": "",
+            "stdout": "",
+            "suggestion": ""
+        },
+        {
+            "changed": false,
+            "detail": "/home/unitree/miniconda3/bin/conda",
+            "name": "miniconda",
+            "rc": 0,
+            "stderr": "",
+            "stdout": ""
+        },
+        {
+            "changed": false,
+            "detail": "/home/unitree/miniconda3/envs/tv/bin/python",
+            "name": "conda env tv",
+            "rc": 0,
+            "stderr": "",
+            "stdout": ""
+        },
+        {
+            "changed": true,
+            "detail": "final import check passed using /home/unitree/miniconda3/envs/tv/bin/python; pip=/home/unitree/miniconda3/envs/tv/bin/pip; source=https://pypi.tuna.tsinghua.edu.cn/simple",
+            "name": "python packages",
+            "rc": "0",
+            "reason": "",
+            "stderr": "--- install environment stderr ---\\n\\n--- pip install stderr ---\\n\\n--- import recheck stderr ---\\n\\n---\\n\\n---\\n\\n---\\n\\n---\\n",
+            "stdout": "--- install environment ---\\nwhich python:\n/usr/bin/python\n\n/home/unitree/miniconda3/envs/tv/bin/python --version:\nPython 3.10.20\n\n/home/unitree/miniconda3/envs/tv/bin/pip --version:\npip 26.1.2 from /home/unitree/miniconda3/envs/tv/lib/python3.10/site-packages/pip (python 3.10)\\n--- pip install stdout ---\\nLooking in indexes: https://pypi.tuna.tsinghua.edu.cn/simple\nRequirement already satisfied: opencv-python in ./miniconda3/envs/tv/lib/python3.10/site-packages (4.13.0.92)\nRequirement already satisfied: pyzmq in ./miniconda3/envs/tv/lib/python3.10/site-packages (27.1.0)\nRequirement already satisfied: logging_mp in ./miniconda3/envs/tv/lib/python3.10/site-packages (0.2.1)\nRequirement already satisfied: av in ./miniconda3/envs/tv/lib/python3.10/site-packages (17.0.1)\nRequirement already satisfied: numpy in ./miniconda3/envs/tv/lib/python3.10/site-packages (2.2.6)\nRequirement already satisfied: rich>=13.0 in ./miniconda3/envs/tv/lib/python3.10/site-packages (from logging_mp) (15.0.0)\nRequirement already satisfied: markdown-it-py>=2.2.0 in ./miniconda3/envs/tv/lib/python3.10/site-packages (from rich>=13.0->logging_mp) (4.2.0)\nRequirement already satisfied: pygments<3.0.0,>=2.13.0 in ./miniconda3/envs/tv/lib/python3.10/site-packages (from rich>=13.0->logging_mp) (2.20.0)\nRequirement already satisfied: mdurl~=0.1 in ./miniconda3/envs/tv/lib/python3.10/site-packages (from markdown-it-py>=2.2.0->rich>=13.0->logging_mp) (0.1.2)\\n--- import recheck stdout ---\\n\\n---\\n\\n---\\n\\n---\\n\\n---\\n",
+            "suggestion": ""
+        },
+        {
+            "changed": false,
+            "detail": "/home/unitree/g1_setup/unitree_sdk2",
+            "name": "unitree_sdk2",
+            "rc": 0,
+            "stderr": "",
+            "stdout": ""
+        },
+        {
+            "changed": false,
+            "detail": "/etc/systemd/system/remote_start.service; daemon-reload done; enable/restart requested=False",
+            "name": "remote_start.service",
+            "rc": 0,
+            "stderr": "\n\n",
+            "stdout": "\n\n"
+        },
+        {
+            "changed": false,
+            "detail": "dex1 install pipeline disabled by enable_dex1=false",
+            "name": "dex1 installation",
+            "rc": 0,
+            "status": "SKIP"
+        },
+        {
+            "changed": true,
+            "detail": "end_effector=dex1, stopped brainco_hand.service",
+            "name": "stop conflicting brainco service",
+            "rc": 0,
+            "stderr": "\nRemoved /etc/systemd/system/multi-user.target.wants/brainco_hand.service.",
+            "stdout": "\n"
+        }
+    ],
+    "mode": "install",
+    "overall_status": "OK",
+    "required_services": {
+        "cos_agent.service": {
+            "active": true,
+            "detail": "active",
+            "rc": 0,
+            "status": "OK",
+            "stderr": "",
+            "stdout": "__SETUP_SERVICE__ name=cos_agent.service active=1 active_rc=0 status_rc=0\nactive\n\u25cf cos_agent.service - coScene agent ROS2 Node\n     Loaded: loaded (/etc/systemd/system/cos_agent.service; enabled; vendor preset: enabled)\n     Active: active (running) since Tue 2024-06-18 04:29:44 CST; 1 years 11 months ago\n   Main PID: 1014 (ros2)\n      Tasks: 22 (limit: 18143)\n     Memory: 71.1M\n     CGroup: /system.slice/cos_agent.service\n             \u251c\u25001014 /usr/bin/python3 /opt/ros/foxy/bin/ros2 launch agent agent.launch.py\n             \u2514\u25002030 /opt/ros/foxy/lib/agent/agent_node --ros-args -r __node:=agent_node --params-file /tmp/launch_params_yw4vjbas\n\nJun 18 04:29:44 ubuntu systemd[1]: Started coScene agent ROS2 Node.\nMar 31 05:23:48 ubuntu bash[1014]: [INFO] [launch]: All log files can be found below /home/unitree/.ros/log/1970-03-31-05-23-48-566485-ubuntu-1014\nMar 31 05:23:48 ubuntu bash[1014]: [INFO] [launch]: Default logging verbosity is set to INFO\nMar 31 05:23:48 ubuntu bash[1014]: [INFO] [agent_node-1]: process started with pid [2030]\nMar 31 05:23:48 ubuntu bash[1014]: [agent_node-1] [INFO] [0007680228.831601600] [agent]: GIT HASH: 3b79b82ad16859b4b425ab438c167e81ba597a76\nMar 31 05:23:48 ubuntu bash[1014]: [agent_node-1] \u2554\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2557\nMar 31 05:23:48 ubuntu bash[1014]: [agent_node-1] \u2551              coScene Agent Started - ROS 2, version: 0.4.10              \u2551\nMar 31 05:23:48 ubuntu bash[1014]: [agent_node-1] \u255a\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u255d\nMar 31 05:23:48 ubuntu bash[1014]: [agent_node-1] [INFO] [0007680228.836844896] [agent]: try to connect nats server...\nMar 31 05:24:04 ubuntu bash[1014]: [agent_node-1] [INFO] [0007680244.450148608] [agent]: connect nats success!"
+        },
+        "cos_teleop.service": {
+            "active": true,
+            "detail": "active",
+            "rc": 0,
+            "status": "OK",
+            "stderr": "",
+            "stdout": "__SETUP_SERVICE__ name=cos_teleop.service active=1 active_rc=0 status_rc=0\nactive\n\u25cf cos_teleop.service - coScene teleop_server ROS2 Node\n     Loaded: loaded (/etc/systemd/system/cos_teleop.service; enabled; vendor preset: enabled)\n     Active: active (running) since Tue 2024-06-18 04:29:45 CST; 1 years 11 months ago\n   Main PID: 1318 (ros2)\n      Tasks: 62 (limit: 18143)\n     Memory: 204.2M\n     CGroup: /system.slice/cos_teleop.service\n             \u251c\u25001318 /usr/bin/python3 /opt/ros/foxy/bin/ros2 launch teleop_server teleop_server.launch.py urdf_file:=/home/unitree/cos_ws/src/g1_description/g1_29dof_mode_15_with_dex1_1.urdf\n             \u251c\u25002026 /home/unitree/cos_ws/install/teleop_server/lib/teleop_server/teleop_server_node /home/unitree/cos_ws/install/teleop_server/share/teleop_server/config/teleop_server.yaml --ros-args\n             \u2514\u25002029 /opt/ros/foxy/lib/robot_state_publisher/robot_state_publisher /home/unitree/cos_ws/src/g1_description/g1_29dof_mode_15_with_dex1_1.urdf --ros-args\n\nMar 31 05:26:34 ubuntu bash[1318]: [teleop_server_node-1] [WARN] [0007680394.272757248] [teleop_server]: Waiting for Dex1 hand states\nMar 31 05:26:36 ubuntu bash[1318]: [teleop_server_node-1] [WARN] [0007680396.279127168] [teleop_server]: Waiting for Dex1 hand states\nMar 31 05:26:38 ubuntu bash[1318]: [teleop_server_node-1] [WARN] [0007680398.285474528] [teleop_server]: Waiting for Dex1 hand states\nMar 31 05:26:40 ubuntu bash[1318]: [teleop_server_node-1] [WARN] [0007680400.291708320] [teleop_server]: Waiting for Dex1 hand states\nMar 31 05:26:42 ubuntu bash[1318]: [teleop_server_node-1] [WARN] [0007680402.298057696] [teleop_server]: Waiting for Dex1 hand states\nMar 31 05:26:44 ubuntu bash[1318]: [teleop_server_node-1] [WARN] [0007680404.304359104] [teleop_server]: Waiting for Dex1 hand states\nMar 31 05:26:46 ubuntu bash[1318]: [teleop_server_node-1] [WARN] [0007680406.310887104] [teleop_server]: Waiting for Dex1 hand states\nMar 31 05:26:48 ubuntu bash[1318]: [teleop_server_node-1] [WARN] [0007680408.317150400] [teleop_server]: Waiting for Dex1 hand states\nJun 15 13:14:41 ubuntu bash[1318]: [robot_state_publisher-2] [WARN] [1781500481.004288992] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!\nJun 15 13:47:03 ubuntu bash[1318]: [robot_state_publisher-2] [WARN] [1781502423.003875072] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!"
+        },
+        "xrobotoolkit-pc-service.service": {
+            "active": true,
+            "detail": "active",
+            "rc": 0,
+            "status": "OK",
+            "stderr": "",
+            "stdout": "__SETUP_SERVICE__ name=xrobotoolkit-pc-service.service active=1 active_rc=0 status_rc=0\nactive\n\u25cf xrobotoolkit-pc-service.service - XRoboToolkit PC Service\n     Loaded: loaded (/etc/systemd/system/xrobotoolkit-pc-service.service; enabled; vendor preset: enabled)\n     Active: active (running) since Tue 2024-06-18 04:29:45 CST; 1 years 11 months ago\n   Main PID: 1298 (RoboticsService)\n      Tasks: 23 (limit: 18143)\n     Memory: 31.7M\n     CGroup: /system.slice/xrobotoolkit-pc-service.service\n             \u2514\u25001298 ./RoboticsServiceProcess\n\nJun 18 04:29:44 ubuntu systemd[1]: Starting XRoboToolkit PC Service...\nJun 18 04:29:45 ubuntu systemd[1]: Started XRoboToolkit PC Service.\nJun 18 04:29:45 ubuntu runService.sh[1298]: release mode"
+        }
+    },
+    "robot_id": "61",
+    "setup_success": true,
+    "skipped_items": [
+        {
+            "detail": "dex1 check pipeline disabled by enable_dex1=false",
+            "name": "dex1 checks",
+            "status": "SKIP"
+        }
+    ],
+    "warn_items": [
+        {
+            "detail": "timeout 5 ros2 topic hz /cam_head/compressed_image did not receive messages",
+            "name": "/cam_head/compressed_image",
+            "reason": "\u5934\u90e8\u76f8\u673a\u65e0\u6570\u636e",
+            "status": "WARN",
+            "stderr": "timeout: failed to run command \u2018ros2\u2019: No such file or directory",
+            "stdout": "",
+            "suggestion": "\u68c0\u67e5\u5934\u90e8\u76f8\u673a Type-C \u8fde\u63a5\u6216\u91cd\u542f cos_teleop.service"
+        },
+        {
+            "detail": "timeout 5 ros2 topic hz /cam_wrist_left/compressed_image did not receive messages",
+            "name": "/cam_wrist_left/compressed_image",
+            "reason": "\u5de6\u8155\u76f8\u673a\u65e0\u6570\u636e",
+            "status": "WARN",
+            "stderr": "timeout: failed to run command \u2018ros2\u2019: No such file or directory",
+            "stdout": "",
+            "suggestion": "\u68c0\u67e5\u5de6\u8155\u76f8\u673a Type-C \u8fde\u63a5\u6216\u91cd\u542f cos_teleop.service"
+        },
+        {
+            "detail": "timeout 5 ros2 topic hz /cam_wrist_right/compressed_image did not receive messages",
+            "name": "/cam_wrist_right/compressed_image",
+            "reason": "\u53f3\u8155\u76f8\u673a\u65e0\u6570\u636e",
+            "status": "WARN",
+            "stderr": "timeout: failed to run command \u2018ros2\u2019: No such file or directory",
+            "stdout": "",
+            "suggestion": "\u68c0\u67e5\u53f3\u8155\u76f8\u673a Type-C \u8fde\u63a5\u6216\u91cd\u542f cos_teleop.service"
+        },
+        {
+            "detail": "[teleop_server_node-1] [WARN] [0007680229.718087008] [teleop_server]: Failed to open V4L2 device for camera[1] /dev/cam_wrist_left: No such file or directory\n[teleop_server_node-1] [ERROR] [0007680229.718118656] [teleop_server]: Failed to initialize V4L2 direct MJPEG capture for camera[1]: /dev/cam_wrist_left\n[teleop_server_node-1] [WARN] [0007680229.718191328] [teleop_server]: Failed to open V4L2 device for camera[2] /dev/cam_wrist_right: No such file or directory\n[teleop_server_node-1] [ERROR] [0007680229.718211872] [teleop_server]: Failed to initialize V4L2 direct MJPEG capture for camera[2]: /dev/cam_wrist_right\n[teleop_server_node-1] [WARN] [0007680229.719716128] [teleop_server]: Failed to open V4L2 device for camera[2] /dev/cam_wrist_right: No such file or directory\n[teleop_server_node-1] [ERROR] [0007680229.719742464] [teleop_server]: Failed to initialize V4L2 direct MJPEG capture for camera[2]: /dev/cam_wrist_right\n[teleop_server_node-1] [WARN] [0007680229.720048384] [teleop_server]: Failed to open V4L2 device for camera[1] /dev/cam_wrist_left: No such file or directory\n[teleop_server_node-1] [ERROR] [0007680229.720085472] [teleop_server]: Failed to initialize V4L2 direct MJPEG capture for camera[1]: /dev/cam_wrist_left\n[teleop_server_node-1] [WARN] [0007680259.720961920] [teleop_server]: Failed to open V4L2 device for camera[1] /dev/cam_wrist_left: No such file or directory\n[teleop_server_node-1] [ERROR] [0007680259.720994176] [teleop_server]: Failed to initialize V4L2 direct MJPEG capture for camera[1]: /dev/cam_wrist_left\n[teleop_server_node-1] [WARN] [0007680259.789388416] [teleop_server]: Failed to open V4L2 device for camera[2] /dev/cam_wrist_right: No such file or directory\n[teleop_server_node-1] [ERROR] [0007680259.789423648] [teleop_server]: Failed to initialize V4L2 direct MJPEG capture for camera[2]: /dev/cam_wrist_right\n[teleop_server_node-1] [WARN] [0007680289.745561920] [teleop_server]: Failed to open V4L2 device for camera[1] /dev/cam_wrist_left: No such file or directory\n[teleop_server_node-1] [ERROR] [0007680289.745596928] [teleop_server]: Failed to initialize V4L2 direct MJPEG capture for camera[1]: /dev/cam_wrist_left\n[teleop_server_node-1] [WARN] [0007680289.812406784] [teleop_server]: Failed to open V4L2 device for camera[2] /dev/cam_wrist_right: No such file or directory\n[teleop_server_node-1] [ERROR] [0007680289.812436896] [teleop_server]: Failed to initialize V4L2 direct MJPEG capture for camera[2]: /dev/cam_wrist_right",
+            "name": "cos_teleop camera log",
+            "reason": "cos_teleop \u670d\u52a1\u6b63\u5728\u8fd0\u884c\uff0c\u4f46\u65e5\u5fd7\u4e2d\u5b58\u5728\u76f8\u673a\u8bfb\u53d6\u6216\u521d\u59cb\u5316\u5f02\u5e38\u3002",
+            "status": "WARN",
+            "stderr": "",
+            "stdout": "[teleop_server_node-1] [WARN] [0007680229.718087008] [teleop_server]: Failed to open V4L2 device for camera[1] /dev/cam_wrist_left: No such file or directory\n[teleop_server_node-1] [ERROR] [0007680229.718118656] [teleop_server]: Failed to initialize V4L2 direct MJPEG capture for camera[1]: /dev/cam_wrist_left\n[teleop_server_node-1] [WARN] [0007680229.718191328] [teleop_server]: Failed to open V4L2 device for camera[2] /dev/cam_wrist_right: No such file or directory\n[teleop_server_node-1] [ERROR] [0007680229.718211872] [teleop_server]: Failed to initialize V4L2 direct MJPEG capture for camera[2]: /dev/cam_wrist_right\n[teleop_server_node-1] [WARN] [0007680229.719716128] [teleop_server]: Failed to open V4L2 device for camera[2] /dev/cam_wrist_right: No such file or directory\n[teleop_server_node-1] [ERROR] [0007680229.719742464] [teleop_server]: Failed to initialize V4L2 direct MJPEG capture for camera[2]: /dev/cam_wrist_right\n[teleop_server_node-1] [WARN] [0007680229.720048384] [teleop_server]: Failed to open V4L2 device for camera[1] /dev/cam_wrist_left: No such file or directory\n[teleop_server_node-1] [ERROR] [0007680229.720085472] [teleop_server]: Failed to initialize V4L2 direct MJPEG capture for camera[1]: /dev/cam_wrist_left\n[teleop_server_node-1] [WARN] [0007680259.720961920] [teleop_server]: Failed to open V4L2 device for camera[1] /dev/cam_wrist_left: No such file or directory\n[teleop_server_node-1] [ERROR] [0007680259.720994176] [teleop_server]: Failed to initialize V4L2 direct MJPEG capture for camera[1]: /dev/cam_wrist_left\n[teleop_server_node-1] [WARN] [0007680259.789388416] [teleop_server]: Failed to open V4L2 device for camera[2] /dev/cam_wrist_right: No such file or directory\n[teleop_server_node-1] [ERROR] [0007680259.789423648] [teleop_server]: Failed to initialize V4L2 direct MJPEG capture for camera[2]: /dev/cam_wrist_right\n[teleop_server_node-1] [WARN] [0007680289.745561920] [teleop_server]: Failed to open V4L2 device for camera[1] /dev/cam_wrist_left: No such file or directory\n[teleop_server_node-1] [ERROR] [0007680289.745596928] [teleop_server]: Failed to initialize V4L2 direct MJPEG capture for camera[1]: /dev/cam_wrist_left\n[teleop_server_node-1] [WARN] [0007680289.812406784] [teleop_server]: Failed to open V4L2 device for camera[2] /dev/cam_wrist_right: No such file or directory\n[teleop_server_node-1] [ERROR] [0007680289.812436896] [teleop_server]: Failed to initialize V4L2 direct MJPEG capture for camera[2]: /dev/cam_wrist_right",
+            "suggestion": "\u8bf7\u5c1d\u8bd5\u91cd\u542f cos_teleop.service\uff1b\u5982\u679c\u4ecd\u5f02\u5e38\uff0c\u8bf7\u68c0\u67e5\u76f8\u673a Type-C \u8fde\u63a5\u3001udev \u6620\u5c04\u3001\u76f8\u673a\u8bbe\u5907\u72b6\u6001\u6216\u76f8\u673a\u662f\u5426\u88ab\u5360\u7528\u3002"
+        }
+    ],
+    "warnings": []
+}

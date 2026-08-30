@@ -1,0 +1,79 @@
+{
+    "ansible_host": "192.168.90.65",
+    "ansible_user": "unitree",
+    "changed": false,
+    "cos_setup_path": "/home/unitree/cos_setup.sh",
+    "end_effector": "dex1",
+    "end_time": "2026-06-11T11:51:14+08:00",
+    "first_attempt": {
+        "changed": false,
+        "rc": "1",
+        "stderr": "sudo: a terminal is required to read the password; either use the -S option to read from standard input or configure an askpass helper",
+        "stdout": "\n[cos_setup.sh] Installing apt dependencies\n\n[cos_setup.sh] Refreshing ROS apt key"
+    },
+    "inventory_hostname": "g1_robot_065",
+    "librealsense_cleanup": {
+        "changed": false,
+        "rc": "",
+        "stderr": "",
+        "stdout": ""
+    },
+    "overall_status": "FAIL",
+    "rc": "1",
+    "realsense_error_detected": false,
+    "remote_start": {
+        "changed": true,
+        "rc": "0",
+        "stderr": "",
+        "stdout": ""
+    },
+    "retry_attempt": {
+        "changed": false,
+        "rc": "",
+        "stderr": "",
+        "stdout": ""
+    },
+    "retry_performed": false,
+    "robot_id": "65",
+    "services": {
+        "cos_agent": {
+            "active": true,
+            "detail": "active",
+            "enabled": true,
+            "loaded": true,
+            "rc": 0,
+            "status": "OK",
+            "stderr": "",
+            "stdout": "enabled\nactive\n\u25cf cos_agent.service - coScene agent ROS2 Node\n     Loaded: loaded (/etc/systemd/system/cos_agent.service; enabled; vendor preset: enabled)\n     Active: active (running) since Tue 2024-06-18 04:29:50 CST; 1 years 11 months ago\n   Main PID: 1051 (ros2)\n      Tasks: 22 (limit: 18143)\n     Memory: 77.3M\n     CGroup: /system.slice/cos_agent.service\n             \u251c\u25001051 /usr/bin/python3 /opt/ros/foxy/bin/ros2 launch agent agent.launch.py\n             \u2514\u25002666 /opt/ros/foxy/lib/agent/agent_node --ros-args -r __node:=agent_node --params-file /tmp/launch_params__e4lvop2\n\nJun 11 11:43:13 ubuntu bash[1051]: [INFO] [launch]: All log files can be found below /home/unitree/.ros/log/2026-06-11-11-43-13-227018-ubuntu-1051\nJun 11 11:43:13 ubuntu bash[1051]: [INFO] [launch]: Default logging verbosity is set to INFO\nJun 11 11:43:13 ubuntu bash[1051]: [INFO] [agent_node-1]: process started with pid [2666]\nJun 11 11:43:13 ubuntu bash[1051]: [agent_node-1] [INFO] [1781149393.440889504] [agent]: GIT HASH: fbcc00f6c493a29951e8f43724f1a21da3e81af9\nJun 11 11:43:13 ubuntu bash[1051]: [agent_node-1] \u2554\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2557\nJun 11 11:43:13 ubuntu bash[1051]: [agent_node-1] \u2551              coScene Agent Started - ROS 2, version: 0.4.11              \u2551\nJun 11 11:43:13 ubuntu bash[1051]: [agent_node-1] \u255a\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u255d\nJun 11 11:43:13 ubuntu bash[1051]: [agent_node-1] [INFO] [1781149393.440954976] [agent]: try to connect nats server...\nJun 11 11:43:17 ubuntu bash[1051]: [agent_node-1] [INFO] [1781149397.228423680] [agent]: connect nats success!\nWarning: journal has been rotated since unit was started, output may be incomplete.\n\n__COS_SERVICE_RC__ loaded=1 enabled=1 active=1 enabled_rc=0 active_rc=0 status_rc=0"
+        },
+        "cos_teleop": {
+            "active": true,
+            "detail": "active",
+            "enabled": true,
+            "loaded": true,
+            "rc": 0,
+            "status": "OK",
+            "stderr": "",
+            "stdout": "enabled\nactive\n\u25cf cos_teleop.service - coScene teleop_server ROS2 Node\n     Loaded: loaded (/etc/systemd/system/cos_teleop.service; enabled; vendor preset: enabled)\n     Active: active (running) since Thu 2026-06-11 11:43:11 CST; 8min ago\n   Main PID: 1334 (ros2)\n      Tasks: 62 (limit: 18143)\n     Memory: 212.7M\n     CGroup: /system.slice/cos_teleop.service\n             \u251c\u25001334 /usr/bin/python3 /opt/ros/foxy/bin/ros2 launch teleop_server teleop_server.launch.py urdf_file:=/home/unitree/cos_ws/src/g1_description/g1_29dof_mode_15_with_dex1_1.urdf\n             \u251c\u25002663 /home/unitree/cos_ws/install/teleop_server/lib/teleop_server/teleop_server_node /home/unitree/cos_ws/install/teleop_server/share/teleop_server/config/teleop_server.yaml --ros-args\n             \u2514\u25002665 /opt/ros/foxy/lib/robot_state_publisher/robot_state_publisher /home/unitree/cos_ws/src/g1_description/g1_29dof_mode_15_with_dex1_1.urdf --ros-args\n\nJun 11 11:43:14 ubuntu bash[1334]: [teleop_server_node-1] [INFO] [1781149394.954410528] [teleop_server]: RecordingController started.\nJun 11 11:43:14 ubuntu bash[1334]: [teleop_server_node-1] [INFO] [1781149394.967767616] [teleop_server]: PicoTeleopSender enabled. packet_topic=/pico/teleop_packet teleop_cmd_topic=/fsm/teleop/cmd sport_request_topic=/api/sport/request teleop=505 locomotion=801 hand_type=dex1\nJun 11 11:43:14 ubuntu bash[1334]: [teleop_server_node-1] [INFO] [1781149394.969183072] [teleop_server]: Pico 82D converter enabled. hz=50.0\nJun 11 11:43:14 ubuntu bash[1334]: [teleop_server_node-1] [INFO] PXREARobotSDK: initialize sdk,connect to server\nJun 11 11:43:14 ubuntu bash[1334]: [teleop_server_node-1] [INFO] [1781149394.981496832] [teleop_server]: PicoDataReceiver started.\nJun 11 11:43:15 ubuntu bash[1334]: [teleop_server_node-1] [INFO] PXREARobotSDK: client start server stream\nJun 11 11:43:15 ubuntu bash[1334]: [teleop_server_node-1] [INFO] PXREARobotSDK: server connect\nJun 11 11:43:15 ubuntu bash[1334]: [teleop_server_node-1] [INFO] [1781149395.490701056] [teleop_server]: XRoboToolkit server connected\nJun 11 11:43:15 ubuntu bash[1334]: [teleop_server_node-1] [INFO] PXREARobotSDK: watch server feedback thread start\nJun 11 11:50:22 ubuntu bash[1334]: [robot_state_publisher-2] [WARN] [1781149822.000019008] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!\n\n__COS_SERVICE_RC__ loaded=1 enabled=1 active=1 enabled_rc=0 active_rc=0 status_rc=0"
+        },
+        "xrobotoolkit-pc-service": {
+            "active": true,
+            "detail": "loaded/enabled",
+            "enabled": true,
+            "loaded": true,
+            "rc": 0,
+            "status": "OK",
+            "stderr": "",
+            "stdout": "enabled\nactive\n\u25cf xrobotoolkit-pc-service.service - XRoboToolkit PC Service\n     Loaded: loaded (/etc/systemd/system/xrobotoolkit-pc-service.service; enabled; vendor preset: enabled)\n     Active: active (running) since Thu 2026-06-11 11:43:11 CST; 7min ago\n    Process: 1275 ExecStartPre=/usr/bin/test -x /opt/apps/xrobotoolkit-pc-service/runService.sh (code=exited, status=0/SUCCESS)\n   Main PID: 1327 (RoboticsService)\n      Tasks: 23 (limit: 18143)\n     Memory: 30.8M\n     CGroup: /system.slice/xrobotoolkit-pc-service.service\n             \u2514\u25001327 ./RoboticsServiceProcess\n\nJun 11 11:43:11 ubuntu systemd[1]: Started XRoboToolkit PC Service.\nJun 11 11:43:11 ubuntu runService.sh[1327]: release mode\nWarning: journal has been rotated since unit was started, output may be incomplete.\n\n__COS_SERVICE_RC__ loaded=1 enabled=1 active=1 enabled_rc=0 active_rc=0 status_rc=0"
+        }
+    },
+    "setup_detail": "cos_setup.sh failed",
+    "setup_status": "FAIL",
+    "start_time": "2026-06-11T11:52:01+08:00",
+    "time_sync": {
+        "changed": true,
+        "rc": "0",
+        "stderr": "",
+        "stdout": "Thu 11 Jun 2026 11:50:22 AM CST"
+    }
+}

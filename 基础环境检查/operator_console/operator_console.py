@@ -11,9 +11,12 @@ import json
 import mimetypes
 import os
 import re
+import secrets
 import shlex
 import shutil
 import socket
+import struct
+import subprocess
 import threading
 import time
 import webbrowser
@@ -62,6 +65,15 @@ COS_REQUIRED_SERVICES = ("cos_agent", "xrobotoolkit-pc-service", "cos_teleop")
 COS_ACTIVE_SERVICES = ("cos_agent", "cos_teleop")
 COS_XROBOT_SERVICE = "xrobotoolkit-pc-service"
 CAMERA_CHECK_ACTION = "camera_check"
+HEAD_CAMERA_RECOVERY_SERVICE = "unitree-g1-head-camera-awb.service"
+HEAD_CAMERA_TOPIC = "/cam_head/compressed_image"
+CAMERA_PREVIEW_MAX_FRAME_BYTES = 8 * 1024 * 1024
+CAMERA_PREVIEW_SESSIONS: dict[str, dict[str, Any]] = {}
+CAMERA_PREVIEW_LOCK = threading.Lock()
+HEAD_CAMERA_MANUAL_PORT = 8765
+HEAD_CAMERA_MANUAL_MAX_SECONDS = 30 * 60
+CAMERA_MANUAL_SESSIONS: dict[str, dict[str, Any]] = {}
+CAMERA_MANUAL_LOCK = threading.Lock()
 SERVICE_ACTIONS = {"service_check", "service_restart", CAMERA_CHECK_ACTION}
 CAMERA_BINDING_RULE_PATH = "/etc/udev/rules.d/99-usb-cameras.rules"
 CAMERA_BINDING_PROPERTY_KEYS = ("DEVNAME", "ID_PATH", "ID_V4L_PRODUCT", "ID_SERIAL")
@@ -71,7 +83,12 @@ HAND_TEST_ACTION = "hand_test"
 JOB_SCOPE_OPERATION = "operation"
 JOB_SCOPE_DEVELOPER = "developer"
 JOB_SCOPES = {JOB_SCOPE_OPERATION, JOB_SCOPE_DEVELOPER}
+DEFAULT_CLIENT_ID = "default"
+CLIENT_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
+DEFAULT_SESSION_TTL_HOURS = 24.0
+DEFAULT_SESSION_CLEANUP_INTERVAL_SECONDS = 3600.0
 DEVELOPER_ACTIONS = {"cos_setup", "install", "check", DEPLOY_ACTION, DEPLOY_SETUP_AGENT_ACTION}
+NONEXCLUSIVE_ACTIONS = {"service_check", CAMERA_CHECK_ACTION}
 HAND_TEST_SIDES = {"left", "right"}
 HAND_TEST_SIDE_LABELS = {"left": "左手", "right": "右手"}
 RESTARTABLE_SERVICES = {
@@ -280,7 +297,7 @@ def empty_job_state() -> dict[str, Any]:
         "current_command": "",
         "cancellable": False,
         "cancel_requested": False,
-        "robot_label": "",
+        "cancel_file": "",
         "hand_type": "",
         "hand_side": "",
         "hand_side_cn": "",
@@ -291,11 +308,14 @@ CURRENT_JOBS: dict[str, dict[str, Any]] = {
     JOB_SCOPE_OPERATION: empty_job_state(),
     JOB_SCOPE_DEVELOPER: empty_job_state(),
 }
+OPERATION_JOBS: dict[str, dict[str, Any]] = {DEFAULT_CLIENT_ID: CURRENT_JOBS[JOB_SCOPE_OPERATION]}
+OPERATION_JOB_LAST_ACCESSED: dict[str, float] = {DEFAULT_CLIENT_ID: time.monotonic()}
 JOB_CONTEXT = threading.local()
 JOB_LOCK = threading.Lock()
 PROCESS_LOCK = threading.Lock()
+REPORT_LOCK = threading.Lock()
 REFRESH_LOCK = threading.Lock()
-CURRENT_PROCESS: dict[str, Any] = {"child": None}
+CURRENT_PROCESSES: dict[str, Any] = {}
 ROBOT_STATUS_LOCK = threading.Lock()
 ROBOT_NETWORK_STATUS: dict[str, dict[str, Any]] = {}
 ROBOT_HEARTBEATS: dict[str, dict[str, Any]] = {}
@@ -314,8 +334,17 @@ def normalize_job_scope(value: Any) -> str:
     return scope
 
 
-def current_job(scope: str | None = None) -> dict[str, Any]:
+def normalize_client_id(value: Any) -> str:
+    client_id = str(value or DEFAULT_CLIENT_ID).strip()
+    return client_id if CLIENT_ID_RE.fullmatch(client_id) else DEFAULT_CLIENT_ID
+
+
+def current_job(scope: str | None = None, client_id: str | None = None) -> dict[str, Any]:
     resolved_scope = normalize_job_scope(scope or getattr(JOB_CONTEXT, "scope", JOB_SCOPE_OPERATION))
+    if resolved_scope == JOB_SCOPE_OPERATION:
+        resolved_client = normalize_client_id(client_id or getattr(JOB_CONTEXT, "client_id", DEFAULT_CLIENT_ID))
+        OPERATION_JOB_LAST_ACCESSED[resolved_client] = time.monotonic()
+        return OPERATION_JOBS.setdefault(resolved_client, empty_job_state())
     return CURRENT_JOBS[resolved_scope]
 
 
@@ -588,9 +617,9 @@ def finalize_job_stages_locked(final_phase: str) -> None:
             stage["status"] = "skipped"
 
 
-def job_payload_locked(scope: str | None = None) -> dict[str, Any]:
+def job_payload_locked(scope: str | None = None, client_id: str | None = None) -> dict[str, Any]:
     now_epoch = time.time()
-    job = current_job(scope)
+    job = current_job(scope, client_id)
     payload = dict(job)
     stages = []
     for stage in job.get("stages", []):
@@ -623,6 +652,66 @@ def cfg(*keys: str, default: Any = None) -> Any:
             return default
         value = value[key]
     return value
+
+
+def session_ttl_seconds() -> float:
+    try:
+        hours = float(cfg("server", "session_ttl_hours", default=DEFAULT_SESSION_TTL_HOURS))
+    except (TypeError, ValueError):
+        hours = DEFAULT_SESSION_TTL_HOURS
+    return max(60.0, hours * 3600.0)
+
+
+def session_cleanup_interval_seconds() -> float:
+    try:
+        interval = float(
+            cfg(
+                "server",
+                "session_cleanup_interval_seconds",
+                default=DEFAULT_SESSION_CLEANUP_INTERVAL_SECONDS,
+            )
+        )
+    except (TypeError, ValueError):
+        interval = DEFAULT_SESSION_CLEANUP_INTERVAL_SECONDS
+    return max(1.0, interval)
+
+
+def cleanup_expired_operation_jobs(
+    now_monotonic: float | None = None,
+    ttl_seconds: float | None = None,
+) -> list[str]:
+    now = time.monotonic() if now_monotonic is None else now_monotonic
+    ttl = session_ttl_seconds() if ttl_seconds is None else max(0.0, ttl_seconds)
+    expired: list[str] = []
+    with JOB_LOCK:
+        for client_id, job in list(OPERATION_JOBS.items()):
+            if client_id == DEFAULT_CLIENT_ID or job.get("running"):
+                continue
+            last_accessed = OPERATION_JOB_LAST_ACCESSED.get(client_id, now)
+            if now - last_accessed < ttl:
+                continue
+            OPERATION_JOBS.pop(client_id, None)
+            OPERATION_JOB_LAST_ACCESSED.pop(client_id, None)
+            expired.append(client_id)
+    if expired:
+        with PROCESS_LOCK:
+            for client_id in expired:
+                CURRENT_PROCESSES.pop(client_id, None)
+    return expired
+
+
+def operation_job_cleanup_loop() -> None:
+    interval = session_cleanup_interval_seconds()
+    while True:
+        time.sleep(interval)
+        expired = cleanup_expired_operation_jobs()
+        if expired:
+            print(f"Session cleanup: expired {len(expired)} inactive operation session(s)")
+
+
+def start_operation_job_cleanup() -> None:
+    thread = threading.Thread(target=operation_job_cleanup_loop, daemon=True, name="operation-session-cleanup")
+    thread.start()
 
 
 def ensure_dirs() -> None:
@@ -2012,8 +2101,8 @@ def service_stage_items_from_reports(reports: list[dict[str, Any]]) -> list[dict
     return items
 
 
-def latest_service_stage_items(scope: str | None = None) -> list[dict[str, Any]]:
-    path = latest_summary_path(scope)
+def latest_service_stage_items(scope: str | None = None, report_path: Path | None = None) -> list[dict[str, Any]]:
+    path = report_path or latest_summary_path(scope)
     if not path.exists():
         return []
     data = read_json_file(path)
@@ -2048,8 +2137,8 @@ def camera_stage_items_from_reports(reports: list[dict[str, Any]]) -> list[dict[
     return items
 
 
-def latest_camera_stage_items(scope: str | None = None) -> list[dict[str, Any]]:
-    path = latest_summary_path(scope)
+def latest_camera_stage_items(scope: str | None = None, report_path: Path | None = None) -> list[dict[str, Any]]:
+    path = report_path or latest_summary_path(scope)
     if not path.exists():
         return []
     data = read_json_file(path)
@@ -2588,8 +2677,8 @@ def camera_warning_message(issues: list[dict[str, Any]]) -> str:
     return f"{label_text}图像无数据或频率异常，建议检查对应相机连接或重启 cos_teleop.service。"
 
 
-def latest_action_outcome(scope: str | None = None) -> tuple[int, str, str]:
-    path = latest_summary_path(scope)
+def latest_action_outcome(scope: str | None = None, report_path: Path | None = None) -> tuple[int, str, str]:
+    path = report_path or latest_summary_path(scope)
     if not path.exists():
         return 1, "执行失败：未生成报告。", "fail"
     data = read_json_file(path)
@@ -2684,13 +2773,30 @@ def requested_robot_names(selected: list[str]) -> list[str]:
     return [str(item).strip() for item in selected if str(item).strip()]
 
 
-def conflicting_job_locked(scope: str, robot_names: list[str]) -> dict[str, Any] | None:
-    other_scope = JOB_SCOPE_DEVELOPER if scope == JOB_SCOPE_OPERATION else JOB_SCOPE_OPERATION
-    other_job = current_job(other_scope)
-    if not other_job.get("running"):
-        return None
-    if set(robot_names).intersection(str(item) for item in other_job.get("robots", [])):
-        return other_job
+def conflicting_job_locked(
+    scope: str,
+    robot_names: list[str],
+    client_id: str = DEFAULT_CLIENT_ID,
+    action: str = "",
+) -> dict[str, Any] | None:
+    requested = set(robot_names)
+    candidates: list[tuple[str, dict[str, Any]]] = [(JOB_SCOPE_DEVELOPER, current_job(JOB_SCOPE_DEVELOPER))]
+    candidates.extend(
+        (JOB_SCOPE_OPERATION, job)
+        for owner, job in OPERATION_JOBS.items()
+        if owner != normalize_client_id(client_id)
+    )
+    for other_scope, other_job in candidates:
+        if not other_job.get("running"):
+            continue
+        other_action = str(other_job.get("action") or "")
+        if other_scope == JOB_SCOPE_OPERATION and (
+            (action in NONEXCLUSIVE_ACTIONS and other_action in NONEXCLUSIVE_ACTIONS | {HAND_TEST_ACTION})
+            or (action == HAND_TEST_ACTION and other_action in NONEXCLUSIVE_ACTIONS)
+        ):
+            continue
+        if requested.intersection(str(item) for item in other_job.get("robots", [])):
+            return other_job
     return None
 
 
@@ -2737,8 +2843,13 @@ def precheck_ssh(robots: list[dict[str, str]], action: str) -> tuple[list[dict[s
     return reachable, unreachable
 
 
-def merge_latest_summary(action: str, execution: dict[str, Any], extra_reports: list[dict[str, Any]]) -> None:
-    source = report_source_for_action(action)
+def merge_latest_summary(
+    action: str,
+    execution: dict[str, Any],
+    extra_reports: list[dict[str, Any]],
+    source_path: Path | None = None,
+) -> None:
+    source = source_path or report_source_for_action(action)
     summary_path = latest_summary_path(job_scope_for_action(action))
     if job_scope_for_action(action) == JOB_SCOPE_OPERATION:
         copy_raw_jsons("g1_robot_*.json")
@@ -2748,10 +2859,15 @@ def merge_latest_summary(action: str, execution: dict[str, Any], extra_reports: 
         reports = [data] if isinstance(data, dict) else [item for item in data if isinstance(item, dict)] if isinstance(data, list) else []
     else:
         reports = build_execution_summary(action, execution)
-    by_host = {robot_identity(item): item for item in reports}
-    for item in extra_reports:
-        by_host[robot_identity(item)] = item
-    write_json_file(summary_path, attach_execution_metadata(list(by_host.values()), execution))
+    with REPORT_LOCK:
+        existing: list[dict[str, Any]] = []
+        if summary_path.exists():
+            current = read_json_file(summary_path)
+            existing = [current] if isinstance(current, dict) else [item for item in current if isinstance(item, dict)] if isinstance(current, list) else []
+        by_host = {robot_identity(item): item for item in existing}
+        for item in [*reports, *extra_reports]:
+            by_host[robot_identity(item)] = item
+        write_json_file(summary_path, attach_execution_metadata(list(by_host.values()), execution))
 
 
 def attach_execution_metadata(reports: list[dict[str, Any]], execution: dict[str, Any]) -> list[dict[str, Any]]:
@@ -3105,6 +3221,460 @@ def camera_binding_payload(
     }
 
 
+def camera_recovery_robot(selected: list[str]) -> dict[str, str]:
+    if len([item for item in selected if str(item).strip()]) != 1:
+        raise ValueError("调整头部相机一次只能选择 1 台机器人")
+    robots = selected_inventory_robots(selected)
+    if len(robots) != 1:
+        raise ValueError("调整头部相机一次只能选择 1 台机器人")
+    return robots[0]
+
+
+def camera_recovery_command(robot: dict[str, str], ssh_password: str, operation: str) -> list[str]:
+    host = str(robot.get("ansible_host", "")).strip()
+    if not host:
+        raise ValueError("机器人未配置 ansible_host")
+    if operation == "start":
+        sudo_prompt = "[sudo] password: "
+        script = f"""set -e
+if ! systemctl is-active --quiet cos_teleop.service; then
+  echo '__CAMERA_RECOVERY_ERROR__ teleop_inactive'
+  exit 20
+fi
+sudo -S -p {shlex.quote(sudo_prompt)} systemctl restart --no-block {HEAD_CAMERA_RECOVERY_SERVICE}
+recovery_started=0
+for _ in $(seq 1 30); do
+  if [[ "$(systemctl show {HEAD_CAMERA_RECOVERY_SERVICE} -p ActiveState --value)" == "activating" ]]; then
+    recovery_started=1
+    break
+  fi
+  sleep 0.1
+done
+if [[ "$recovery_started" != 1 ]]; then
+  echo '__CAMERA_RECOVERY_ERROR__ service_did_not_start'
+  exit 21
+fi
+echo '__CAMERA_RECOVERY_ACCEPTED__'
+"""
+    elif operation == "status":
+        script = f"""set +e
+systemctl show {HEAD_CAMERA_RECOVERY_SERVICE} \\
+  -p LoadState -p ActiveState -p SubState -p Result -p ExecMainStatus \\
+  -p ExecMainStartTimestamp -p ExecMainExitTimestamp --no-pager
+echo '__CAMERA_RECOVERY_LOGS__'
+journalctl -u {HEAD_CAMERA_RECOVERY_SERVICE} -n 30 --no-pager 2>&1
+"""
+    else:
+        raise ValueError("未知头部相机调整操作")
+    args = shlex.split(ssh_common_args()) if ssh_password else ssh_key_common_args()
+    return ["ssh", *args, f"unitree@{host}", "bash -lc " + shlex.quote(script)]
+
+
+def parse_key_value_lines(text: str) -> dict[str, str]:
+    values: dict[str, str] = {}
+    for line in text.splitlines():
+        if line == "__CAMERA_RECOVERY_LOGS__":
+            break
+        if "=" in line:
+            key, value = line.split("=", 1)
+            values[key.strip()] = value.strip()
+    return values
+
+
+def camera_recovery_payload(
+    operation: str,
+    selected: list[str],
+    ssh_password: str,
+    sudo_password: str,
+) -> dict[str, Any]:
+    robot = camera_recovery_robot(selected)
+    command = camera_recovery_command(robot, ssh_password, operation)
+    returncode, output = run_ssh_capture(
+        command,
+        ssh_password=ssh_password,
+        sudo_password=sudo_password,
+        timeout_seconds=25.0,
+    )
+    if "Permission denied" in output or "publickey" in output:
+        raise PermissionError("SSH 认证失败，请确认 unitree 密码。")
+    if operation == "start":
+        if "teleop_inactive" in output:
+            raise RuntimeError("cos_teleop.service 未运行，无法调整头部相机。请先启动 teleop。")
+        if "service_did_not_start" in output:
+            raise RuntimeError("头部相机调整服务未进入运行状态，请检查服务状态和日志。")
+        if returncode != 0 or "__CAMERA_RECOVERY_ACCEPTED__" not in output:
+            raise RuntimeError(f"头部相机调整启动失败，返回码：{returncode}。{tail_lines(output, 8)}")
+        return {
+            "status": "ACCEPTED",
+            "message": "调整任务已启动",
+            "inventory_hostname": robot["inventory_hostname"],
+            "robot_id": robot.get("robot_id", ""),
+            "started_at": now_iso(),
+        }
+
+    values = parse_key_value_lines(output)
+    logs = output.partition("__CAMERA_RECOVERY_LOGS__")[2].strip()
+    load_state = values.get("LoadState", "unknown")
+    active_state = values.get("ActiveState", "unknown")
+    sub_state = values.get("SubState", "unknown")
+    result = values.get("Result", "unknown")
+    exec_status_text = values.get("ExecMainStatus", "")
+    exec_status = int(exec_status_text) if exec_status_text.lstrip("-").isdigit() else None
+    if load_state != "loaded":
+        status = "UNAVAILABLE"
+        message = f"机器人未安装 {HEAD_CAMERA_RECOVERY_SERVICE}"
+    elif active_state == "activating":
+        status = "RUNNING"
+        message = "正在调整头部相机，请保持当前工作光照环境"
+    elif active_state == "active" and sub_state == "exited" and result == "success" and exec_status == 0:
+        status = "SUCCESS"
+        message = "头部相机调整成功"
+    elif active_state == "failed" or result == "failed" or (exec_status not in (None, 0)):
+        status = "FAILED"
+        message = "头部相机调整失败，请查看执行日志"
+    else:
+        status = "IDLE"
+        message = "等待头部相机调整任务启动"
+    return {
+        "status": status,
+        "message": message,
+        "inventory_hostname": robot["inventory_hostname"],
+        "active_state": active_state,
+        "sub_state": sub_state,
+        "result": result,
+        "exec_main_status": exec_status,
+        "started_at": values.get("ExecMainStartTimestamp", ""),
+        "finished_at": values.get("ExecMainExitTimestamp", ""),
+        "logs": tail_lines(logs, 30),
+    }
+
+
+def camera_manual_start_script(token: str) -> str:
+    pid_file = f"/tmp/operator-console-camera-{token}.pid"
+    log_file = f"/tmp/operator-console-camera-{token}.log"
+    sudo_prompt = "[sudo] password: "
+    return f"""set -Eeuo pipefail
+tool_dir=/home/unitree/camera_tool
+pid_file={shlex.quote(pid_file)}
+log_file={shlex.quote(log_file)}
+teleop_was_active=0
+if [[ ! -x "$tool_dir/start_unitree_g1_web.sh" || ! -f "$tool_dir/unitree_g1_web.py" ]]; then
+  echo '__CAMERA_MANUAL_ERROR__ tool_missing'
+  exit 30
+fi
+if ss -ltnH 'sport = :{HEAD_CAMERA_MANUAL_PORT}' 2>/dev/null | grep -q .; then
+  echo '__CAMERA_MANUAL_ERROR__ port_in_use'
+  exit 31
+fi
+if systemctl is-active --quiet cos_teleop.service; then
+  teleop_was_active=1
+  sudo -S -p {shlex.quote(sudo_prompt)} systemctl stop cos_teleop.service
+fi
+restore_teleop() {{
+  status=$?
+  if [[ "$teleop_was_active" == 1 ]]; then
+    sudo -S -p {shlex.quote(sudo_prompt)} systemctl start cos_teleop.service || true
+  fi
+  exit "$status"
+}}
+trap restore_teleop ERR
+cd "$tool_dir"
+nohup env UNITREE_G1_WEB_HOST=0.0.0.0 UNITREE_G1_WEB_PORT={HEAD_CAMERA_MANUAL_PORT} \
+  ./start_unitree_g1_web.sh >"$log_file" 2>&1 </dev/null &
+tool_pid=$!
+printf '%s\n' "$tool_pid" >"$pid_file"
+ready=0
+for _ in $(seq 1 50); do
+  if curl -fsS --max-time 1 http://127.0.0.1:{HEAD_CAMERA_MANUAL_PORT}/api/health >/dev/null 2>&1; then
+    ready=1
+    break
+  fi
+  if ! kill -0 "$tool_pid" 2>/dev/null; then
+    break
+  fi
+  sleep 0.2
+done
+if [[ "$ready" != 1 ]]; then
+  kill "$tool_pid" 2>/dev/null || true
+  rm -f "$pid_file"
+  echo '__CAMERA_MANUAL_ERROR__ tool_not_ready'
+  tail -n 20 "$log_file" 2>/dev/null || true
+  false
+fi
+trap - ERR
+echo "__CAMERA_MANUAL_STARTED__ teleop_was_active=$teleop_was_active"
+"""
+
+
+def camera_manual_stop_script(token: str, teleop_was_active: bool, save_parameters: bool = False) -> str:
+    pid_file = f"/tmp/operator-console-camera-{token}.pid"
+    log_file = f"/tmp/operator-console-camera-{token}.log"
+    sudo_prompt = "[sudo] password: "
+    save_payload = shlex.quote(json.dumps({"device": "/dev/cam_head"}, ensure_ascii=True))
+    restore_command = (
+        f"sudo -S -p {shlex.quote(sudo_prompt)} systemctl start cos_teleop.service"
+        if teleop_was_active
+        else ":"
+    )
+    return f"""set +e
+pid_file={shlex.quote(pid_file)}
+log_file={shlex.quote(log_file)}
+save_parameters={1 if save_parameters else 0}
+if [[ "$save_parameters" == 1 ]]; then
+  if ! curl -fsS --max-time 8 -H 'Content-Type: application/json' \
+      --data {save_payload} \
+      http://127.0.0.1:{HEAD_CAMERA_MANUAL_PORT}/api/profile/save-current >/dev/null; then
+    echo '__CAMERA_MANUAL_ERROR__ save_failed'
+    exit 40
+  fi
+fi
+if [[ -f "$pid_file" ]]; then
+  tool_pid=$(cat "$pid_file")
+  if [[ "$tool_pid" =~ ^[0-9]+$ ]] && [[ -r "/proc/$tool_pid/cmdline" ]] && \
+     grep -azq 'unitree_g1_web.py' "/proc/$tool_pid/cmdline"; then
+    kill "$tool_pid" 2>/dev/null || true
+    for _ in $(seq 1 20); do
+      kill -0 "$tool_pid" 2>/dev/null || break
+      sleep 0.1
+    done
+    kill -9 "$tool_pid" 2>/dev/null || true
+  fi
+fi
+rm -f "$pid_file" "$log_file"
+{restore_command}
+restore_rc=$?
+if [[ "$restore_rc" != 0 ]]; then
+  echo '__CAMERA_MANUAL_ERROR__ teleop_restore_failed'
+  exit "$restore_rc"
+fi
+echo '__CAMERA_MANUAL_STOPPED__'
+"""
+
+
+def camera_manual_ssh_command(robot: dict[str, str], ssh_password: str, script: str) -> list[str]:
+    host = str(robot.get("ansible_host", "")).strip()
+    if not host:
+        raise ValueError("机器人未配置 ansible_host")
+    args = shlex.split(ssh_common_args()) if ssh_password else ssh_key_common_args()
+    return ["ssh", *args, f"unitree@{host}", "bash -lc " + shlex.quote(script)]
+
+
+def start_camera_manual_session(
+    selected: list[str],
+    ssh_password: str,
+    sudo_password: str,
+    client_id: str,
+) -> dict[str, Any]:
+    if not ssh_password or not sudo_password:
+        raise ValueError("缺少 SSH 或 sudo 密码")
+    robot = camera_recovery_robot(selected)
+    host = str(robot.get("ansible_host", "")).strip()
+    token = secrets.token_urlsafe(18)
+    session = {
+        "token": token,
+        "robot": robot,
+        "ssh_password": ssh_password,
+        "sudo_password": sudo_password,
+        "client_id": normalize_client_id(client_id),
+        "teleop_was_active": False,
+        "created_at": time.monotonic(),
+    }
+    with CAMERA_MANUAL_LOCK:
+        if any(item["robot"].get("ansible_host") == host for item in CAMERA_MANUAL_SESSIONS.values()):
+            raise RuntimeError("该机器人已有头部相机手动调整会话，请先结束原会话。")
+        CAMERA_MANUAL_SESSIONS[token] = session
+    try:
+        command = camera_manual_ssh_command(robot, ssh_password, camera_manual_start_script(token))
+        returncode, output = run_ssh_capture(
+            command,
+            ssh_password=ssh_password,
+            sudo_password=sudo_password,
+            timeout_seconds=25.0,
+        )
+        if "tool_missing" in output:
+            raise RuntimeError("机器人缺少 /home/unitree/camera_tool，请先部署相机工具。")
+        if "port_in_use" in output:
+            raise RuntimeError(f"机器人端口 {HEAD_CAMERA_MANUAL_PORT} 已被占用，请先停止已有相机工具。")
+        if "tool_not_ready" in output:
+            raise RuntimeError(f"相机工具启动后未就绪。{tail_lines(output, 8)}")
+        if "Permission denied" in output or "publickey" in output:
+            raise PermissionError("SSH 认证失败，请确认 unitree 密码。")
+        match = re.search(r"__CAMERA_MANUAL_STARTED__ teleop_was_active=([01])", output)
+        if returncode != 0 or not match:
+            raise RuntimeError(f"手动调整模式启动失败，返回码：{returncode}。{tail_lines(output, 8)}")
+        session["teleop_was_active"] = match.group(1) == "1"
+    except Exception:
+        with CAMERA_MANUAL_LOCK:
+            CAMERA_MANUAL_SESSIONS.pop(token, None)
+        raise
+
+    timer = threading.Timer(HEAD_CAMERA_MANUAL_MAX_SECONDS, close_camera_manual_session, args=(token,))
+    timer.daemon = True
+    session["timer"] = timer
+    timer.start()
+    return {
+        "token": token,
+        "tool_url": f"http://{host}:{HEAD_CAMERA_MANUAL_PORT}/",
+        "inventory_hostname": robot["inventory_hostname"],
+        "teleop_was_active": session["teleop_was_active"],
+        "expires_in_seconds": HEAD_CAMERA_MANUAL_MAX_SECONDS,
+    }
+
+
+def close_camera_manual_session(token: str, save_parameters: bool = False) -> dict[str, Any]:
+    if not token:
+        raise ValueError("缺少手动调整会话标识")
+    with CAMERA_MANUAL_LOCK:
+        session = CAMERA_MANUAL_SESSIONS.get(token)
+        if session and session.get("closing"):
+            return {"closed": False, "message": "手动调整会话正在结束，请稍候"}
+        if session:
+            session["closing"] = True
+    if not session:
+        return {"closed": False, "message": "手动调整会话不存在或已经结束"}
+    timer = session.get("timer")
+    if isinstance(timer, threading.Timer):
+        timer.cancel()
+    try:
+        command = camera_manual_ssh_command(
+            session["robot"],
+            str(session.get("ssh_password", "")),
+            camera_manual_stop_script(
+                token,
+                bool(session.get("teleop_was_active")),
+                save_parameters=save_parameters,
+            ),
+        )
+        returncode, output = run_ssh_capture(
+            command,
+            ssh_password=str(session.get("ssh_password", "")),
+            sudo_password=str(session.get("sudo_password", "")),
+            timeout_seconds=30.0,
+        )
+        if "save_failed" in output:
+            raise RuntimeError("保存头部相机参数失败，手动调整尚未结束。请重试或选择不保存。")
+        if "teleop_restore_failed" in output:
+            raise RuntimeError("相机工具已停止，但 cos_teleop.service 恢复失败，请立即手动启动 teleop。")
+        if returncode != 0 or "__CAMERA_MANUAL_STOPPED__" not in output:
+            raise RuntimeError(f"结束手动调整失败，返回码：{returncode}。{tail_lines(output, 8)}")
+    except Exception:
+        with CAMERA_MANUAL_LOCK:
+            if CAMERA_MANUAL_SESSIONS.get(token) is session:
+                session["closing"] = False
+        raise
+    with CAMERA_MANUAL_LOCK:
+        CAMERA_MANUAL_SESSIONS.pop(token, None)
+    return {
+        "closed": True,
+        "parameters_saved": save_parameters,
+        "teleop_restored": bool(session.get("teleop_was_active")),
+        "message": (
+            "参数已保存，手动调整已结束，teleop 已恢复"
+            if save_parameters and session.get("teleop_was_active")
+            else "参数已保存，手动调整已结束"
+            if save_parameters
+            else "手动调整已结束，teleop 已恢复"
+            if session.get("teleop_was_active")
+            else "手动调整已结束"
+        ),
+    }
+
+
+def create_camera_preview_session(selected: list[str], ssh_password: str, client_id: str) -> dict[str, Any]:
+    robot = camera_recovery_robot(selected)
+    if ssh_password and not shutil.which("sshpass"):
+        raise RuntimeError("控制电脑缺少 sshpass，无法启动摄像头预览。")
+    token = secrets.token_urlsafe(24)
+    session = {
+        "token": token,
+        "robot": robot,
+        "ssh_password": ssh_password,
+        "client_id": normalize_client_id(client_id),
+        "created_at": time.monotonic(),
+        "process": None,
+    }
+    with CAMERA_PREVIEW_LOCK:
+        CAMERA_PREVIEW_SESSIONS[token] = session
+    return {
+        "token": token,
+        "stream_url": f"/api/camera/head/preview/{token}/stream",
+        "inventory_hostname": robot["inventory_hostname"],
+        "robot_id": robot.get("robot_id", ""),
+    }
+
+
+def close_camera_preview_session(token: str) -> bool:
+    with CAMERA_PREVIEW_LOCK:
+        session = CAMERA_PREVIEW_SESSIONS.pop(token, None)
+    if not session:
+        return False
+    process = session.get("process")
+    if isinstance(process, subprocess.Popen) and process.poll() is None:
+        process.terminate()
+        try:
+            process.wait(timeout=1)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
+    return True
+
+
+def camera_preview_process(session: dict[str, Any]) -> subprocess.Popen[bytes]:
+    robot = session["robot"]
+    host = str(robot.get("ansible_host", "")).strip()
+    ssh_password = str(session.get("ssh_password", ""))
+    remote_python = f"""import struct, sys
+import rclpy
+from rclpy.qos import qos_profile_sensor_data
+from sensor_msgs.msg import CompressedImage
+rclpy.init()
+node = rclpy.create_node('operator_console_head_camera_preview')
+def frame(message):
+    data = bytes(message.data)
+    sys.stdout.buffer.write(struct.pack('!I', len(data)))
+    sys.stdout.buffer.write(data)
+    sys.stdout.buffer.flush()
+node.create_subscription(CompressedImage, {HEAD_CAMERA_TOPIC!r}, frame, qos_profile_sensor_data)
+rclpy.spin(node)
+"""
+    remote_command = (
+        "bash -lc "
+        + shlex.quote(
+            "source /opt/ros/foxy/setup.bash >/dev/null 2>&1 && "
+            "source /home/unitree/unitree_ros2/cyclonedds_ws/install/setup.bash >/dev/null 2>&1 && "
+            "source /home/unitree/cos_ws/install/setup.bash >/dev/null 2>&1 && "
+            "export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp && "
+            "export CYCLONEDDS_URI=file:///home/unitree/unitree_ros2/cyclonedds_ws/src/cyclonedds.xml && "
+            f"exec python3 -c {shlex.quote(remote_python)}"
+        )
+    )
+    if ssh_password:
+        args = ["sshpass", "-e", "ssh", *shlex.split(ssh_common_args())]
+        env = os.environ.copy()
+        env["SSHPASS"] = ssh_password
+    else:
+        args = ["ssh", *ssh_key_common_args()]
+        env = None
+    return subprocess.Popen(
+        [*args, f"unitree@{host}", remote_command],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        env=env,
+    )
+
+
+def read_exact(stream: Any, size: int) -> bytes:
+    chunks: list[bytes] = []
+    remaining = size
+    while remaining > 0:
+        chunk = stream.read(remaining)
+        if not chunk:
+            return b""
+        chunks.append(chunk)
+        remaining -= len(chunk)
+    return b"".join(chunks)
+
+
 def parse_marker_value(line: str, key: str) -> str:
     match = re.search(rf"(?:^| ){re.escape(key)}=([^ ]*)", line)
     return match.group(1) if match else ""
@@ -3305,8 +3875,16 @@ def refresh_latest_report_with_status(ssh_password: str = "", sudo_password: str
         REFRESH_LOCK.release()
 
 
-def service_action_playbook(action: str, service_name: str = "", camera_topic: str = "") -> Path:
-    playbook_path = Path("/tmp") / f"operator_console_{action}.yml"
+def service_action_playbook(
+    action: str,
+    service_name: str = "",
+    camera_topic: str = "",
+    report_file: Path | None = None,
+    cancel_file: Path | None = None,
+) -> Path:
+    token = re.sub(r"[^a-zA-Z0-9_-]", "_", str(report_file.stem if report_file else threading.get_ident()))
+    playbook_path = Path("/tmp") / f"operator_console_{action}_{token}.yml"
+    resolved_report_file = report_file or (ROOT_REPORTS_DIR / "g1_env_summary.json")
     camera_topics = [dict(item) for item in CAMERA_TOPIC_SPECS if not camera_topic or item["topic"] == camera_topic]
     restart_line = ""
     if action == "service_restart":
@@ -3332,7 +3910,8 @@ def service_action_playbook(action: str, service_name: str = "", camera_topic: s
 
   vars:
     service_names: {json.dumps(SERVICE_CHECK_NAMES, ensure_ascii=False)}
-    service_report_file: "{(ROOT_REPORTS_DIR / "g1_env_summary.json")}"
+    service_report_file: "{resolved_report_file}"
+    service_cancel_file: "{cancel_file or Path('/tmp/operator_console_no_cancel')}"
     service_action: "{action}"
     service_restart_name: "{service_name}"
     camera_check_topic: {json.dumps(camera_topic, ensure_ascii=False)}
@@ -3348,16 +3927,19 @@ def service_action_playbook(action: str, service_name: str = "", camera_topic: s
     should_check_services: "{{{{ service_action != 'camera_check' }}}}"
     should_check_camera_topics: >-
       {{{{
-        service_action == 'camera_check'
-        or
         (
-          service_action == 'service_check'
-          and (
-            (service_restart_name | default('') | length) == 0
-            or service_restart_name == 'cos_teleop.service'
+          service_action == 'camera_check'
+          or
+          (
+            service_action == 'service_check'
+            and (
+              (service_restart_name | default('') | length) == 0
+              or service_restart_name == 'cos_teleop.service'
+            )
           )
+          or service_restart_name == 'cos_teleop.service'
         )
-        or service_restart_name == 'cos_teleop.service'
+        and (lookup('fileglob', service_cancel_file) | length == 0)
       }}}}
     camera_topics: {json.dumps(camera_topics, ensure_ascii=False)}
 
@@ -3514,6 +4096,7 @@ def service_action_playbook(action: str, service_name: str = "", camera_topic: s
       register: service_checks
       changed_when: false
       failed_when: false
+      when: lookup('fileglob', service_cancel_file) | length == 0
 
     - name: Build service result map
       ansible.builtin.set_fact:
@@ -3596,6 +4179,7 @@ def service_action_playbook(action: str, service_name: str = "", camera_topic: s
             }})
           }}}}
       loop: "{{{{ service_checks.results | default([]) }}}}"
+      when: not (item.skipped | default(false))
       loop_control:
         label: "{{{{ item.item }}}}"
 
@@ -3894,14 +4478,18 @@ def service_action_playbook(action: str, service_name: str = "", camera_topic: s
             | map(attribute='topic') | list
           }}}}
 
+    - name: Read service cancellation state
+      ansible.builtin.set_fact:
+        service_cancelled: "{{{{ lookup('fileglob', service_cancel_file) | length > 0 }}}}"
+
     - name: Evaluate missing cameras
       ansible.builtin.set_fact:
-        all_camera_missing: "{{{{ (should_check_camera_topics | bool) and ((camera_topic_results | default([]) | rejectattr('status', 'equalto', 'FAIL') | list | length) == 0) }}}}"
+        all_camera_missing: "{{{{ (not (service_cancelled | bool)) and (should_check_camera_topics | bool) and ((camera_topic_results | default([]) | rejectattr('status', 'equalto', 'FAIL') | list | length) == 0) }}}}"
 
     - name: Build service subsystem statuses
       ansible.builtin.set_fact:
-        system_services_status: "{{{{ 'SKIP' if not (should_check_services | bool) else 'FAIL' if service_failed_items | length > 0 else 'WARN' if service_warn_items | length > 0 else 'OK' }}}}"
-        camera_streams_status: "{{{{ 'FAIL' if all_camera_missing | bool else 'WARN' if camera_failed_items | length > 0 else 'OK' if should_check_camera_topics | bool else 'SKIP' }}}}"
+        system_services_status: "{{{{ 'SKIP' if (service_cancelled | bool and service_result_map | length == 0) or not (should_check_services | bool) else 'FAIL' if service_failed_items | length > 0 else 'WARN' if service_warn_items | length > 0 else 'OK' }}}}"
+        camera_streams_status: "{{{{ 'SKIP' if service_cancelled | bool else 'FAIL' if all_camera_missing | bool else 'WARN' if camera_failed_items | length > 0 else 'OK' if should_check_camera_topics | bool else 'SKIP' }}}}"
 
     - name: Build service final report
       ansible.builtin.set_fact:
@@ -3912,6 +4500,7 @@ def service_action_playbook(action: str, service_name: str = "", camera_topic: s
           robot_id: "{{{{ robot_id | default('unknown') }}}}"
           mode: "{{{{ service_action }}}}"
           camera_check_topic: "{{{{ camera_check_topic }}}}"
+          cancelled: "{{{{ service_cancelled | bool }}}}"
           system_services_status: "{{{{ system_services_status }}}}"
           camera_streams_status: "{{{{ camera_streams_status }}}}"
           overall_status: >-
@@ -3919,12 +4508,14 @@ def service_action_playbook(action: str, service_name: str = "", camera_topic: s
               'FAIL'
               if (service_failed_items | length > 0 or (service_action in ['service_check', 'camera_check'] and all_camera_missing | bool))
               else 'WARN'
-              if (service_warn_items | length > 0 or camera_failed_items | length > 0)
+              if (service_warn_items | length > 0 or camera_failed_items | length > 0 or (service_cancelled | bool and service_result_map | length == 0))
               else 'OK'
             }}}}
           summary: >-
             {{{{
-              '相机帧率正常。'
+              '检查已取消，未完成服务检查。'
+              if service_cancelled | bool and service_result_map | length == 0
+              else '相机帧率正常。'
               if service_action == 'camera_check' and camera_failed_items | length == 0
               else '相机帧率存在异常：' ~ (camera_failed_items | join(', '))
               if service_action == 'camera_check'
@@ -3972,6 +4563,8 @@ def build_ansible_command(
     robots: list[str],
     service_name: str = "",
     camera_topic: str = "",
+    report_file: Path | None = None,
+    cancel_file: Path | None = None,
 ) -> tuple[list[str], Path]:
     inventory = str(inventory_path())
     ansible_timeout = str(int(cfg("ansible", "ansible_timeout", default=15)))
@@ -4010,7 +4603,7 @@ def build_ansible_command(
             f"cos_setup_report_dir={RAW_REPORTS_DIR}",
         ]
     elif action in SERVICE_ACTIONS:
-        cmd = [*common, str(service_action_playbook(action, service_name, camera_topic))]
+        cmd = [*common, str(service_action_playbook(action, service_name, camera_topic, report_file, cancel_file))]
     else:
         raise ValueError("未知操作")
     clean_robots = [item for item in robots if item]
@@ -4059,7 +4652,7 @@ def set_job(**updates: Any) -> None:
                     "current_command": "",
                     "cancellable": False,
                     "cancel_requested": False,
-                    "robot_label": "",
+                    "cancel_file": "",
                     "hand_type": "",
                     "hand_side": "",
                     "hand_side_cn": "",
@@ -4125,34 +4718,44 @@ def selected_hand_test_robot(robots: list[str]) -> dict[str, str]:
     return robot
 
 
-def cancel_current_job() -> dict[str, Any]:
+def cancel_current_job(client_id: str = DEFAULT_CLIENT_ID) -> dict[str, Any]:
+    resolved_client = normalize_client_id(client_id)
     with JOB_LOCK:
-        job = current_job(JOB_SCOPE_OPERATION)
+        job = current_job(JOB_SCOPE_OPERATION, resolved_client)
         if not job.get("running"):
-            return job_payload_locked(JOB_SCOPE_OPERATION)
-        if job.get("action") != HAND_TEST_ACTION:
+            return job_payload_locked(JOB_SCOPE_OPERATION, resolved_client)
+        action = str(job.get("action") or "")
+        if action not in {HAND_TEST_ACTION, "service_check"}:
             raise ValueError("当前任务不支持从页面取消")
+        is_hand_test = action == HAND_TEST_ACTION
         job.update(
             {
                 "cancel_requested": True,
-                "message": "正在取消手测试，请稍候……",
+                "message": "正在取消手测试，请稍候……" if is_hand_test else "已请求取消，正在等待当前服务检查完成……",
                 "phase": "cancelling",
                 "cancellable": False,
             }
         )
-    with PROCESS_LOCK:
-        child = CURRENT_PROCESS.get("child")
-    if child is not None and child.isalive():
+        cancel_file = str(job.get("cancel_file") or "")
+    if not is_hand_test and cancel_file:
         try:
-            child.sendcontrol("c")
-        except Exception:
-            pass
-        try:
-            child.terminate(force=False)
-        except Exception:
-            pass
+            Path(cancel_file).touch()
+        except OSError as exc:
+            raise ValueError(f"无法提交取消请求：{exc}") from exc
+    if is_hand_test:
+        with PROCESS_LOCK:
+            child = CURRENT_PROCESSES.get(resolved_client)
+        if child is not None and child.isalive():
+            try:
+                child.sendcontrol("c")
+            except Exception:
+                pass
+            try:
+                child.terminate(force=False)
+            except Exception:
+                pass
     with JOB_LOCK:
-        return job_payload_locked(JOB_SCOPE_OPERATION)
+        return job_payload_locked(JOB_SCOPE_OPERATION, resolved_client)
 
 
 def update_job_from_log(log_file: Path, fallback: str = "任务仍在执行，请稍候……") -> dict[str, Any]:
@@ -4297,8 +4900,9 @@ def run_hand_test_pexpect(
         log.flush()
         child = pexpect.spawn(cmd[0], cmd[1:], cwd=str(cwd), env=env, encoding="utf-8", timeout=int(cfg("ansible", "prompt_timeout", default=15)))
         child.logfile_read = log
+        client_id = normalize_client_id(getattr(JOB_CONTEXT, "client_id", DEFAULT_CLIENT_ID))
         with PROCESS_LOCK:
-            CURRENT_PROCESS["child"] = child
+            CURRENT_PROCESSES[client_id] = child
         ssh_prompt_attempts = 0
         sudo_prompt_attempts = 0
         generic_password_attempts = 0
@@ -4362,8 +4966,8 @@ def run_hand_test_pexpect(
                     break
         finally:
             with PROCESS_LOCK:
-                if CURRENT_PROCESS.get("child") is child:
-                    CURRENT_PROCESS["child"] = None
+                if CURRENT_PROCESSES.get(client_id) is child:
+                    CURRENT_PROCESSES.pop(client_id, None)
             if child is not None:
                 child.close()
                 returncode = child.exitstatus if child.exitstatus is not None else child.signalstatus or 1
@@ -4747,8 +5351,9 @@ def run_deploy_setup_agent(robots: list[str], ssh_password: str, sudo_password: 
         finish("FAIL", f"agent 执行失败：{exc}", diagnosis, 1)
 
 
-def run_hand_test(robots: list[str], side: str, ssh_password: str, sudo_password: str) -> None:
+def run_hand_test(robots: list[str], side: str, ssh_password: str, sudo_password: str, client_id: str = DEFAULT_CLIENT_ID) -> None:
     JOB_CONTEXT.scope = JOB_SCOPE_OPERATION
+    JOB_CONTEXT.client_id = normalize_client_id(client_id)
     ensure_dirs()
     started_monotonic = time.monotonic()
     started = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -4920,16 +5525,22 @@ def run_action(
     sudo_password: str,
     service_name: str = "",
     camera_topic: str = "",
+    client_id: str = DEFAULT_CLIENT_ID,
 ) -> None:
     JOB_CONTEXT.scope = job_scope_for_action(action)
+    JOB_CONTEXT.client_id = normalize_client_id(client_id)
     if action == DEPLOY_SETUP_AGENT_ACTION:
         run_deploy_setup_agent(robots, ssh_password, sudo_password)
         return
     ensure_dirs()
     started_monotonic = time.monotonic()
-    started = datetime.now().strftime("%Y%m%d_%H%M%S")
+    started = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     start_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     log_file = ROOT_LOGS_DIR / f"{started}_{action}.log"
+    task_report_path = RAW_REPORTS_DIR / f"{started}_{action}_summary.json" if action in SERVICE_ACTIONS else None
+    cancel_file_path = Path("/tmp") / f"operator_console_{started}_{action}.cancel" if action == "service_check" else None
+    if cancel_file_path and cancel_file_path.exists():
+        cancel_file_path.unlink()
     set_job(
         running=True,
         action=action,
@@ -4944,8 +5555,11 @@ def run_action(
         start_time=start_time,
         end_time="",
         duration_seconds=None,
-        report_file=report_path_text(action),
+        report_file=str(task_report_path.relative_to(ROOT_DIR)) if task_report_path else report_path_text(action),
         phase="precheck",
+        cancellable=action == "service_check",
+        cancel_requested=False,
+        cancel_file=str(cancel_file_path or ""),
     )
     execution = {
         "action": action,
@@ -5074,12 +5688,19 @@ def run_action(
             )
             return
 
-        cmd, cwd = build_ansible_command(action, reachable_names, service_name, camera_topic)
+        cmd, cwd = build_ansible_command(
+            action,
+            reachable_names,
+            service_name,
+            camera_topic,
+            task_report_path,
+            cancel_file_path,
+        )
         execution.update({"robots": reachable_names, "command": shlex.join(cmd), "cwd": str(cwd)})
         set_job(message="正在执行脚本……", cmd=execution["command"], cwd=str(cwd), phase="running")
 
         # 每次执行前清理旧的报告，防止 playbook 崩溃时读取到历史成功记录
-        source_report = report_source_for_action(action)
+        source_report = task_report_path or report_source_for_action(action)
         if source_report.exists():
             try:
                 source_report.unlink()
@@ -5112,12 +5733,12 @@ def run_action(
             }
         )
         write_json_file(RAW_REPORTS_DIR / f"{started}_{action}_execution.json", execution)
-        merge_latest_summary(action, execution, unreachable_reports)
+        merge_latest_summary(action, execution, unreachable_reports, source_report)
         if action in SERVICE_ACTIONS:
-            service_items = latest_service_stage_items()
+            service_items = latest_service_stage_items(report_path=source_report)
             if service_items:
                 merge_job_stage_items({"services": service_items})
-            camera_items = latest_camera_stage_items()
+            camera_items = latest_camera_stage_items(report_path=source_report)
             if camera_items:
                 merge_job_stage_items({"ros2": camera_items})
         if unreachable_reports:
@@ -5129,22 +5750,27 @@ def run_action(
         if (
             action in ("cos_setup", "check", "install", "service_check", "service_restart", CAMERA_CHECK_ACTION)
             and not unreachable_reports
-            and (returncode == 0 or report_source_for_action(action).exists())
+            and (returncode == 0 or source_report.exists())
         ):
-            report_returncode, report_message, report_phase = latest_action_outcome()
+            report_returncode, report_message, report_phase = latest_action_outcome(report_path=source_report)
             returncode = report_returncode
             execution["returncode"] = returncode
             write_json_file(RAW_REPORTS_DIR / f"{started}_{action}_execution.json", execution)
-            merge_latest_summary(action, execution, [])
+            merge_latest_summary(action, execution, [], source_report)
             if action in SERVICE_ACTIONS:
-                service_items = latest_service_stage_items()
+                service_items = latest_service_stage_items(report_path=source_report)
                 if service_items:
                     merge_job_stage_items({"services": service_items})
-                camera_items = latest_camera_stage_items()
+                camera_items = latest_camera_stage_items(report_path=source_report)
                 if camera_items:
                     merge_job_stage_items({"ros2": camera_items})
             message = report_message
             phase = report_phase
+        if action == "service_check" and job_cancel_requested():
+            execution["cancel_requested"] = True
+            message = f"检查已取消；当前服务检查已完成。{message}"
+        if cancel_file_path:
+            cancel_file_path.unlink(missing_ok=True)
         set_job(
             running=False,
             finished_at=end_time,
@@ -5153,6 +5779,8 @@ def run_action(
             end_time=end_time,
             duration_seconds=duration,
             phase=phase,
+            cancellable=False,
+            cancel_requested=False,
         )
     except Exception as exc:  # noqa: BLE001 - return readable failure to UI
         message = f"执行失败：{exc}"
@@ -5176,7 +5804,10 @@ def run_action(
             }
         )
         write_json_file(RAW_REPORTS_DIR / f"{started}_{action}_execution.json", execution)
-        write_json_file(latest_summary_path(job_scope_for_action(action)), build_execution_failure_summary(action, execution))
+        if action in SERVICE_ACTIONS and task_report_path and task_report_path.exists():
+            merge_latest_summary(action, execution, [], task_report_path)
+        else:
+            write_json_file(latest_summary_path(job_scope_for_action(action)), build_execution_failure_summary(action, execution))
         set_job(
             running=False,
             finished_at=end_time,
@@ -5185,6 +5816,8 @@ def run_action(
             end_time=end_time,
             duration_seconds=duration,
             phase="fail",
+            cancellable=False,
+            cancel_requested=False,
         )
 
 
@@ -5228,6 +5861,9 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt: str, *args: Any) -> None:
         print(f"{self.address_string()} - {fmt % args}")
 
+    def client_id(self) -> str:
+        return normalize_client_id(self.headers.get("X-Client-ID", DEFAULT_CLIENT_ID))
+
     def read_payload(self) -> dict[str, Any]:
         length = int(self.headers.get("Content-Length", "0"))
         if length <= 0:
@@ -5262,6 +5898,12 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json(load_robot_record())
             except ValueError as exc:
                 self.send_json({"error": str(exc)}, HTTPStatus.INTERNAL_SERVER_ERROR)
+        elif parsed.path.startswith("/api/camera/head/preview/") and parsed.path.endswith("/stream"):
+            token = unquote(parsed.path.removeprefix("/api/camera/head/preview/").removesuffix("/stream").strip("/"))
+            self.serve_camera_preview(token)
+        elif parsed.path == "/api/camera/head/recover/status":
+            selected = parse_qs(parsed.query).get("robot", [])
+            self.send_camera_recovery("status", selected)
         elif parsed.path == "/api/robots/status":
             self.send_json(robots_status_payload())
         elif parsed.path.startswith("/api/robots/") and parsed.path.endswith("/services"):
@@ -5292,7 +5934,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
                 return
             with JOB_LOCK:
-                self.send_json(job_payload_locked(scope))
+                self.send_json(job_payload_locked(scope, self.client_id()))
         elif parsed.path == "/api/local/checks":
             self.send_json(local_dependency_status())
         elif parsed.path.startswith("/static/"):
@@ -5338,6 +5980,67 @@ class Handler(BaseHTTPRequestHandler):
                 except RuntimeError as exc:
                     self.send_json({"error": str(exc)}, HTTPStatus.CONFLICT)
                 return
+            if parsed.path == "/api/camera/head/preview":
+                payload = self.read_payload()
+                robots = payload.get("robots") or []
+                if not isinstance(robots, list):
+                    robots = []
+                ssh_password = str(payload.get("ssh_password", ""))
+                if not ssh_password:
+                    self.send_json({"error": "缺少 SSH 密码"}, HTTPStatus.BAD_REQUEST)
+                    return
+                try:
+                    preview = create_camera_preview_session(
+                        [str(item) for item in robots],
+                        ssh_password,
+                        self.client_id(),
+                    )
+                except RuntimeError as exc:
+                    self.send_json({"error": str(exc)}, HTTPStatus.BAD_GATEWAY)
+                    return
+                self.send_json(preview, HTTPStatus.CREATED)
+                return
+            if parsed.path == "/api/camera/head/recover":
+                payload = self.read_payload()
+                robots = payload.get("robots") or []
+                if not isinstance(robots, list):
+                    robots = []
+                self.send_camera_recovery(
+                    "start",
+                    [str(item) for item in robots],
+                    str(payload.get("ssh_password", "")),
+                    str(payload.get("sudo_password", "")),
+                )
+                return
+            if parsed.path == "/api/camera/head/manual/start":
+                payload = self.read_payload()
+                robots = payload.get("robots") or []
+                if not isinstance(robots, list):
+                    robots = []
+                try:
+                    session = start_camera_manual_session(
+                        [str(item) for item in robots],
+                        str(payload.get("ssh_password", "")),
+                        str(payload.get("sudo_password", "")),
+                        self.client_id(),
+                    )
+                    self.send_json(session, HTTPStatus.CREATED)
+                except PermissionError as exc:
+                    self.send_json({"error": str(exc)}, HTTPStatus.UNAUTHORIZED)
+                except TimeoutError as exc:
+                    self.send_json({"error": str(exc)}, HTTPStatus.REQUEST_TIMEOUT)
+                except RuntimeError as exc:
+                    self.send_json({"error": str(exc)}, HTTPStatus.CONFLICT)
+                return
+            if parsed.path == "/api/camera/head/manual/stop":
+                payload = self.read_payload()
+                token = str(payload.get("token", "")).strip()
+                save_parameters = payload.get("save_parameters", False) is True
+                try:
+                    self.send_json(close_camera_manual_session(token, save_parameters=save_parameters))
+                except RuntimeError as exc:
+                    self.send_json({"error": str(exc)}, HTTPStatus.CONFLICT)
+                return
             if parsed.path == "/api/camera-binding/inspect":
                 self.send_camera_binding("inspect", self.read_payload())
                 return
@@ -5348,8 +6051,8 @@ class Handler(BaseHTTPRequestHandler):
                 action = parsed.path.rsplit("/", 1)[-1]
                 self.start_action(action, self.read_payload())
                 return
-            if parsed.path == "/api/hand-test/cancel":
-                self.send_json(cancel_current_job())
+            if parsed.path in {"/api/hand-test/cancel", "/api/service-check/cancel"}:
+                self.send_json(cancel_current_job(self.client_id()))
                 return
             if parsed.path == "/api/run":
                 payload = self.read_payload()
@@ -5376,6 +6079,82 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
         except RuntimeError as exc:
             self.send_json({"error": str(exc)}, HTTPStatus.BAD_GATEWAY)
+
+    def send_camera_recovery(
+        self,
+        operation: str,
+        robots: list[str],
+        ssh_password: str = "",
+        sudo_password: str = "",
+    ) -> None:
+        ssh_password = ssh_password or str(self.headers.get("X-SSH-Password", ""))
+        sudo_password = sudo_password or str(self.headers.get("X-Sudo-Password", ""))
+        if not ssh_password or not sudo_password:
+            self.send_json({"error": "缺少 SSH 或 sudo 密码"}, HTTPStatus.BAD_REQUEST)
+            return
+        try:
+            payload = camera_recovery_payload(
+                operation,
+                robots,
+                ssh_password,
+                sudo_password,
+            )
+            status = HTTPStatus.ACCEPTED if operation == "start" else HTTPStatus.OK
+            self.send_json(payload, status)
+        except PermissionError as exc:
+            self.send_json({"error": str(exc)}, HTTPStatus.UNAUTHORIZED)
+        except TimeoutError as exc:
+            self.send_json({"error": str(exc)}, HTTPStatus.REQUEST_TIMEOUT)
+        except ValueError as exc:
+            self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+        except RuntimeError as exc:
+            self.send_json({"error": str(exc)}, HTTPStatus.CONFLICT)
+
+    def serve_camera_preview(self, token: str) -> None:
+        with CAMERA_PREVIEW_LOCK:
+            session = CAMERA_PREVIEW_SESSIONS.get(token)
+            if session and time.monotonic() - float(session.get("created_at", 0)) > 300:
+                CAMERA_PREVIEW_SESSIONS.pop(token, None)
+                session = None
+        if not session:
+            self.send_error(HTTPStatus.NOT_FOUND.value)
+            return
+        process = camera_preview_process(session)
+        with CAMERA_PREVIEW_LOCK:
+            current = CAMERA_PREVIEW_SESSIONS.get(token)
+            if current is not session:
+                process.terminate()
+                self.send_error(HTTPStatus.GONE.value)
+                return
+            session["process"] = process
+        self.send_response(HTTPStatus.OK.value)
+        self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=operatorframe")
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        try:
+            assert process.stdout is not None
+            while process.poll() is None:
+                header = read_exact(process.stdout, 4)
+                if not header:
+                    break
+                frame_size = struct.unpack("!I", header)[0]
+                if frame_size <= 0 or frame_size > CAMERA_PREVIEW_MAX_FRAME_BYTES:
+                    break
+                frame = read_exact(process.stdout, frame_size)
+                if not frame:
+                    break
+                self.wfile.write(
+                    b"--operatorframe\r\n"
+                    b"Content-Type: image/jpeg\r\n"
+                    + f"Content-Length: {len(frame)}\r\n\r\n".encode("ascii")
+                    + frame
+                    + b"\r\n"
+                )
+                self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        finally:
+            close_camera_preview_session(token)
 
     def send_camera_binding(self, operation: str, payload: dict[str, Any]) -> None:
         robots = payload.get("robots") or []
@@ -5417,6 +6196,19 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_DELETE(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
+        if parsed.path.startswith("/api/camera/head/manual/"):
+            token = unquote(parsed.path.removeprefix("/api/camera/head/manual/").strip("/"))
+            try:
+                self.send_json(close_camera_manual_session(token))
+            except ValueError as exc:
+                self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            except RuntimeError as exc:
+                self.send_json({"error": str(exc)}, HTTPStatus.CONFLICT)
+            return
+        if parsed.path.startswith("/api/camera/head/preview/"):
+            token = unquote(parsed.path.removeprefix("/api/camera/head/preview/").strip("/"))
+            self.send_json({"closed": close_camera_preview_session(token)})
+            return
         if not parsed.path.startswith("/api/robots/"):
             self.send_error(HTTPStatus.NOT_FOUND.value)
             return
@@ -5465,6 +6257,7 @@ class Handler(BaseHTTPRequestHandler):
         if not isinstance(robots, list):
             robots = []
         scope = job_scope_for_action(action)
+        client_id = self.client_id()
         robot_names = requested_robot_names([str(item) for item in robots])
         if action == DEPLOY_SETUP_AGENT_ACTION:
             selected_for_agent = selected_inventory_robots([str(item) for item in robots])
@@ -5491,11 +6284,11 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({"status": "FAIL", "message": "缺少 SSH 或 sudo 密码"}, HTTPStatus.BAD_REQUEST)
             return
         with JOB_LOCK:
-            job = current_job(scope)
+            job = current_job(scope, client_id)
             if job.get("running"):
-                self.send_json({"error": "当前模块已有任务正在执行"}, HTTPStatus.CONFLICT)
+                self.send_json({"error": "当前页面已有任务正在执行"}, HTTPStatus.CONFLICT)
                 return
-            conflict = conflicting_job_locked(scope, robot_names)
+            conflict = conflicting_job_locked(scope, robot_names, client_id, action)
             if conflict:
                 conflict_names = "、".join(sorted(set(robot_names).intersection(str(item) for item in conflict.get("robots", []))))
                 self.send_json({"error": f"机器人 {conflict_names} 正在执行另一模块任务，请选择其他机器人或等待完成"}, HTTPStatus.CONFLICT)
@@ -5512,13 +6305,13 @@ class Handler(BaseHTTPRequestHandler):
             )
         thread = threading.Thread(
             target=run_action,
-            args=(action, [str(item) for item in robots], ssh_password, sudo_password, service_name, camera_topic),
+            args=(action, [str(item) for item in robots], ssh_password, sudo_password, service_name, camera_topic, client_id),
             daemon=True,
         )
         thread.start()
         time.sleep(0.1)
         with JOB_LOCK:
-            self.send_json(job_payload_locked(scope), HTTPStatus.ACCEPTED)
+            self.send_json(job_payload_locked(scope, client_id), HTTPStatus.ACCEPTED)
 
     def start_hand_test(self, payload: dict[str, Any]) -> None:
         robots = payload.get("robots") or []
@@ -5542,12 +6335,13 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({"status": "FAIL", "message": "缺少 SSH 或 sudo 密码"}, HTTPStatus.BAD_REQUEST)
             return
         with JOB_LOCK:
+            client_id = self.client_id()
             robot_names = requested_robot_names([str(item) for item in robots])
-            job = current_job(JOB_SCOPE_OPERATION)
+            job = current_job(JOB_SCOPE_OPERATION, client_id)
             if job.get("running"):
                 self.send_json({"error": "操作模块已有任务正在执行"}, HTTPStatus.CONFLICT)
                 return
-            conflict = conflicting_job_locked(JOB_SCOPE_OPERATION, robot_names)
+            conflict = conflicting_job_locked(JOB_SCOPE_OPERATION, robot_names, client_id, HAND_TEST_ACTION)
             if conflict:
                 conflict_names = "、".join(sorted(set(robot_names).intersection(str(item) for item in conflict.get("robots", []))))
                 self.send_json({"error": f"机器人 {conflict_names} 正在执行开发者升级，请选择其他机器人或等待升级完成"}, HTTPStatus.CONFLICT)
@@ -5564,13 +6358,13 @@ class Handler(BaseHTTPRequestHandler):
             )
         thread = threading.Thread(
             target=run_hand_test,
-            args=([str(item) for item in robots], side, ssh_password, sudo_password),
+            args=([str(item) for item in robots], side, ssh_password, sudo_password, client_id),
             daemon=True,
         )
         thread.start()
         time.sleep(0.1)
         with JOB_LOCK:
-            self.send_json(job_payload_locked(JOB_SCOPE_OPERATION), HTTPStatus.ACCEPTED)
+            self.send_json(job_payload_locked(JOB_SCOPE_OPERATION, client_id), HTTPStatus.ACCEPTED)
 
 
 def main() -> None:
@@ -5586,6 +6380,7 @@ def main() -> None:
         print(f"Local dependency warning: {local_status['reason']}")
         print(local_status.get("suggestion", ""))
     start_robot_status_refresher()
+    start_operation_job_cleanup()
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     url = f"http://{args.host}:{args.port}/"
     print(f"Operator Console: {url}")

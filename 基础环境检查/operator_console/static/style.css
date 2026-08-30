@@ -440,6 +440,20 @@ button:disabled {
   color: #875000;
 }
 
+.task-cancel-row {
+  display: flex;
+  justify-content: flex-end;
+  margin: -10px 0 18px;
+}
+
+.task-cancel-row[hidden] {
+  display: none;
+}
+
+.task-cancel-row button {
+  min-width: 112px;
+}
+
 .task-progress {
   display: grid;
   gap: 10px;
@@ -1221,6 +1235,96 @@ pre.stderr {
   color: #e5e7eb;
 }
 
+.camera-recovery-dialog {
+  max-height: calc(100vh - 40px);
+  max-width: 1280px;
+  overflow-y: auto;
+}
+
+.camera-manual-stage {
+  background: #f4f6f8;
+  border: 1px solid #263342;
+  border-radius: 6px;
+  height: min(720px, 70vh);
+  margin-top: 18px;
+  overflow: hidden;
+  width: 100%;
+}
+
+.camera-manual-stage[hidden] {
+  display: none;
+}
+
+.camera-manual-stage iframe {
+  border: 0;
+  display: block;
+  height: 100%;
+  width: 100%;
+}
+
+.camera-recovery-actions {
+  flex-wrap: wrap;
+}
+
+.camera-preview-stage {
+  aspect-ratio: 16 / 9;
+  background: #101820;
+  border: 1px solid #263342;
+  border-radius: 6px;
+  display: grid;
+  margin-top: 18px;
+  max-height: 58vh;
+  overflow: hidden;
+  place-items: center;
+  position: relative;
+  width: 100%;
+}
+
+.camera-preview-stage[hidden] {
+  display: none;
+}
+
+.camera-preview-stage img {
+  display: block;
+  height: 100%;
+  object-fit: contain;
+  width: 100%;
+}
+
+.camera-preview-placeholder {
+  align-items: center;
+  color: #dce6f2;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  inset: 0;
+  justify-content: center;
+  position: absolute;
+}
+
+.camera-preview-placeholder[hidden] {
+  display: none;
+}
+
+.camera-preview-placeholder span,
+.camera-recovery-hint {
+  color: #667386;
+  font-size: 13px;
+}
+
+.camera-recovery-hint {
+  line-height: 1.5;
+  margin-top: 10px;
+}
+
+.camera-recovery-logs pre {
+  background: #111827;
+  color: #e5e7eb;
+  font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 12px;
+  max-height: 180px;
+}
+
 .hand-dialog {
   max-width: 560px;
 }
@@ -1426,5 +1530,21 @@ pre.stderr {
   .robot-service-detail-head {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .camera-recovery-dialog {
+    padding: 16px;
+  }
+
+  .camera-preview-stage {
+    max-height: 44vh;
+  }
+
+  .camera-manual-stage {
+    height: 68vh;
+  }
+
+  .camera-recovery-actions button {
+    flex: 1 1 140px;
   }
 }

@@ -1,0 +1,79 @@
+{
+    "ansible_host": "192.168.90.62",
+    "ansible_user": "unitree",
+    "changed": true,
+    "cos_setup_path": "/home/unitree/cos_setup.sh",
+    "end_effector": "dex1",
+    "end_time": "2026-06-17T15:57:42+08:00",
+    "first_attempt": {
+        "changed": true,
+        "rc": "0",
+        "stderr": "",
+        "stdout": "[ansible] starting /home/unitree/cos_setup.sh at 2026-06-17T15:57:32+08:00\n\n[cos_setup.sh] Building Unitree ROS2 workspaces\nStarting >>> cyclonedds\nFinished <<< cyclonedds [0.55s]\n\nSummary: 1 package finished [0.91s]\nStarting >>> cyclonedds\nStarting >>> unitree_api\nStarting >>> unitree_go\nStarting >>> unitree_hg\nFinished <<< cyclonedds [0.79s]\nStarting >>> rmw_cyclonedds_cpp\nFinished <<< rmw_cyclonedds_cpp [0.38s]\nFinished <<< unitree_api [1.24s]\nFinished <<< unitree_hg [1.44s]\nFinished <<< unitree_go [1.97s]\n\nSummary: 5 packages finished [2.52s]\n\n[cos_setup.sh] Building teleop_server in /home/unitree/cos_ws\nStarting >>> teleop_server\nFinished <<< teleop_server [0.47s]\n\nSummary: 1 package finished [1.00s]\n\n[cos_setup.sh] Setup completed\n\nteleop_server:\n  source /opt/ros/foxy/setup.bash\n  source /home/unitree/unitree_ros2/cyclonedds_ws/install/setup.bash\n  source /home/unitree/cos_ws/install/setup.bash\n\nSystemd services:\n  systemctl start cos_agent xrobotoolkit-pc-service cos_teleop\n  systemctl status cos_agent xrobotoolkit-pc-service cos_teleop\n  journalctl -fu cos_teleop\n\nDeployed source paths:\n  /home/unitree/unitree_ros2\n  /home/unitree/cos_ws/src/teleop_server\n  /home/unitree/cos_ws/src/g1_description\n[ansible] finished /home/unitree/cos_setup.sh at 2026-06-17T15:57:39+08:00 rc=0 log=/home/unitree/cos_logs/cos_setup_g1_robot_062_first_attempt.log"
+    },
+    "inventory_hostname": "g1_robot_062",
+    "librealsense_cleanup": {
+        "changed": false,
+        "rc": "",
+        "stderr": "",
+        "stdout": ""
+    },
+    "overall_status": "OK",
+    "rc": "0",
+    "realsense_error_detected": false,
+    "remote_start": {
+        "changed": false,
+        "rc": "5",
+        "stderr": "Failed to stop remote_start.service: Unit remote_start.service not loaded.",
+        "stdout": ""
+    },
+    "retry_attempt": {
+        "changed": false,
+        "rc": "",
+        "stderr": "",
+        "stdout": ""
+    },
+    "retry_performed": false,
+    "robot_id": "62",
+    "services": {
+        "cos_agent": {
+            "active": true,
+            "detail": "active",
+            "enabled": true,
+            "loaded": true,
+            "rc": 0,
+            "status": "OK",
+            "stderr": "",
+            "stdout": "enabled\nactive\n\u25cf cos_agent.service - coScene agent ROS2 Node\n     Loaded: loaded (/etc/systemd/system/cos_agent.service; enabled; vendor preset: enabled)\n     Active: active (running) since Wed 2026-06-17 15:07:23 CST; 50min ago\n   Main PID: 1016 (ros2)\n      Tasks: 22 (limit: 18143)\n     Memory: 77.8M\n     CGroup: /system.slice/cos_agent.service\n             \u251c\u25001016 /usr/bin/python3 /opt/ros/foxy/bin/ros2 launch agent agent.launch.py\n             \u2514\u25001788 /opt/ros/foxy/lib/agent/agent_node --ros-args -r __node:=agent_node --params-file /tmp/launch_params__rept5js\n\nJun 17 15:07:23 unitree-6812 systemd[1]: Started coScene agent ROS2 Node.\nJun 10 12:01:09 unitree-6812 bash[1016]: [INFO] [launch]: All log files can be found below /home/unitree/.ros/log/1970-06-10-12-01-09-198460-unitree-6812-1016\nJun 10 12:01:09 unitree-6812 bash[1016]: [INFO] [launch]: Default logging verbosity is set to INFO\nJun 10 12:01:09 unitree-6812 bash[1016]: [INFO] [agent_node-1]: process started with pid [1788]\nJun 10 12:01:09 unitree-6812 bash[1016]: [agent_node-1] [INFO] [0013838469.421131552] [agent]: GIT HASH: 3b79b82ad16859b4b425ab438c167e81ba597a76\nJun 10 12:01:09 unitree-6812 bash[1016]: [agent_node-1] \u2554\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2557\nJun 10 12:01:09 unitree-6812 bash[1016]: [agent_node-1] \u2551              coScene Agent Started - ROS 2, version: 0.4.10              \u2551\nJun 10 12:01:09 unitree-6812 bash[1016]: [agent_node-1] \u255a\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u255d\nJun 10 12:01:09 unitree-6812 bash[1016]: [agent_node-1] [INFO] [0013838469.421195104] [agent]: try to connect nats server...\nJun 17 15:12:03 unitree-6812 bash[1016]: [agent_node-1] [INFO] [1781680323.134826966] [agent]: connect nats success!\n\n__COS_SERVICE_RC__ loaded=1 enabled=1 active=1 enabled_rc=0 active_rc=0 status_rc=0"
+        },
+        "cos_teleop": {
+            "active": true,
+            "detail": "active",
+            "enabled": true,
+            "loaded": true,
+            "rc": 0,
+            "status": "OK",
+            "stderr": "",
+            "stdout": "enabled\nactive\n\u25cf cos_teleop.service - coScene teleop_server ROS2 Node\n     Loaded: loaded (/etc/systemd/system/cos_teleop.service; enabled; vendor preset: enabled)\n     Active: active (running) since Wed 2026-06-17 15:38:44 CST; 18min ago\n   Main PID: 10949 (ros2)\n      Tasks: 68 (limit: 18143)\n     Memory: 104.1M\n     CGroup: /system.slice/cos_teleop.service\n             \u251c\u250010949 /usr/bin/python3 /opt/ros/foxy/bin/ros2 launch teleop_server teleop_server.launch.py urdf_file:=/home/unitree/cos_ws/src/g1_description/g1_29dof_mode_15_with_dex1_1.urdf\n             \u251c\u250011003 /home/unitree/cos_ws/install/teleop_server/lib/teleop_server/teleop_server_node /home/unitree/cos_ws/install/teleop_server/share/teleop_server/config/teleop_server.yaml --ros-args\n             \u2514\u250011005 /opt/ros/foxy/lib/robot_state_publisher/robot_state_publisher /home/unitree/cos_ws/src/g1_description/g1_29dof_mode_15_with_dex1_1.urdf --ros-args\n\nJun 17 15:38:47 unitree-6812 bash[10949]: [teleop_server_node-1] 2026-06-17 15:38:47.025 [ INFO] [recording_controller.cpp:031] RecordingController started.\nJun 17 15:38:47 unitree-6812 bash[10949]: [teleop_server_node-1] 2026-06-17 15:38:47.035 [ INFO] [pico_teleop_sender.cpp:329] PicoTeleopSender enabled. packet_topic=/pico/teleop_packet teleop_cmd_topic=/fsm/teleop/cmd sport_request_topic=/api/sport/request teleop=505 locomotion=801 hand_type=dex1\nJun 17 15:38:47 unitree-6812 bash[10949]: [teleop_server_node-1] 2026-06-17 15:38:47.036 [ INFO] [pico_data_receiver.cpp:354] Pico 82D converter enabled. hz=50.0\nJun 17 15:38:47 unitree-6812 bash[10949]: [teleop_server_node-1] 2026-06-17 15:38:47.037 [ INFO] [PXREARobotSDK] initialize sdk,connect to server\nJun 17 15:38:47 unitree-6812 bash[10949]: [teleop_server_node-1] 2026-06-17 15:38:47.041 [ INFO] [pico_data_receiver.cpp:360] PicoDataReceiver started.\nJun 17 15:38:47 unitree-6812 bash[10949]: [teleop_server_node-1] 2026-06-17 15:38:47.549 [ INFO] [PXREARobotSDK] client start server stream\nJun 17 15:38:47 unitree-6812 bash[10949]: [teleop_server_node-1] 2026-06-17 15:38:47.550 [ INFO] [pico_data_receiver.cpp:388] XRoboToolkit server connected\nJun 17 15:38:47 unitree-6812 bash[10949]: [teleop_server_node-1] 2026-06-17 15:38:47.550 [ INFO] [PXREARobotSDK] server connect\nJun 17 15:38:47 unitree-6812 bash[10949]: [teleop_server_node-1] 2026-06-17 15:38:47.550 [ INFO] [PXREARobotSDK] watch server feedback thread start\nJun 17 15:56:58 unitree-6812 bash[10949]: [robot_state_publisher-2] [WARN] [1781683018.008511256] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!\n\n__COS_SERVICE_RC__ loaded=1 enabled=1 active=1 enabled_rc=0 active_rc=0 status_rc=0"
+        },
+        "xrobotoolkit-pc-service": {
+            "active": true,
+            "detail": "active",
+            "enabled": true,
+            "loaded": true,
+            "rc": 0,
+            "status": "OK",
+            "stderr": "",
+            "stdout": "enabled\nactive\n\u25cf xrobotoolkit-pc-service.service - XRoboToolkit PC Service\n     Loaded: loaded (/etc/systemd/system/xrobotoolkit-pc-service.service; enabled; vendor preset: enabled)\n     Active: active (running) since Wed 2026-06-17 15:07:23 CST; 50min ago\n   Main PID: 1257 (RoboticsService)\n      Tasks: 23 (limit: 18143)\n     Memory: 31.9M\n     CGroup: /system.slice/xrobotoolkit-pc-service.service\n             \u2514\u25001257 ./RoboticsServiceProcess\n\nJun 17 15:07:23 unitree-6812 systemd[1]: Starting XRoboToolkit PC Service...\nJun 17 15:07:23 unitree-6812 systemd[1]: Started XRoboToolkit PC Service.\nJun 17 15:07:23 unitree-6812 runService.sh[1257]: release mode\n\n__COS_SERVICE_RC__ loaded=1 enabled=1 active=1 enabled_rc=0 active_rc=0 status_rc=0"
+        }
+    },
+    "setup_detail": "cos_setup.sh \u6267\u884c\u5b8c\u6210\uff0ccos_agent / cos_teleop / xrobotoolkit-pc-service \u72b6\u6001\u6b63\u5e38\u3002",
+    "setup_status": "OK",
+    "start_time": "2026-06-17T15:56:58+08:00",
+    "time_sync": {
+        "changed": true,
+        "rc": "0",
+        "stderr": "",
+        "stdout": "Wed 17 Jun 2026 03:56:58 PM CST"
+    }
+}

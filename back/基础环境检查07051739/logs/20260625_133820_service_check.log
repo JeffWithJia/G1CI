@@ -1,0 +1,90 @@
+$ /usr/bin/ansible-playbook -k -K -T 15 -i '/home/jeff/coscene/code/codex/G1CI/基础环境检查/inventory.ini' -e '{"ansible_ssh_common_args": "-o PreferredAuthentications=password -o PubkeyAuthentication=no -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -o ConnectionAttempts=1"}' /tmp/operator_console_service_check.yml --limit g1_robot_064
+cwd=/home/jeff/coscene/code/codex/G1CI/基础环境检查
+
+SSH password: 
+[operator_console] detected SSH password prompt, password sent
+
+BECOME password[defaults to SSH password]: 
+[operator_console] detected BECOME password prompt, sudo password sent
+
+
+PLAY [Operator console service action] *****************************************
+
+TASK [Select services for this robot] ******************************************
+[0;32mok: [g1_robot_064][0m
+
+TASK [Check selected services] *************************************************
+[0;32mok: [g1_robot_064] => (item=cos_agent.service)[0m
+[0;32mok: [g1_robot_064] => (item=cos_teleop.service)[0m
+[0;32mok: [g1_robot_064] => (item=xrobotoolkit-pc-service.service)[0m
+[0;32mok: [g1_robot_064] => (item=dex1_gripper.service)[0m
+
+TASK [Build service result map] ************************************************
+[0;32mok: [g1_robot_064] => (item=cos_agent.service)[0m
+[0;32mok: [g1_robot_064] => (item=cos_teleop.service)[0m
+[0;32mok: [g1_robot_064] => (item=xrobotoolkit-pc-service.service)[0m
+[0;32mok: [g1_robot_064] => (item=dex1_gripper.service)[0m
+
+TASK [Build service check items] ***********************************************
+[0;32mok: [g1_robot_064][0m
+
+TASK [Check ROS2 camera topic heartbeats] **************************************
+[0;32mok: [g1_robot_064] => (item={'topic': '/cam_head/compressed_image', 'label': '头部相机'})[0m
+[0;32mok: [g1_robot_064] => (item={'topic': '/cam_wrist_left/compressed_image', 'label': '左腕相机'})[0m
+[0;32mok: [g1_robot_064] => (item={'topic': '/cam_wrist_right/compressed_image', 'label': '右腕相机'})[0m
+
+TASK [Initialize ROS2 camera topic heartbeat results] **************************
+[0;32mok: [g1_robot_064][0m
+
+TASK [Record ROS2 camera topic heartbeat status] *******************************
+[0;32mok: [g1_robot_064] => (item={'cmd': 'set +e\nexport HOME=/home/unitree\nexport ROS_VERSION=2\nexport ROS_DISTRO=foxy\nexport RMW_IMPLEMENTATION=rmw_cyclonedds_cpp\nexport CYCLONEDDS_URI=file:///home/unitree/unitree_ros2/cyclonedds_ws/src/cyclonedds.xml\nexport PYTHONUNBUFFERED=1\nsource /opt/ros/foxy/setup.bash\nif [ -f /home/unitree/unitree_ros2/cyclonedds_ws/install/setup.bash ]; then\n  source /home/unitree/unitree_ros2/cyclonedds_ws/install/setup.bash\nfi\nif [ -f /home/unitree/cos_ws/install/setup.bash ]; then\n  source /home/unitree/cos_ws/install/setup.bash\nfi\nhz_output="$(timeout 10 ros2 topic hz /cam_head/compressed_image 2>&1)"\nhz_rc=$?\nprintf \'%s\\n\' "$hz_output"\nif printf \'%s\\n\' "$hz_output" | grep -Eq \'average rate:[[:space:]]*0*\\.?0*([1-9][0-9]*|[0-9]*[1-9][0-9]*)\'; then\n  exit 0\nfi\nprintf \'ros_hz_warning: no stable non-zero messages received on %s rc=%s\\n\' "/cam_head/compressed_image" "$hz_rc"\nexit 1\n', 'stdout': 'average rate: 27.254\n\tmin: 0.028s max: 0.108s std dev: 0.01445s window: 29\naverage rate: 27.117\n\tmin: 0.019s max: 0.131s std dev: 0.01671s window: 56\naverage rate: 27.401\n\tmin: 0.019s max: 0.131s std dev: 0.01535s window: 84\naverage rate: 27.790\n\tmin: 0.003s max: 0.131s std dev: 0.01426s window: 113\naverage rate: 27.838\n\tmin: 0.003s max: 0.131s std dev: 0.01389s window: 143\naverage rate: 27.865\n\tmin: 0.002s max: 0.131s std dev: 0.01444s window: 174\naverage rate: 28.069\n\tmin: 0.002s max: 0.131s std dev: 0.01345s window: 204', 'stderr': '', 'rc': 0, 'start': '2026-06-25 13:37:49.595488', 'end': '2026-06-25 13:38:00.492522', 'delta': '0:00:10.897034', 'changed': False, 'invocation': {'module_args': {'executable': '/bin/bash', '_raw_params': 'set +e\nexport HOME=/home/unitree\nexport ROS_VERSION=2\nexport ROS_DISTRO=foxy\nexport RMW_IMPLEMENTATION=rmw_cyclonedds_cpp\nexport CYCLONEDDS_URI=file:///home/unitree/unitree_ros2/cyclonedds_ws/src/cyclonedds.xml\nexport PYTHONUNBUFFERED=1\nsource /opt/ros/foxy/setup.bash\nif [ -f /home/unitree/unitree_ros2/cyclonedds_ws/install/setup.bash ]; then\n  source /home/unitree/unitree_ros2/cyclonedds_ws/install/setup.bash\nfi\nif [ -f /home/unitree/cos_ws/install/setup.bash ]; then\n  source /home/unitree/cos_ws/install/setup.bash\nfi\nhz_output="$(timeout 10 ros2 topic hz /cam_head/compressed_image 2>&1)"\nhz_rc=$?\nprintf \'%s\\n\' "$hz_output"\nif printf \'%s\\n\' "$hz_output" | grep -Eq \'average rate:[[:space:]]*0*\\.?0*([1-9][0-9]*|[0-9]*[1-9][0-9]*)\'; then\n  exit 0\nfi\nprintf \'ros_hz_warning: no stable non-zero messages received on %s rc=%s\\n\' "/cam_head/compressed_image" "$hz_rc"\nexit 1\n', '_uses_shell': True, 'warn': True, 'stdin_add_newline': True, 'strip_empty_ends': True, 'argv': None, 'chdir': None, 'creates': None, 'removes': None, 'stdin': None}}, 'stdout_lines': ['average rate: 27.254', '\tmin: 0.028s max: 0.108s std dev: 0.01445s window: 29', 'average rate: 27.117', '\tmin: 0.019s max: 0.131s std dev: 0.01671s window: 56', 'average rate: 27.401', '\tmin: 0.019s max: 0.131s std dev: 0.01535s window: 84', 'average rate: 27.790', '\tmin: 0.003s max: 0.131s std dev: 0.01426s window: 113', 'average rate: 27.838', '\tmin: 0.003s max: 0.131s std dev: 0.01389s window: 143', 'average rate: 27.865', '\tmin: 0.002s max: 0.131s std dev: 0.01444s window: 174', 'average rate: 28.069', '\tmin: 0.002s max: 0.131s std dev: 0.01345s window: 204'], 'stderr_lines': [], 'failed': False, 'failed_when_result': False, 'item': {'topic': '/cam_head/compressed_image', 'label': '头部相机'}, 'ansible_loop_var': 'item'})[0m
+[0;32mok: [g1_robot_064] => (item={'cmd': 'set +e\nexport HOME=/home/unitree\nexport ROS_VERSION=2\nexport ROS_DISTRO=foxy\nexport RMW_IMPLEMENTATION=rmw_cyclonedds_cpp\nexport CYCLONEDDS_URI=file:///home/unitree/unitree_ros2/cyclonedds_ws/src/cyclonedds.xml\nexport PYTHONUNBUFFERED=1\nsource /opt/ros/foxy/setup.bash\nif [ -f /home/unitree/unitree_ros2/cyclonedds_ws/install/setup.bash ]; then\n  source /home/unitree/unitree_ros2/cyclonedds_ws/install/setup.bash\nfi\nif [ -f /home/unitree/cos_ws/install/setup.bash ]; then\n  source /home/unitree/cos_ws/install/setup.bash\nfi\nhz_output="$(timeout 10 ros2 topic hz /cam_wrist_left/compressed_image 2>&1)"\nhz_rc=$?\nprintf \'%s\\n\' "$hz_output"\nif printf \'%s\\n\' "$hz_output" | grep -Eq \'average rate:[[:space:]]*0*\\.?0*([1-9][0-9]*|[0-9]*[1-9][0-9]*)\'; then\n  exit 0\nfi\nprintf \'ros_hz_warning: no stable non-zero messages received on %s rc=%s\\n\' "/cam_wrist_left/compressed_image" "$hz_rc"\nexit 1\n', 'stdout': 'average rate: 29.720\n\tmin: 0.023s max: 0.046s std dev: 0.00361s window: 31\naverage rate: 30.004\n\tmin: 0.023s max: 0.046s std dev: 0.00316s window: 62\naverage rate: 29.985\n\tmin: 0.023s max: 0.046s std dev: 0.00266s window: 92\naverage rate: 29.942\n\tmin: 0.023s max: 0.046s std dev: 0.00243s window: 122\naverage rate: 29.996\n\tmin: 0.021s max: 0.046s std dev: 0.00297s window: 153\naverage rate: 29.994\n\tmin: 0.021s max: 0.046s std dev: 0.00276s window: 184\naverage rate: 30.000\n\tmin: 0.021s max: 0.046s std dev: 0.00259s window: 215', 'stderr': '', 'rc': 0, 'start': '2026-06-25 13:38:00.778088', 'end': '2026-06-25 13:38:11.655234', 'delta': '0:00:10.877146', 'changed': False, 'invocation': {'module_args': {'executable': '/bin/bash', '_raw_params': 'set +e\nexport HOME=/home/unitree\nexport ROS_VERSION=2\nexport ROS_DISTRO=foxy\nexport RMW_IMPLEMENTATION=rmw_cyclonedds_cpp\nexport CYCLONEDDS_URI=file:///home/unitree/unitree_ros2/cyclonedds_ws/src/cyclonedds.xml\nexport PYTHONUNBUFFERED=1\nsource /opt/ros/foxy/setup.bash\nif [ -f /home/unitree/unitree_ros2/cyclonedds_ws/install/setup.bash ]; then\n  source /home/unitree/unitree_ros2/cyclonedds_ws/install/setup.bash\nfi\nif [ -f /home/unitree/cos_ws/install/setup.bash ]; then\n  source /home/unitree/cos_ws/install/setup.bash\nfi\nhz_output="$(timeout 10 ros2 topic hz /cam_wrist_left/compressed_image 2>&1)"\nhz_rc=$?\nprintf \'%s\\n\' "$hz_output"\nif printf \'%s\\n\' "$hz_output" | grep -Eq \'average rate:[[:space:]]*0*\\.?0*([1-9][0-9]*|[0-9]*[1-9][0-9]*)\'; then\n  exit 0\nfi\nprintf \'ros_hz_warning: no stable non-zero messages received on %s rc=%s\\n\' "/cam_wrist_left/compressed_image" "$hz_rc"\nexit 1\n', '_uses_shell': True, 'warn': True, 'stdin_add_newline': True, 'strip_empty_ends': True, 'argv': None, 'chdir': None, 'creates': None, 'removes': None, 'stdin': None}}, 'stdout_lines': ['average rate: 29.720', '\tmin: 0.023s max: 0.046s std dev: 0.00361s window: 31', 'average rate: 30.004', '\tmin: 0.023s max: 0.046s std dev: 0.00316s window: 62', 'average rate: 29.985', '\tmin: 0.023s max: 0.046s std dev: 0.00266s window: 92', 'average rate: 29.942', '\tmin: 0.023s max: 0.046s std dev: 0.00243s window: 122', 'average rate: 29.996', '\tmin: 0.021s max: 0.046s std dev: 0.00297s window: 153', 'average rate: 29.994', '\tmin: 0.021s max: 0.046s std dev: 0.00276s window: 184', 'average rate: 30.000', '\tmin: 0.021s max: 0.046s std dev: 0.00259s window: 215'], 'stderr_lines': [], 'failed': False, 'failed_when_result': False, 'item': {'topic': '/cam_wrist_left/compressed_image', 'label': '左腕相机'}, 'ansible_loop_var': 'item'})[0m
+[0;32mok: [g1_robot_064] => (item={'cmd': 'set +e\nexport HOME=/home/unitree\nexport ROS_VERSION=2\nexport ROS_DISTRO=foxy\nexport RMW_IMPLEMENTATION=rmw_cyclonedds_cpp\nexport CYCLONEDDS_URI=file:///home/unitree/unitree_ros2/cyclonedds_ws/src/cyclonedds.xml\nexport PYTHONUNBUFFERED=1\nsource /opt/ros/foxy/setup.bash\nif [ -f /home/unitree/unitree_ros2/cyclonedds_ws/install/setup.bash ]; then\n  source /home/unitree/unitree_ros2/cyclonedds_ws/install/setup.bash\nfi\nif [ -f /home/unitree/cos_ws/install/setup.bash ]; then\n  source /home/unitree/cos_ws/install/setup.bash\nfi\nhz_output="$(timeout 10 ros2 topic hz /cam_wrist_right/compressed_image 2>&1)"\nhz_rc=$?\nprintf \'%s\\n\' "$hz_output"\nif printf \'%s\\n\' "$hz_output" | grep -Eq \'average rate:[[:space:]]*0*\\.?0*([1-9][0-9]*|[0-9]*[1-9][0-9]*)\'; then\n  exit 0\nfi\nprintf \'ros_hz_warning: no stable non-zero messages received on %s rc=%s\\n\' "/cam_wrist_right/compressed_image" "$hz_rc"\nexit 1\n', 'stdout': 'average rate: 28.345\n\tmin: 0.030s max: 0.084s std dev: 0.00926s window: 30\naverage rate: 29.210\n\tmin: 0.023s max: 0.084s std dev: 0.00735s window: 61\naverage rate: 29.455\n\tmin: 0.023s max: 0.084s std dev: 0.00618s window: 91\naverage rate: 29.582\n\tmin: 0.012s max: 0.084s std dev: 0.00634s window: 121\naverage rate: 29.677\n\tmin: 0.012s max: 0.084s std dev: 0.00584s window: 152\naverage rate: 29.700\n\tmin: 0.012s max: 0.084s std dev: 0.00563s window: 182\naverage rate: 29.761\n\tmin: 0.012s max: 0.084s std dev: 0.00597s window: 213\naverage rate: 29.788\n\tmin: 0.012s max: 0.084s std dev: 0.00568s window: 243', 'stderr': '', 'rc': 0, 'start': '2026-06-25 13:38:12.087379', 'end': '2026-06-25 13:38:22.957044', 'delta': '0:00:10.869665', 'changed': False, 'invocation': {'module_args': {'executable': '/bin/bash', '_raw_params': 'set +e\nexport HOME=/home/unitree\nexport ROS_VERSION=2\nexport ROS_DISTRO=foxy\nexport RMW_IMPLEMENTATION=rmw_cyclonedds_cpp\nexport CYCLONEDDS_URI=file:///home/unitree/unitree_ros2/cyclonedds_ws/src/cyclonedds.xml\nexport PYTHONUNBUFFERED=1\nsource /opt/ros/foxy/setup.bash\nif [ -f /home/unitree/unitree_ros2/cyclonedds_ws/install/setup.bash ]; then\n  source /home/unitree/unitree_ros2/cyclonedds_ws/install/setup.bash\nfi\nif [ -f /home/unitree/cos_ws/install/setup.bash ]; then\n  source /home/unitree/cos_ws/install/setup.bash\nfi\nhz_output="$(timeout 10 ros2 topic hz /cam_wrist_right/compressed_image 2>&1)"\nhz_rc=$?\nprintf \'%s\\n\' "$hz_output"\nif printf \'%s\\n\' "$hz_output" | grep -Eq \'average rate:[[:space:]]*0*\\.?0*([1-9][0-9]*|[0-9]*[1-9][0-9]*)\'; then\n  exit 0\nfi\nprintf \'ros_hz_warning: no stable non-zero messages received on %s rc=%s\\n\' "/cam_wrist_right/compressed_image" "$hz_rc"\nexit 1\n', '_uses_shell': True, 'warn': True, 'stdin_add_newline': True, 'strip_empty_ends': True, 'argv': None, 'chdir': None, 'creates': None, 'removes': None, 'stdin': None}}, 'stdout_lines': ['average rate: 28.345', '\tmin: 0.030s max: 0.084s std dev: 0.00926s window: 30', 'average rate: 29.210', '\tmin: 0.023s max: 0.084s std dev: 0.00735s window: 61', 'average rate: 29.455', '\tmin: 0.023s max: 0.084s std dev: 0.00618s window: 91', 'average rate: 29.582', '\tmin: 0.012s max: 0.084s std dev: 0.00634s window: 121', 'average rate: 29.677', '\tmin: 0.012s max: 0.084s std dev: 0.00584s window: 152', 'average rate: 29.700', '\tmin: 0.012s max: 0.084s std dev: 0.00563s window: 182', 'average rate: 29.761', '\tmin: 0.012s max: 0.084s std dev: 0.00597s window: 213', 'average rate: 29.788', '\tmin: 0.012s max: 0.084s std dev: 0.00568s window: 243'], 'stderr_lines': [], 'failed': False, 'failed_when_result': False, 'item': {'topic': '/cam_wrist_right/compressed_image', 'label': '右腕相机'}, 'ansible_loop_var': 'item'})[0m
+
+TASK [Build structured camera status map] **************************************
+[0;32mok: [g1_robot_064] => (item={'topic': '/cam_head/compressed_image', 'label': '头部相机', 'status': 'OK', 'rate_hz': 27.254})[0m
+[0;32mok: [g1_robot_064] => (item={'topic': '/cam_wrist_left/compressed_image', 'label': '左腕相机', 'status': 'OK', 'rate_hz': 29.72})[0m
+[0;32mok: [g1_robot_064] => (item={'topic': '/cam_wrist_right/compressed_image', 'label': '右腕相机', 'status': 'OK', 'rate_hz': 28.345})[0m
+
+TASK [Initialize normalized camera topic heartbeat results] ********************
+[0;32mok: [g1_robot_064][0m
+
+TASK [Normalize camera topic heartbeat results] ********************************
+[0;32mok: [g1_robot_064] => (item={'topic': '/cam_head/compressed_image', 'label': '头部相机'})[0m
+[0;32mok: [g1_robot_064] => (item={'topic': '/cam_wrist_left/compressed_image', 'label': '左腕相机'})[0m
+[0;32mok: [g1_robot_064] => (item={'topic': '/cam_wrist_right/compressed_image', 'label': '右腕相机'})[0m
+
+TASK [Replace camera topic heartbeat results with normalized list] *************
+[0;32mok: [g1_robot_064][0m
+
+TASK [Build structured camera status map] **************************************
+[0;32mok: [g1_robot_064] => (item={'topic': '/cam_head/compressed_image', 'label': '头部相机', 'status': 'OK', 'rate_hz': 27.254})[0m
+[0;32mok: [g1_robot_064] => (item={'topic': '/cam_wrist_left/compressed_image', 'label': '左腕相机', 'status': 'OK', 'rate_hz': 29.72})[0m
+[0;32mok: [g1_robot_064] => (item={'topic': '/cam_wrist_right/compressed_image', 'label': '右腕相机', 'status': 'OK', 'rate_hz': 28.345})[0m
+
+TASK [Initialize service issue lists] ******************************************
+[0;32mok: [g1_robot_064][0m
+
+TASK [Build service issue lists] ***********************************************
+[0;32mok: [g1_robot_064][0m
+
+TASK [Evaluate missing cameras] ************************************************
+[0;32mok: [g1_robot_064][0m
+
+TASK [Build service subsystem statuses] ****************************************
+[0;32mok: [g1_robot_064][0m
+
+TASK [Build service final report] **********************************************
+[0;32mok: [g1_robot_064][0m
+
+TASK [Ensure report directory exists] ******************************************
+[0;32mok: [g1_robot_064][0m
+
+TASK [Write service aggregate report] ******************************************
+[0;33mchanged: [g1_robot_064][0m
+
+PLAY RECAP *********************************************************************
+[0;33mg1_robot_064[0m               : [0;32mok=19  [0m [0;33mchanged=1   [0m unreachable=0    failed=0    skipped=0    rescued=0    ignored=0   
+
+
+returncode=0

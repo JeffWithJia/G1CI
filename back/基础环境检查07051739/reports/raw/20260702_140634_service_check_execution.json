@@ -1,0 +1,17 @@
+{
+  "action": "service_check",
+  "robots": [],
+  "started_at": "20260702_140634",
+  "start_time": "2026-07-02 14:06:34",
+  "finished_at": "2026-07-02 14:07:07",
+  "end_time": "2026-07-02 14:07:07",
+  "duration_seconds": 33.0,
+  "returncode": 1,
+  "stdout": "",
+  "stderr": "机器人无法连接，请检查网络、IP 和 SSH 密码。\n192.168.123.164:22 连接失败：timed out\n192.168.90.30:22 连接失败：timed out\n192.168.90.60:22 连接失败：timed out\n192.168.90.61:22 连接失败：timed out\n192.168.90.62:22 连接失败：timed out\n192.168.90.63:22 连接失败：timed out\n192.168.90.64:22 连接失败：timed out\n192.168.90.65:22 连接失败：timed out\n192.168.90.68:22 连接失败：timed out\n192.168.90.69:22 连接失败：timed out\n192.168.90.70:22 连接失败：timed out",
+  "latest_output": "机器人无法连接，请检查网络、IP 和 SSH 密码。\n192.168.123.164:22 连接失败：timed out\n192.168.90.30:22 连接失败：timed out\n192.168.90.60:22 连接失败：timed out\n192.168.90.61:22 连接失败：timed out\n192.168.90.62:22 连接失败：timed out\n192.168.90.63:22 连接失败：timed out\n192.168.90.64:22 连接失败：timed out\n192.168.90.65:22 连接失败：timed out\n192.168.90.68:22 连接失败：timed out\n192.168.90.69:22 连接失败：timed out\n192.168.90.70:22 连接失败：timed out",
+  "command": "",
+  "cwd": "",
+  "report_path": "reports/g1_env_summary.json",
+  "log_file": "/home/jeff/coscene/code/codex/G1CI/基础环境检查/logs/20260702_140634_service_check.log"
+}

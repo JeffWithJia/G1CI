@@ -1,0 +1,207 @@
+---
+- name: Initialize enriched report check results
+  ansible.builtin.set_fact:
+    g1_report_check_results: []
+
+- name: Add reason and suggestion to WARN and FAIL results
+  ansible.builtin.set_fact:
+    g1_report_check_results: "{{ g1_report_check_results + [g1_report_check_item] }}"
+  vars:
+    g1_result_reason: >-
+      {%- set name = item.name | default('') -%}
+      {%- if name == 'tv python version' -%}
+      tv environment Python version is not the expected version.
+      {%- elif name in ['/dev/cam_wrist_left', '/dev/cam_wrist_right'] -%}
+      Camera device symlink does not exist.
+      {%- elif name | regex_search(' enabled$') -%}
+      Systemd service is not enabled.
+      {%- elif name | regex_search(' active$') -%}
+      Systemd service is not active.
+      {%- elif name | regex_search('^apt ') -%}
+      APT package is not installed.
+      {%- elif name == 'camera udev rules' -%}
+      Camera udev rules file does not exist.
+      {%- elif name | regex_search('Python ') -%}
+      Required Python package cannot be imported.
+      {%- elif name | regex_search('shared libraries$') -%}
+      Binary shared library dependencies are missing or invalid.
+      {%- elif name | regex_search('executable$') -%}
+      Binary is not executable.
+      {%- elif name | regex_search('unit file$') -%}
+      Systemd unit file does not exist.
+      {%- elif name == 'end effector service' -%}
+      End effector configuration is invalid.
+      {%- else -%}
+      Required file, directory, or check condition is missing.
+      {%- endif -%}
+    g1_result_suggestion: >-
+      {%- set name = item.name | default('') -%}
+      {%- if name == 'tv python version' -%}
+      If current services work normally, this warning can be ignored; otherwise recreate tv with Python 3.10.
+      {%- elif name in ['/dev/cam_wrist_left', '/dev/cam_wrist_right'] -%}
+      Check camera connection and udev rules. If wrist cameras are not required for this robot, this warning can be ignored.
+      {%- elif name | regex_search(' enabled$') -%}
+      Run systemctl enable <service> if it should start on boot.
+      {%- elif name | regex_search(' active$') -%}
+      Run systemctl status <service> and check service logs.
+      {%- elif name | regex_search('^apt ') -%}
+      Install the missing package with apt, or rerun the install mode.
+      {%- elif name == 'camera udev rules' -%}
+      Install or restore the camera udev rules, then reload udev rules.
+      {%- elif name | regex_search('Python ') -%}
+      Install the missing Python dependency in the tv environment, or rerun the install mode.
+      {%- elif name | regex_search('shared libraries$') -%}
+      Run ldd on the binary and install or rebuild the missing dependencies.
+      {%- elif name | regex_search('executable$') -%}
+      Restore executable permission or rebuild the service binary.
+      {%- elif name | regex_search('unit file$') -%}
+      Install or restore the systemd unit file, then run systemctl daemon-reload.
+      {%- elif name == 'end effector service' -%}
+      Set end_effector to a supported value before running checks.
+      {%- else -%}
+      Check the detail field and rerun install mode if the component should exist.
+      {%- endif -%}
+    g1_report_check_item: >-
+      {{
+        item
+        if item.status | default('') not in ['WARN', 'FAIL']
+        else item | combine({
+          'reason': item.reason | default(g1_result_reason, true),
+          'suggestion': item.suggestion | default(g1_result_suggestion, true)
+        })
+      }}
+  loop: "{{ g1_check_results }}"
+
+- name: Use enriched check results for report
+  ansible.builtin.set_fact:
+    g1_check_results: "{{ g1_report_check_results }}"
+
+- name: Calculate check counters
+  ansible.builtin.set_fact:
+    g1_fail_items: "{{ g1_check_results | selectattr('status', 'equalto', 'FAIL') | list }}"
+    g1_warn_items: "{{ g1_check_results | selectattr('status', 'equalto', 'WARN') | list }}"
+    g1_skip_items: "{{ g1_check_results | selectattr('status', 'equalto', 'SKIP') | list }}"
+    g1_install_fail_items: "{{ g1_install_results | default([]) | selectattr('rc', 'ne', 0) | list }}"
+
+- name: Calculate overall status
+  ansible.builtin.set_fact:
+    g1_overall_status: >-
+      {{
+        'OK'
+        if (setup_success | default(false) | bool)
+        else 'FAIL'
+      }}
+
+- name: Initialize report card issues
+  ansible.builtin.set_fact:
+    g1_card_issues: []
+
+- name: Add check issues to report card
+  ansible.builtin.set_fact:
+    g1_card_issues: "{{ g1_card_issues + [g1_card_issue] }}"
+  vars:
+    g1_card_issue_reason: "{{ item.reason | default(item.detail | default(''), true) }}"
+    g1_card_issue_summary: "[{{ item.status }}] {{ item.name }} - {{ g1_card_issue_reason }}"
+    g1_card_issue:
+      name: "{{ item.name }}"
+      status: "{{ item.status }}"
+      detail: "{{ item.detail | default('') }}"
+      reason: "{{ g1_card_issue_reason }}"
+      suggestion: "{{ item.suggestion | default('') }}"
+      source: check
+      summary: "{{ g1_card_issue_summary }}"
+  loop: "{{ g1_fail_items + g1_warn_items }}"
+
+- name: Calculate report card status from final checks
+  ansible.builtin.set_fact:
+    g1_card_status: >-
+      {{
+        'OK'
+        if (setup_success | default(false) | bool)
+        else 'FAIL'
+      }}
+
+- name: Build report card summary
+  ansible.builtin.set_fact:
+    g1_report_card:
+      title: "{{ inventory_hostname }} ({{ ansible_host | default(inventory_hostname) }})"
+      subtitle: "robot_id={{ robot_id | default('unknown') }}, end_effector={{ g1_end_effector }}, mode={{ g1_run_mode }}"
+      status: "{{ g1_card_status }}"
+      issue_count: "{{ g1_card_issues | length }}"
+      issue_text: "{{ g1_card_issues | map(attribute='summary') | list | join(' | ') }}"
+      issues: "{{ g1_card_issues }}"
+
+- name: Build host final report
+  ansible.builtin.set_fact:
+    g1_final_report:
+      host: "{{ inventory_hostname }}"
+      ansible_host: "{{ ansible_host | default(inventory_hostname) }}"
+      robot_id: "{{ robot_id | default('unknown') }}"
+      mode: "{{ g1_run_mode }}"
+      end_effector: "{{ g1_end_effector }}"
+      overall_status: "{{ g1_overall_status }}"
+      setup_success: "{{ setup_success | default(false) }}"
+      required_services: "{{ setup_service_report | default({}) }}"
+      card: "{{ g1_report_card }}"
+      counts:
+        ok: "{{ g1_check_results | selectattr('status', 'equalto', 'OK') | list | length }}"
+        warn: "{{ g1_warn_items | length }}"
+        fail: "{{ g1_fail_items | length }}"
+        skip: "{{ g1_skip_items | length }}"
+      warnings: "{{ g1_check_warnings }}"
+      camera_status: "{{ g1_camera_status | default({'cam_head': 0, 'cam_left': 0, 'cam_right': 0}) }}"
+      camera_topics: "{{ g1_camera_topic_results | default([]) }}"
+      failed_items: "{{ g1_fail_items }}"
+      warn_items: "{{ g1_warn_items }}"
+      skipped_items: "{{ g1_skip_items }}"
+      install_results: "{{ g1_install_results | default([]) }}"
+      install_failed_items: "{{ g1_install_fail_items }}"
+      checks: "{{ g1_check_results }}"
+
+- name: Print host check summary
+  ansible.builtin.debug:
+    msg:
+      - "=================================================="
+      - "G1 environment check: {{ inventory_hostname }} ({{ ansible_host | default(inventory_hostname) }})"
+      - "mode={{ g1_run_mode }}, robot_id={{ robot_id | default('unknown') }}, end_effector={{ g1_end_effector }}"
+      - "overall_status={{ g1_overall_status }}"
+      - "OK={{ g1_final_report.counts.ok }}, WARN={{ g1_final_report.counts.warn }}, FAIL={{ g1_final_report.counts.fail }}, SKIP={{ g1_final_report.counts.skip }}"
+      - "failed_items={{ g1_fail_items | map(attribute='name') | list }}"
+      - "warn_items={{ g1_warn_items | map(attribute='name') | list }}"
+      - "install_failed_items={{ g1_install_fail_items | map(attribute='name') | list }}"
+      - "=================================================="
+
+- name: Ensure local reports directory exists
+  ansible.builtin.file:
+    path: "{{ playbook_dir }}/reports"
+    state: directory
+    mode: "0755"
+  delegate_to: localhost
+  run_once: true
+
+- name: Write per-host JSON report
+  ansible.builtin.copy:
+    dest: "{{ playbook_dir }}/reports/{{ inventory_hostname }}.json"
+    content: "{{ g1_final_report | to_nice_json }}\n"
+    mode: "0644"
+  delegate_to: localhost
+
+- name: Write aggregate JSON report
+  ansible.builtin.copy:
+    dest: "{{ playbook_dir }}/reports/g1_env_summary.json"
+    content: |
+      [
+      {% for host_name in ansible_play_hosts_all %}
+      {{ hostvars[host_name].g1_final_report | default({'host': host_name, 'overall_status': 'NO_REPORT'}) | to_nice_json }}{{ ',' if not loop.last else '' }}
+      {% endfor %}
+      ]
+    mode: "0644"
+  delegate_to: localhost
+  run_once: true
+
+- name: Print local report paths
+  ansible.builtin.debug:
+    msg:
+      - "Per-host reports: {{ playbook_dir }}/reports/<inventory_hostname>.json"
+      - "Aggregate report: {{ playbook_dir }}/reports/g1_env_summary.json"
+  run_once: true

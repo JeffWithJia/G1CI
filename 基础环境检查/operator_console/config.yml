@@ -2,6 +2,8 @@ server:
   host: 0.0.0.0
   port: 8000
   open_browser: true
+  session_ttl_hours: 24
+  session_cleanup_interval_seconds: 3600
 
 ansible:
   ansible_playbook_path: "ansible-playbook"

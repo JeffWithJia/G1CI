@@ -1,0 +1,182 @@
+$ /usr/bin/ansible-playbook -k -K -T 15 -i '/home/jeff/coscene/code/codex/G1CI/基础环境检查/inventory.ini' -e '{"ansible_ssh_common_args": "-o PreferredAuthentications=password -o PubkeyAuthentication=no -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -o ConnectionAttempts=1"}' '/home/jeff/coscene/code/codex/G1CI/基础环境检查/deploy_eva_robot检测/batch_cos_setup.yml' -e 'cos_setup_report_dir=/home/jeff/coscene/code/codex/G1CI/基础环境检查/reports/raw' --limit g1_robot_062
+cwd=/home/jeff/coscene/code/codex/G1CI/基础环境检查
+
+SSH password: 
+[operator_console] detected SSH password prompt, password sent
+
+BECOME password[defaults to SSH password]: 
+[operator_console] detected BECOME password prompt, sudo password sent
+
+
+PLAY [Run cos_setup.sh on G1 robots] *******************************************
+
+TASK [Record cos_setup start time] *********************************************
+[0;32mok: [g1_robot_062][0m
+
+TASK [Resolve local cos_setup report directory] ********************************
+[0;32mok: [g1_robot_062][0m
+
+TASK [Get controller current time before cos_setup] ****************************
+[0;32mok: [g1_robot_062][0m
+
+TASK [Sync robot time from controller before cos_setup] ************************
+[0;33mchanged: [g1_robot_062][0m
+
+TASK [Stop remote_start.service before cos_setup] ******************************
+[0;32mok: [g1_robot_062][0m
+
+TASK [Check remote cos_setup.sh] ***********************************************
+[0;32mok: [g1_robot_062][0m
+
+TASK [Build cos_setup path facts] **********************************************
+[0;32mok: [g1_robot_062][0m
+
+TASK [Ensure cos_setup log directory is writable by unitree] *******************
+[0;32mok: [g1_robot_062][0m
+
+TASK [Detect Debian architecture] **********************************************
+[0;32mok: [g1_robot_062][0m
+
+TASK [Detect and validate Ubuntu release] **************************************
+[0;32mok: [g1_robot_062][0m
+
+TASK [Ensure apt keyring directories exist] ************************************
+[0;32mok: [g1_robot_062] => (item=/usr/share/keyrings)[0m
+[0;32mok: [g1_robot_062] => (item=/etc/apt/trusted.gpg.d)[0m
+[0;32mok: [g1_robot_062] => (item=/etc/apt/keyrings)[0m
+
+TASK [Download ROS apt key from primary mirror] ********************************
+[0;32mok: [g1_robot_062][0m
+
+TASK [Download ROS apt key from fallback] **************************************
+[0;36mskipping: [g1_robot_062][0m
+
+TASK [Install ROS apt keyrings] ************************************************
+[0;32mok: [g1_robot_062] => (item=/usr/share/keyrings/ros-archive-keyring.gpg)[0m
+[0;32mok: [g1_robot_062] => (item=/usr/share/keyrings/ros2-latest-archive-keyring.gpg)[0m
+[0;32mok: [g1_robot_062] => (item=/etc/apt/trusted.gpg.d/ros-archive-keyring.gpg)[0m
+
+TASK [Configure ROS apt source] ************************************************
+[0;32mok: [g1_robot_062][0m
+
+TASK [Remove stale RealSense apt sources before refresh] ***********************
+[0;33mchanged: [g1_robot_062] => (item=/etc/apt/sources.list.d/librealsense.list)[0m
+[0;32mok: [g1_robot_062] => (item=/etc/apt/sources.list.d/realsense-public.list)[0m
+
+TASK [Update apt package index before system dependency install] ***************
+[0;33mchanged: [g1_robot_062][0m
+
+TASK [Install cos_setup apt dependencies] **************************************
+[0;32mok: [g1_robot_062][0m
+
+TASK [Download Intel RealSense apt key] ****************************************
+[0;32mok: [g1_robot_062][0m
+
+TASK [Install Intel RealSense apt keyring] *************************************
+[0;33mchanged: [g1_robot_062][0m
+
+TASK [Configure Intel RealSense apt source] ************************************
+[0;33mchanged: [g1_robot_062][0m
+
+TASK [Update apt package index after RealSense source setup] *******************
+[0;33mchanged: [g1_robot_062][0m
+
+TASK [Install Intel RealSense packages] ****************************************
+[0;32mok: [g1_robot_062][0m
+
+TASK [Check ros-foxy-agent package status] *************************************
+[0;32mok: [g1_robot_062][0m
+
+TASK [Download ros-foxy-agent package] *****************************************
+[0;36mskipping: [g1_robot_062][0m
+
+TASK [Install ros-foxy-agent package] ******************************************
+[0;36mskipping: [g1_robot_062][0m
+
+TASK [Install local robot deb packages] ****************************************
+[0;33mchanged: [g1_robot_062][0m
+
+TASK [Enable persistent systemd journal] ***************************************
+[0;33mchanged: [g1_robot_062] => (item=/var/log/journal)[0m
+[0;32mok: [g1_robot_062] => (item=/etc/systemd/journald.conf.d)[0m
+
+TASK [Create persistent journald configuration] ********************************
+[0;32mok: [g1_robot_062][0m
+
+TASK [Initialize persistent journal directory] *********************************
+[0;32mok: [g1_robot_062][0m
+
+TASK [Restart systemd-journald after configuration change] *********************
+[0;36mskipping: [g1_robot_062][0m
+
+TASK [Run cos_setup.sh first attempt] ******************************************
+[0;33mchanged: [g1_robot_062][0m
+
+TASK [Build check-mode cos_setup result] ***************************************
+[0;36mskipping: [g1_robot_062][0m
+
+TASK [Detect pyrealsense/librealsense/GLIBC error] *****************************
+[0;32mok: [g1_robot_062][0m
+
+TASK [Remove librealsense packages after detected error] ***********************
+[0;36mskipping: [g1_robot_062][0m
+
+TASK [Run cos_setup.sh retry after librealsense cleanup] ***********************
+[0;36mskipping: [g1_robot_062][0m
+
+TASK [Install and enable cos systemd services] *********************************
+[0;33mchanged: [g1_robot_062][0m
+
+TASK [Check cos services] ******************************************************
+[0;32mok: [g1_robot_062] => (item=cos_agent)[0m
+[0;32mok: [g1_robot_062] => (item=xrobotoolkit-pc-service)[0m
+[0;32mok: [g1_robot_062] => (item=cos_teleop)[0m
+
+TASK [Record cos_setup end time] ***********************************************
+[0;32mok: [g1_robot_062][0m
+
+TASK [Build cos_setup final result] ********************************************
+[0;32mok: [g1_robot_062][0m
+
+TASK [Build cos service report] ************************************************
+[0;32mok: [g1_robot_062] => (item={'cmd': 'set +e\nsystemctl is-enabled cos_agent\nenabled_rc=$?\nsystemctl is-active cos_agent\nactive_rc=$?\nsystemctl status cos_agent --no-pager -l\nstatus_rc=$?\nif systemctl status cos_agent --no-pager -l 2>/dev/null | grep -q \'Loaded: loaded\'; then\n  loaded=1\nelse\n  loaded=0\nfi\nif [ "$enabled_rc" -eq 0 ]; then\n  enabled=1\nelse\n  enabled=0\nfi\nif [ "$active_rc" -eq 0 ]; then\n  active=1\nelse\n  active=0\nfi\nprintf \'\\n__COS_SERVICE_RC__ loaded=%s enabled=%s active=%s enabled_rc=%s active_rc=%s status_rc=%s\\n\' "$loaded" "$enabled" "$active" "$enabled_rc" "$active_rc" "$status_rc"\nexit 0\n', 'stdout': 'enabled\nactive\n● cos_agent.service - coScene agent ROS2 Node\n     Loaded: loaded (/etc/systemd/system/cos_agent.service; enabled; vendor preset: enabled)\n     Active: active (running) since Wed 2026-06-17 15:07:23 CST; 50min ago\n   Main PID: 1016 (ros2)\n      Tasks: 22 (limit: 18143)\n     Memory: 77.8M\n     CGroup: /system.slice/cos_agent.service\n             ├─1016 /usr/bin/python3 /opt/ros/foxy/bin/ros2 launch agent agent.launch.py\n             └─1788 /opt/ros/foxy/lib/agent/agent_node --ros-args -r __node:=agent_node --params-file /tmp/launch_params__rept5js\n\nJun 17 15:07:23 unitree-6812 systemd[1]: Started coScene agent ROS2 Node.\nJun 10 12:01:09 unitree-6812 bash[1016]: [INFO] [launch]: All log files can be found below /home/unitree/.ros/log/1970-06-10-12-01-09-198460-unitree-6812-1016\nJun 10 12:01:09 unitree-6812 bash[1016]: [INFO] [launch]: Default logging verbosity is set to INFO\nJun 10 12:01:09 unitree-6812 bash[1016]: [INFO] [agent_node-1]: process started with pid [1788]\nJun 10 12:01:09 unitree-6812 bash[1016]: [agent_node-1] [INFO] [0013838469.421131552] [agent]: GIT HASH: 3b79b82ad16859b4b425ab438c167e81ba597a76\nJun 10 12:01:09 unitree-6812 bash[1016]: [agent_node-1] ╔═════════════════════════════════════════════════════════════════════════╗\nJun 10 12:01:09 unitree-6812 bash[1016]: [agent_node-1] ║              coScene Agent Started - ROS 2, version: 0.4.10              ║\nJun 10 12:01:09 unitree-6812 bash[1016]: [agent_node-1] ╚═════════════════════════════════════════════════════════════════════════╝\nJun 10 12:01:09 unitree-6812 bash[1016]: [agent_node-1] [INFO] [0013838469.421195104] [agent]: try to connect nats server...\nJun 17 15:12:03 unitree-6812 bash[1016]: [agent_node-1] [INFO] [1781680323.134826966] [agent]: connect nats success!\n\n__COS_SERVICE_RC__ loaded=1 enabled=1 active=1 enabled_rc=0 active_rc=0 status_rc=0', 'stderr': '', 'rc': 0, 'start': '2026-06-17 15:57:41.720445', 'end': '2026-06-17 15:57:41.765808', 'delta': '0:00:00.045363', 'changed': False, 'invocation': {'module_args': {'executable': '/bin/bash', '_raw_params': 'set +e\nsystemctl is-enabled cos_agent\nenabled_rc=$?\nsystemctl is-active cos_agent\nactive_rc=$?\nsystemctl status cos_agent --no-pager -l\nstatus_rc=$?\nif systemctl status cos_agent --no-pager -l 2>/dev/null | grep -q \'Loaded: loaded\'; then\n  loaded=1\nelse\n  loaded=0\nfi\nif [ "$enabled_rc" -eq 0 ]; then\n  enabled=1\nelse\n  enabled=0\nfi\nif [ "$active_rc" -eq 0 ]; then\n  active=1\nelse\n  active=0\nfi\nprintf \'\\n__COS_SERVICE_RC__ loaded=%s enabled=%s active=%s enabled_rc=%s active_rc=%s status_rc=%s\\n\' "$loaded" "$enabled" "$active" "$enabled_rc" "$active_rc" "$status_rc"\nexit 0\n', '_uses_shell': True, 'warn': True, 'stdin_add_newline': True, 'strip_empty_ends': True, 'argv': None, 'chdir': None, 'creates': None, 'removes': None, 'stdin': None}}, 'stdout_lines': ['enabled', 'active', '● cos_agent.service - coScene agent ROS2 Node', '     Loaded: loaded (/etc/systemd/system/cos_agent.service; enabled; vendor preset: enabled)', '     Active: active (running) since Wed 2026-06-17 15:07:23 CST; 50min ago', '   Main PID: 1016 (ros2)', '      Tasks: 22 (limit: 18143)', '     Memory: 77.8M', '     CGroup: /system.slice/cos_agent.service', '             ├─1016 /usr/bin/python3 /opt/ros/foxy/bin/ros2 launch agent agent.launch.py', '             └─1788 /opt/ros/foxy/lib/agent/agent_node --ros-args -r __node:=agent_node --params-file /tmp/launch_params__rept5js', '', 'Jun 17 15:07:23 unitree-6812 systemd[1]: Started coScene agent ROS2 Node.', 'Jun 10 12:01:09 unitree-6812 bash[1016]: [INFO] [launch]: All log files can be found below /home/unitree/.ros/log/1970-06-10-12-01-09-198460-unitree-6812-1016', 'Jun 10 12:01:09 unitree-6812 bash[1016]: [INFO] [launch]: Default logging verbosity is set to INFO', 'Jun 10 12:01:09 unitree-6812 bash[1016]: [INFO] [agent_node-1]: process started with pid [1788]', 'Jun 10 12:01:09 unitree-6812 bash[1016]: [agent_node-1] [INFO] [0013838469.421131552] [agent]: GIT HASH: 3b79b82ad16859b4b425ab438c167e81ba597a76', 'Jun 10 12:01:09 unitree-6812 bash[1016]: [agent_node-1] ╔═════════════════════════════════════════════════════════════════════════╗', 'Jun 10 12:01:09 unitree-6812 bash[1016]: [agent_node-1] ║              coScene Agent Started - ROS 2, version: 0.4.10              ║', 'Jun 10 12:01:09 unitree-6812 bash[1016]: [agent_node-1] ╚═════════════════════════════════════════════════════════════════════════╝', 'Jun 10 12:01:09 unitree-6812 bash[1016]: [agent_node-1] [INFO] [0013838469.421195104] [agent]: try to connect nats server...', 'Jun 17 15:12:03 unitree-6812 bash[1016]: [agent_node-1] [INFO] [1781680323.134826966] [agent]: connect nats success!', '', '__COS_SERVICE_RC__ loaded=1 enabled=1 active=1 enabled_rc=0 active_rc=0 status_rc=0'], 'stderr_lines': [], 'failed': False, 'failed_when_result': False, 'item': 'cos_agent', 'ansible_loop_var': 'item'})[0m
+[0;32mok: [g1_robot_062] => (item={'cmd': 'set +e\nsystemctl is-enabled xrobotoolkit-pc-service\nenabled_rc=$?\nsystemctl is-active xrobotoolkit-pc-service\nactive_rc=$?\nsystemctl status xrobotoolkit-pc-service --no-pager -l\nstatus_rc=$?\nif systemctl status xrobotoolkit-pc-service --no-pager -l 2>/dev/null | grep -q \'Loaded: loaded\'; then\n  loaded=1\nelse\n  loaded=0\nfi\nif [ "$enabled_rc" -eq 0 ]; then\n  enabled=1\nelse\n  enabled=0\nfi\nif [ "$active_rc" -eq 0 ]; then\n  active=1\nelse\n  active=0\nfi\nprintf \'\\n__COS_SERVICE_RC__ loaded=%s enabled=%s active=%s enabled_rc=%s active_rc=%s status_rc=%s\\n\' "$loaded" "$enabled" "$active" "$enabled_rc" "$active_rc" "$status_rc"\nexit 0\n', 'stdout': 'enabled\nactive\n● xrobotoolkit-pc-service.service - XRoboToolkit PC Service\n     Loaded: loaded (/etc/systemd/system/xrobotoolkit-pc-service.service; enabled; vendor preset: enabled)\n     Active: active (running) since Wed 2026-06-17 15:07:23 CST; 50min ago\n   Main PID: 1257 (RoboticsService)\n      Tasks: 23 (limit: 18143)\n     Memory: 31.9M\n     CGroup: /system.slice/xrobotoolkit-pc-service.service\n             └─1257 ./RoboticsServiceProcess\n\nJun 17 15:07:23 unitree-6812 systemd[1]: Starting XRoboToolkit PC Service...\nJun 17 15:07:23 unitree-6812 systemd[1]: Started XRoboToolkit PC Service.\nJun 17 15:07:23 unitree-6812 runService.sh[1257]: release mode\n\n__COS_SERVICE_RC__ loaded=1 enabled=1 active=1 enabled_rc=0 active_rc=0 status_rc=0', 'stderr': '', 'rc': 0, 'start': '2026-06-17 15:57:42.003244', 'end': '2026-06-17 15:57:42.049714', 'delta': '0:00:00.046470', 'changed': False, 'invocation': {'module_args': {'executable': '/bin/bash', '_raw_params': 'set +e\nsystemctl is-enabled xrobotoolkit-pc-service\nenabled_rc=$?\nsystemctl is-active xrobotoolkit-pc-service\nactive_rc=$?\nsystemctl status xrobotoolkit-pc-service --no-pager -l\nstatus_rc=$?\nif systemctl status xrobotoolkit-pc-service --no-pager -l 2>/dev/null | grep -q \'Loaded: loaded\'; then\n  loaded=1\nelse\n  loaded=0\nfi\nif [ "$enabled_rc" -eq 0 ]; then\n  enabled=1\nelse\n  enabled=0\nfi\nif [ "$active_rc" -eq 0 ]; then\n  active=1\nelse\n  active=0\nfi\nprintf \'\\n__COS_SERVICE_RC__ loaded=%s enabled=%s active=%s enabled_rc=%s active_rc=%s status_rc=%s\\n\' "$loaded" "$enabled" "$active" "$enabled_rc" "$active_rc" "$status_rc"\nexit 0\n', '_uses_shell': True, 'warn': True, 'stdin_add_newline': True, 'strip_empty_ends': True, 'argv': None, 'chdir': None, 'creates': None, 'removes': None, 'stdin': None}}, 'stdout_lines': ['enabled', 'active', '● xrobotoolkit-pc-service.service - XRoboToolkit PC Service', '     Loaded: loaded (/etc/systemd/system/xrobotoolkit-pc-service.service; enabled; vendor preset: enabled)', '     Active: active (running) since Wed 2026-06-17 15:07:23 CST; 50min ago', '   Main PID: 1257 (RoboticsService)', '      Tasks: 23 (limit: 18143)', '     Memory: 31.9M', '     CGroup: /system.slice/xrobotoolkit-pc-service.service', '             └─1257 ./RoboticsServiceProcess', '', 'Jun 17 15:07:23 unitree-6812 systemd[1]: Starting XRoboToolkit PC Service...', 'Jun 17 15:07:23 unitree-6812 systemd[1]: Started XRoboToolkit PC Service.', 'Jun 17 15:07:23 unitree-6812 runService.sh[1257]: release mode', '', '__COS_SERVICE_RC__ loaded=1 enabled=1 active=1 enabled_rc=0 active_rc=0 status_rc=0'], 'stderr_lines': [], 'failed': False, 'failed_when_result': False, 'item': 'xrobotoolkit-pc-service', 'ansible_loop_var': 'item'})[0m
+[0;32mok: [g1_robot_062] => (item={'cmd': 'set +e\nsystemctl is-enabled cos_teleop\nenabled_rc=$?\nsystemctl is-active cos_teleop\nactive_rc=$?\nsystemctl status cos_teleop --no-pager -l\nstatus_rc=$?\nif systemctl status cos_teleop --no-pager -l 2>/dev/null | grep -q \'Loaded: loaded\'; then\n  loaded=1\nelse\n  loaded=0\nfi\nif [ "$enabled_rc" -eq 0 ]; then\n  enabled=1\nelse\n  enabled=0\nfi\nif [ "$active_rc" -eq 0 ]; then\n  active=1\nelse\n  active=0\nfi\nprintf \'\\n__COS_SERVICE_RC__ loaded=%s enabled=%s active=%s enabled_rc=%s active_rc=%s status_rc=%s\\n\' "$loaded" "$enabled" "$active" "$enabled_rc" "$active_rc" "$status_rc"\nexit 0\n', 'stdout': 'enabled\nactive\n● cos_teleop.service - coScene teleop_server ROS2 Node\n     Loaded: loaded (/etc/systemd/system/cos_teleop.service; enabled; vendor preset: enabled)\n     Active: active (running) since Wed 2026-06-17 15:38:44 CST; 18min ago\n   Main PID: 10949 (ros2)\n      Tasks: 68 (limit: 18143)\n     Memory: 104.1M\n     CGroup: /system.slice/cos_teleop.service\n             ├─10949 /usr/bin/python3 /opt/ros/foxy/bin/ros2 launch teleop_server teleop_server.launch.py urdf_file:=/home/unitree/cos_ws/src/g1_description/g1_29dof_mode_15_with_dex1_1.urdf\n             ├─11003 /home/unitree/cos_ws/install/teleop_server/lib/teleop_server/teleop_server_node /home/unitree/cos_ws/install/teleop_server/share/teleop_server/config/teleop_server.yaml --ros-args\n             └─11005 /opt/ros/foxy/lib/robot_state_publisher/robot_state_publisher /home/unitree/cos_ws/src/g1_description/g1_29dof_mode_15_with_dex1_1.urdf --ros-args\n\nJun 17 15:38:47 unitree-6812 bash[10949]: [teleop_server_node-1] 2026-06-17 15:38:47.025 [ INFO] [recording_controller.cpp:031] RecordingController started.\nJun 17 15:38:47 unitree-6812 bash[10949]: [teleop_server_node-1] 2026-06-17 15:38:47.035 [ INFO] [pico_teleop_sender.cpp:329] PicoTeleopSender enabled. packet_topic=/pico/teleop_packet teleop_cmd_topic=/fsm/teleop/cmd sport_request_topic=/api/sport/request teleop=505 locomotion=801 hand_type=dex1\nJun 17 15:38:47 unitree-6812 bash[10949]: [teleop_server_node-1] 2026-06-17 15:38:47.036 [ INFO] [pico_data_receiver.cpp:354] Pico 82D converter enabled. hz=50.0\nJun 17 15:38:47 unitree-6812 bash[10949]: [teleop_server_node-1] 2026-06-17 15:38:47.037 [ INFO] [PXREARobotSDK] initialize sdk,connect to server\nJun 17 15:38:47 unitree-6812 bash[10949]: [teleop_server_node-1] 2026-06-17 15:38:47.041 [ INFO] [pico_data_receiver.cpp:360] PicoDataReceiver started.\nJun 17 15:38:47 unitree-6812 bash[10949]: [teleop_server_node-1] 2026-06-17 15:38:47.549 [ INFO] [PXREARobotSDK] client start server stream\nJun 17 15:38:47 unitree-6812 bash[10949]: [teleop_server_node-1] 2026-06-17 15:38:47.550 [ INFO] [pico_data_receiver.cpp:388] XRoboToolkit server connected\nJun 17 15:38:47 unitree-6812 bash[10949]: [teleop_server_node-1] 2026-06-17 15:38:47.550 [ INFO] [PXREARobotSDK] server connect\nJun 17 15:38:47 unitree-6812 bash[10949]: [teleop_server_node-1] 2026-06-17 15:38:47.550 [ INFO] [PXREARobotSDK] watch server feedback thread start\nJun 17 15:56:58 unitree-6812 bash[10949]: [robot_state_publisher-2] [WARN] [1781683018.008511256] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!\n\n__COS_SERVICE_RC__ loaded=1 enabled=1 active=1 enabled_rc=0 active_rc=0 status_rc=0', 'stderr': '', 'rc': 0, 'start': '2026-06-17 15:57:42.288931', 'end': '2026-06-17 15:57:42.336586', 'delta': '0:00:00.047655', 'changed': False, 'invocation': {'module_args': {'executable': '/bin/bash', '_raw_params': 'set +e\nsystemctl is-enabled cos_teleop\nenabled_rc=$?\nsystemctl is-active cos_teleop\nactive_rc=$?\nsystemctl status cos_teleop --no-pager -l\nstatus_rc=$?\nif systemctl status cos_teleop --no-pager -l 2>/dev/null | grep -q \'Loaded: loaded\'; then\n  loaded=1\nelse\n  loaded=0\nfi\nif [ "$enabled_rc" -eq 0 ]; then\n  enabled=1\nelse\n  enabled=0\nfi\nif [ "$active_rc" -eq 0 ]; then\n  active=1\nelse\n  active=0\nfi\nprintf \'\\n__COS_SERVICE_RC__ loaded=%s enabled=%s active=%s enabled_rc=%s active_rc=%s status_rc=%s\\n\' "$loaded" "$enabled" "$active" "$enabled_rc" "$active_rc" "$status_rc"\nexit 0\n', '_uses_shell': True, 'warn': True, 'stdin_add_newline': True, 'strip_empty_ends': True, 'argv': None, 'chdir': None, 'creates': None, 'removes': None, 'stdin': None}}, 'stdout_lines': ['enabled', 'active', '● cos_teleop.service - coScene teleop_server ROS2 Node', '     Loaded: loaded (/etc/systemd/system/cos_teleop.service; enabled; vendor preset: enabled)', '     Active: active (running) since Wed 2026-06-17 15:38:44 CST; 18min ago', '   Main PID: 10949 (ros2)', '      Tasks: 68 (limit: 18143)', '     Memory: 104.1M', '     CGroup: /system.slice/cos_teleop.service', '             ├─10949 /usr/bin/python3 /opt/ros/foxy/bin/ros2 launch teleop_server teleop_server.launch.py urdf_file:=/home/unitree/cos_ws/src/g1_description/g1_29dof_mode_15_with_dex1_1.urdf', '             ├─11003 /home/unitree/cos_ws/install/teleop_server/lib/teleop_server/teleop_server_node /home/unitree/cos_ws/install/teleop_server/share/teleop_server/config/teleop_server.yaml --ros-args', '             └─11005 /opt/ros/foxy/lib/robot_state_publisher/robot_state_publisher /home/unitree/cos_ws/src/g1_description/g1_29dof_mode_15_with_dex1_1.urdf --ros-args', '', 'Jun 17 15:38:47 unitree-6812 bash[10949]: [teleop_server_node-1] 2026-06-17 15:38:47.025 [ INFO] [recording_controller.cpp:031] RecordingController started.', 'Jun 17 15:38:47 unitree-6812 bash[10949]: [teleop_server_node-1] 2026-06-17 15:38:47.035 [ INFO] [pico_teleop_sender.cpp:329] PicoTeleopSender enabled. packet_topic=/pico/teleop_packet teleop_cmd_topic=/fsm/teleop/cmd sport_request_topic=/api/sport/request teleop=505 locomotion=801 hand_type=dex1', 'Jun 17 15:38:47 unitree-6812 bash[10949]: [teleop_server_node-1] 2026-06-17 15:38:47.036 [ INFO] [pico_data_receiver.cpp:354] Pico 82D converter enabled. hz=50.0', 'Jun 17 15:38:47 unitree-6812 bash[10949]: [teleop_server_node-1] 2026-06-17 15:38:47.037 [ INFO] [PXREARobotSDK] initialize sdk,connect to server', 'Jun 17 15:38:47 unitree-6812 bash[10949]: [teleop_server_node-1] 2026-06-17 15:38:47.041 [ INFO] [pico_data_receiver.cpp:360] PicoDataReceiver started.', 'Jun 17 15:38:47 unitree-6812 bash[10949]: [teleop_server_node-1] 2026-06-17 15:38:47.549 [ INFO] [PXREARobotSDK] client start server stream', 'Jun 17 15:38:47 unitree-6812 bash[10949]: [teleop_server_node-1] 2026-06-17 15:38:47.550 [ INFO] [pico_data_receiver.cpp:388] XRoboToolkit server connected', 'Jun 17 15:38:47 unitree-6812 bash[10949]: [teleop_server_node-1] 2026-06-17 15:38:47.550 [ INFO] [PXREARobotSDK] server connect', 'Jun 17 15:38:47 unitree-6812 bash[10949]: [teleop_server_node-1] 2026-06-17 15:38:47.550 [ INFO] [PXREARobotSDK] watch server feedback thread start', 'Jun 17 15:56:58 unitree-6812 bash[10949]: [robot_state_publisher-2] [WARN] [1781683018.008511256] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!', '', '__COS_SERVICE_RC__ loaded=1 enabled=1 active=1 enabled_rc=0 active_rc=0 status_rc=0'], 'stderr_lines': [], 'failed': False, 'failed_when_result': False, 'item': 'cos_teleop', 'ansible_loop_var': 'item'})[0m
+
+TASK [Build cos service status facts] ******************************************
+[0;32mok: [g1_robot_062][0m
+
+TASK [Build canonical cos_setup success gate] **********************************
+[0;32mok: [g1_robot_062][0m
+
+TASK [Build final cos_setup JSON object] ***************************************
+[0;32mok: [g1_robot_062][0m
+
+TASK [Ensure local cos_setup report directory exists] **************************
+[0;32mok: [g1_robot_062][0m
+
+TASK [Write per-robot cos_setup JSON report] ***********************************
+[0;33mchanged: [g1_robot_062][0m
+
+TASK [Write cos_setup aggregate JSON report] ***********************************
+[0;33mchanged: [g1_robot_062][0m
+
+TASK [Print cos_setup report paths] ********************************************
+[0;32mok: [g1_robot_062] => {[0m
+[0;32m    "msg": [[0m
+[0;32m        "COS setup result: g1_robot_062 (192.168.90.62)",[0m
+[0;32m        "robot_id=62",[0m
+[0;32m        "end_effector=dex1",[0m
+[0;32m        "Per-robot report: /home/jeff/coscene/code/codex/G1CI/基础环境检查/reports/raw/cos_setup_<inventory_hostname>.json",[0m
+[0;32m        "Aggregate report: /home/jeff/coscene/code/codex/G1CI/基础环境检查/reports/raw/cos_setup_summary.json"[0m
+[0;32m    ][0m
+[0;32m}[0m
+
+TASK [Fail when cos_setup did not complete successfully] ***********************
+[0;36mskipping: [g1_robot_062][0m
+
+PLAY RECAP *********************************************************************
+[0;33mg1_robot_062[0m               : [0;32mok=41  [0m [0;33mchanged=12  [0m unreachable=0    failed=0    [0;36mskipped=8   [0m rescued=0    ignored=0   
+
+
+returncode=0

@@ -58,6 +58,7 @@
         <div class="actions operation-actions">
           <button data-action="service_check" type="button">服务状态检查</button>
           <button data-action="hand_test" type="button">验证手是否能动</button>
+          <button id="headCameraRecoveryBtn" type="button">调整头部相机</button>
         </div>
 
         <div class="service-actions">
@@ -78,6 +79,9 @@
       <div id="taskBanner" class="task-banner idle">
         <strong>当前无任务运行</strong>
         <span>请先输入 SSH 密码和 sudo 密码，再执行任务。</span>
+      </div>
+      <div id="taskCancelRow" class="task-cancel-row" hidden>
+        <button id="cancelServiceCheckBtn" class="danger" type="button" hidden>取消检查</button>
       </div>
 
       <section id="taskProgress" class="task-progress" hidden></section>
@@ -302,6 +306,40 @@
     </div>
   </div>
 
+  <div id="headCameraRecoveryOverlay" class="confirm-overlay" hidden>
+    <div class="confirm-dialog camera-recovery-dialog" role="dialog" aria-modal="true" aria-labelledby="headCameraRecoveryTitle">
+      <div class="camera-binding-head">
+        <div>
+          <h2 id="headCameraRecoveryTitle">调整头部相机</h2>
+          <p id="headCameraRecoveryRobot">当前机器人：-</p>
+        </div>
+        <button id="closeHeadCameraRecoveryIconBtn" class="secondary icon-close-btn" type="button" aria-label="关闭" title="关闭">×</button>
+      </div>
+      <div class="camera-preview-stage">
+        <img id="headCameraPreview" alt="头部相机实时画面">
+        <div id="headCameraPreviewPlaceholder" class="camera-preview-placeholder">
+          <strong>正在连接头部相机</strong>
+          <span>等待实时画面</span>
+        </div>
+      </div>
+      <div id="headCameraManualStage" class="camera-manual-stage" hidden>
+        <iframe id="headCameraManualFrame" title="头部相机手动参数调整"></iframe>
+      </div>
+      <p id="headCameraRecoveryStatus" class="camera-binding-status running">正在启动实时预览……</p>
+      <p class="camera-recovery-hint">确认画面后可执行一键调整；手动调参会临时停止 teleop，结束后自动恢复。</p>
+      <details id="headCameraRecoveryLogs" class="camera-recovery-logs" hidden>
+        <summary>最近执行日志</summary>
+        <pre id="headCameraRecoveryLogText"></pre>
+      </details>
+      <div class="confirm-actions camera-recovery-actions">
+        <button id="closeHeadCameraRecoveryBtn" class="secondary" type="button">关闭</button>
+        <button id="startHeadCameraManualBtn" class="secondary" type="button">手动调参</button>
+        <button id="stopHeadCameraManualBtn" class="danger" type="button" hidden>结束手动调参</button>
+        <button id="confirmHeadCameraRecoveryBtn" type="button">重新加载参数</button>
+      </div>
+    </div>
+  </div>
+
   <div id="handSelectOverlay" class="confirm-overlay" hidden>
     <div class="confirm-dialog hand-dialog" role="dialog" aria-modal="true" aria-labelledby="handSelectTitle">
       <h2 id="handSelectTitle">选择测试手</h2>
@@ -351,11 +389,31 @@
       dex1: "dex1_gripper.service",
       brainco: "brainco_hand.service"
     };
+    const BUSINESS_STATUS_REFRESH_MS = 25000;
+    function createClientId() {
+      if (globalThis.crypto && typeof globalThis.crypto.randomUUID === "function") {
+        return `tab_${globalThis.crypto.randomUUID().replaceAll("-", "")}`;
+      }
+      if (globalThis.crypto && typeof globalThis.crypto.getRandomValues === "function") {
+        const bytes = new Uint8Array(16);
+        globalThis.crypto.getRandomValues(bytes);
+        return `tab_${Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+      }
+      return `tab_${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`;
+    }
+    const CLIENT_ID = (() => {
+      const existing = sessionStorage.getItem("operatorConsoleClientId");
+      if (existing) return existing;
+      const generated = createClientId();
+      sessionStorage.setItem("operatorConsoleClientId", generated);
+      return generated;
+    })();
     const state = {
       robots: [],
       robotStatuses: {},
       polling: { operation: null, developer: null },
       statusPolling: null,
+      businessPolling: null,
       servicePolling: null,
       serviceDetail: null,
       serviceLoading: false,
@@ -371,7 +429,9 @@
       pendingAction: null,
       pendingHandTest: null,
       handTestVisible: false,
-      cameraBinding: null
+      cameraBinding: null,
+      cameraRecovery: null,
+      cameraRecoveryPolling: null
     };
     const actionLabels = {
       deploy_setup_agent: "智能部署 / 修复",
@@ -451,9 +511,20 @@
     }[status] || status || "未知");
 
     async function api(path, options = {}) {
-      const response = await fetch(path, options);
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.message || data.error || "请求失败");
+      const headers = new Headers(options.headers || {});
+      headers.set("X-Client-ID", CLIENT_ID);
+      const response = await fetch(path, { ...options, headers });
+      const raw = await response.text();
+      let data;
+      try {
+        data = raw ? JSON.parse(raw) : {};
+      } catch (_error) {
+        const hint = response.status === 404
+          ? "接口不存在，请重启操作台后端后重试。"
+          : "服务器返回了非 JSON 响应，请检查操作台后端日志。";
+        throw new Error(`${hint}（HTTP ${response.status}）`);
+      }
+      if (!response.ok) throw new Error(data.message || data.error || `请求失败（HTTP ${response.status}）`);
       return data;
     }
 
@@ -856,6 +927,11 @@
       const detail = job.message && job.message !== title ? job.message : "";
       setTaskBanner(bannerKindFromJob(job), title, detail, formatDuration(job.duration_seconds));
       renderTaskProgress(job);
+      const cancelServiceButton = document.getElementById("cancelServiceCheckBtn");
+      const showServiceCancel = job.running && job.action === "service_check" && job.cancellable;
+      document.getElementById("taskCancelRow").hidden = !showServiceCancel;
+      cancelServiceButton.hidden = !showServiceCancel;
+      cancelServiceButton.disabled = Boolean(job.cancel_requested);
       renderHandTestOverlay(job);
       updateHeaderJobText();
     }
@@ -1395,15 +1471,19 @@
       if (state.refreshing || state.jobRunning.operation) return;
       const headers = serviceHeaders();
       const isInitial = Boolean(options.initial);
+      const silent = Boolean(options.silent);
       state.refreshing = true;
       setRefreshButtonState();
-      setTaskBanner("running", isInitial ? "正在同步机器人状态" : "正在刷新最新报告", refreshStartMessage(headers));
+      if (!silent) {
+        setTaskBanner("running", isInitial ? "正在同步机器人状态" : "正在刷新最新报告", refreshStartMessage(headers));
+      }
       try {
         const data = await api("/api/refresh", {
           method: "POST",
           headers
         });
         renderReports(data);
+        updateRobotStatuses(data.robot_statuses || []);
         const failed = Number(data.refresh?.business_failed || 0);
         const missingPassword = !hasSshPassword(headers);
         const title = failed > 0
@@ -1412,15 +1492,29 @@
         const detail = missingPassword && failed > 0
           ? `${refreshSummaryText(data.refresh)} 请填写 SSH 密码后重新刷新。`
           : refreshSummaryText(data.refresh);
-        setTaskBanner(failed > 0 ? "partial" : "success", title, detail);
+        if (!silent) {
+          setTaskBanner(failed > 0 ? "partial" : "success", title, detail);
+        }
         return data;
       } catch (error) {
-        setTaskBanner("fail", "刷新失败", error.message || "请稍后再试。");
+        if (!silent) {
+          setTaskBanner("fail", "刷新失败", error.message || "请稍后再试。");
+        }
         throw error;
       } finally {
         state.refreshing = false;
         setRefreshButtonState();
       }
+    }
+
+    function startBusinessStatusPolling() {
+      if (state.businessPolling) clearInterval(state.businessPolling);
+      state.businessPolling = setInterval(() => {
+        if (state.jobRunning.operation || state.refreshing) return;
+        refreshLatestReport({ silent: true }).catch((error) => {
+          console.warn("业务状态自动刷新失败", error);
+        });
+      }, BUSINESS_STATUS_REFRESH_MS);
     }
 
     async function loadLogTail() {
@@ -1562,6 +1656,245 @@
         if (state.cameraBinding === binding) {
           button.disabled = false;
           button.textContent = "重新读取";
+        }
+      }
+    }
+
+    async function openHeadCameraRecovery() {
+      const selected = selectedRobots();
+      if (selected.length !== 1) {
+        setTaskBanner("fail", "无法调整头部相机", "请只选择 1 台机器人后重试。");
+        return;
+      }
+      const passwords = validatePasswords();
+      if (!passwords) return;
+      await closeHeadCameraRecovery();
+      const robot = selectedRobotObjects(selected)[0];
+      const recovery = {
+        selected,
+        passwords,
+        token: "",
+        manualToken: "",
+        manualStarting: false,
+        manualStopping: false,
+        running: false
+      };
+      state.cameraRecovery = recovery;
+      document.getElementById("headCameraRecoveryRobot").textContent = `当前机器人：${robot ? `${robotLabel(robot)}（${robot.inventory_hostname}）` : selected[0]}`;
+      document.getElementById("headCameraRecoveryOverlay").hidden = false;
+      document.getElementById("headCameraPreviewPlaceholder").hidden = false;
+      document.getElementById("headCameraRecoveryLogs").hidden = true;
+      document.getElementById("headCameraRecoveryLogText").textContent = "";
+      document.getElementById("headCameraManualStage").hidden = true;
+      document.getElementById("headCameraManualFrame").removeAttribute("src");
+      document.getElementById("startHeadCameraManualBtn").hidden = false;
+      document.getElementById("startHeadCameraManualBtn").disabled = false;
+      document.getElementById("stopHeadCameraManualBtn").hidden = true;
+      document.getElementById("confirmHeadCameraRecoveryBtn").disabled = true;
+      setHeadCameraRecoveryStatus("running", "正在连接头部相机实时画面……");
+      await connectHeadCameraPreview(recovery);
+    }
+
+    async function connectHeadCameraPreview(recovery) {
+      if (state.cameraRecovery !== recovery || recovery.manualToken) return;
+      document.querySelector(".camera-preview-stage").hidden = false;
+      document.getElementById("headCameraPreviewPlaceholder").hidden = false;
+      setHeadCameraRecoveryStatus("running", "正在连接头部相机实时画面……");
+      try {
+        const preview = await api("/api/camera/head/preview", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            robots: recovery.selected,
+            ssh_password: recovery.passwords.sshPassword
+          })
+        });
+        if (state.cameraRecovery !== recovery) {
+          await api(`/api/camera/head/preview/${encodeURIComponent(preview.token)}`, { method: "DELETE" }).catch(() => {});
+          return;
+        }
+        recovery.token = preview.token;
+        const image = document.getElementById("headCameraPreview");
+        image.src = `${preview.stream_url}?t=${Date.now()}`;
+      } catch (error) {
+        if (state.cameraRecovery === recovery) {
+          setHeadCameraRecoveryStatus("fail", error.message);
+        }
+      }
+    }
+
+    function setHeadCameraRecoveryStatus(kind, message) {
+      const status = document.getElementById("headCameraRecoveryStatus");
+      status.className = `camera-binding-status ${kind || ""}`;
+      status.textContent = message;
+    }
+
+    async function closeHeadCameraRecovery() {
+      if (state.cameraRecoveryPolling) {
+        clearInterval(state.cameraRecoveryPolling);
+        state.cameraRecoveryPolling = null;
+      }
+      const recovery = state.cameraRecovery;
+      if (recovery?.manualToken) {
+        await stopHeadCameraManual(recovery, false);
+      }
+      state.cameraRecovery = null;
+      const image = document.getElementById("headCameraPreview");
+      image.removeAttribute("src");
+      document.getElementById("headCameraManualFrame").removeAttribute("src");
+      document.getElementById("headCameraRecoveryOverlay").hidden = true;
+      if (recovery?.token) {
+        await api(`/api/camera/head/preview/${encodeURIComponent(recovery.token)}`, { method: "DELETE" }).catch(() => {});
+      }
+    }
+
+    async function startHeadCameraManual() {
+      const recovery = state.cameraRecovery;
+      if (!recovery || recovery.running || recovery.manualStarting || recovery.manualToken) return;
+      if (!window.confirm("手动调参期间将停止 cos_teleop.service，结束手动调参后会自动恢复。确认继续？")) return;
+      recovery.manualStarting = true;
+      const startButton = document.getElementById("startHeadCameraManualBtn");
+      const recoveryButton = document.getElementById("confirmHeadCameraRecoveryBtn");
+      startButton.disabled = true;
+      recoveryButton.disabled = true;
+      setHeadCameraRecoveryStatus("running", "正在停止 teleop 并启动相机手动调整工具……");
+      if (recovery.token) {
+        const previewToken = recovery.token;
+        recovery.token = "";
+        document.getElementById("headCameraPreview").removeAttribute("src");
+        await api(`/api/camera/head/preview/${encodeURIComponent(previewToken)}`, { method: "DELETE" }).catch(() => {});
+      }
+      try {
+        const manual = await api("/api/camera/head/manual/start", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            robots: recovery.selected,
+            ssh_password: recovery.passwords.sshPassword,
+            sudo_password: recovery.passwords.sudoPassword
+          })
+        });
+        if (state.cameraRecovery !== recovery) {
+          await api(`/api/camera/head/manual/${encodeURIComponent(manual.token)}`, { method: "DELETE" }).catch(() => {});
+          return;
+        }
+        recovery.manualToken = manual.token;
+        document.querySelector(".camera-preview-stage").hidden = true;
+        document.getElementById("headCameraManualStage").hidden = false;
+        document.getElementById("headCameraManualFrame").src = manual.tool_url;
+        startButton.hidden = true;
+        document.getElementById("stopHeadCameraManualBtn").hidden = false;
+        setHeadCameraRecoveryStatus("running", "手动调整模式已启动，teleop 已临时停止。完成后请点击“结束手动调参”。");
+      } catch (error) {
+        setHeadCameraRecoveryStatus("fail", error.message);
+        startButton.disabled = false;
+        recoveryButton.disabled = false;
+        await connectHeadCameraPreview(recovery).catch(() => {});
+        throw error;
+      } finally {
+        recovery.manualStarting = false;
+      }
+    }
+
+    async function stopHeadCameraManual(
+      recovery = state.cameraRecovery,
+      reconnectPreview = true,
+      saveParameters = null
+    ) {
+      if (!recovery?.manualToken || recovery.manualStopping) return;
+      if (saveParameters === null) {
+        saveParameters = window.confirm(
+          "是否保存当前头部相机参数？\n\n点击“确定”保存参数并结束；点击“取消”不保存并结束。"
+        );
+      }
+      recovery.manualStopping = true;
+      const token = recovery.manualToken;
+      const stopButton = document.getElementById("stopHeadCameraManualBtn");
+      stopButton.disabled = true;
+      setHeadCameraRecoveryStatus(
+        "running",
+        saveParameters ? "正在保存参数、结束手动调整并恢复 teleop……" : "正在结束手动调整并恢复 teleop……"
+      );
+      try {
+        const result = await api("/api/camera/head/manual/stop", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token, save_parameters: saveParameters })
+        });
+        if (!result.closed) throw new Error(result.message || "手动调整会话尚未结束，请稍后重试。");
+        recovery.manualToken = "";
+        document.getElementById("headCameraManualFrame").removeAttribute("src");
+        document.getElementById("headCameraManualStage").hidden = true;
+        document.querySelector(".camera-preview-stage").hidden = false;
+        stopButton.hidden = true;
+        document.getElementById("startHeadCameraManualBtn").hidden = false;
+        document.getElementById("startHeadCameraManualBtn").disabled = false;
+        setHeadCameraRecoveryStatus("success", result.message || "手动调整已结束，teleop 已恢复。");
+        if (reconnectPreview && state.cameraRecovery === recovery) {
+          await connectHeadCameraPreview(recovery);
+        }
+      } finally {
+        recovery.manualStopping = false;
+        stopButton.disabled = false;
+      }
+    }
+
+    function renderHeadCameraRecoveryStatus(data) {
+      if (!state.cameraRecovery) return;
+      const kind = data.status === "SUCCESS" ? "success" : data.status === "FAILED" || data.status === "UNAVAILABLE" ? "fail" : "running";
+      setHeadCameraRecoveryStatus(kind, data.message || "正在读取调整状态……");
+      const logs = String(data.logs || "").trim();
+      document.getElementById("headCameraRecoveryLogs").hidden = !logs;
+      document.getElementById("headCameraRecoveryLogText").textContent = logs;
+      if (["SUCCESS", "FAILED", "UNAVAILABLE"].includes(data.status)) {
+        if (state.cameraRecoveryPolling) clearInterval(state.cameraRecoveryPolling);
+        state.cameraRecoveryPolling = null;
+        state.cameraRecovery.running = false;
+        document.getElementById("confirmHeadCameraRecoveryBtn").disabled = false;
+      }
+    }
+
+    async function pollHeadCameraRecoveryStatus() {
+      const recovery = state.cameraRecovery;
+      if (!recovery) return;
+      const data = await api(`/api/camera/head/recover/status?robot=${encodeURIComponent(recovery.selected[0])}`, {
+        headers: serviceHeaders()
+      });
+      if (state.cameraRecovery === recovery) renderHeadCameraRecoveryStatus(data);
+    }
+
+    async function confirmHeadCameraRecovery() {
+      const recovery = state.cameraRecovery;
+      if (!recovery || recovery.running || recovery.manualToken || recovery.manualStarting) return;
+      recovery.running = true;
+      const button = document.getElementById("confirmHeadCameraRecoveryBtn");
+      button.disabled = true;
+      setHeadCameraRecoveryStatus("running", "正在检查 teleop 并启动头部相机调整……");
+      try {
+        await api("/api/camera/head/recover", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            robots: recovery.selected,
+            ssh_password: recovery.passwords.sshPassword,
+            sudo_password: recovery.passwords.sudoPassword
+          })
+        });
+        if (state.cameraRecovery !== recovery) return;
+        setHeadCameraRecoveryStatus("running", "正在调整头部相机，请保持机器人位于当前工作光照环境……");
+        await pollHeadCameraRecoveryStatus();
+        if (!state.cameraRecoveryPolling && state.cameraRecovery?.running) {
+          state.cameraRecoveryPolling = setInterval(() => {
+            pollHeadCameraRecoveryStatus().catch((error) => {
+              setHeadCameraRecoveryStatus("fail", error.message);
+            });
+          }, 1000);
+        }
+      } catch (error) {
+        if (state.cameraRecovery === recovery) {
+          recovery.running = false;
+          button.disabled = false;
+          setHeadCameraRecoveryStatus("fail", error.message);
         }
       }
     }
@@ -1774,6 +2107,18 @@
       startJobPolling("operation");
     }
 
+    async function cancelServiceCheck() {
+      const button = document.getElementById("cancelServiceCheckBtn");
+      button.disabled = true;
+      try {
+        const job = await api("/api/service-check/cancel", { method: "POST" });
+        renderJob(job, "operation");
+      } catch (error) {
+        button.disabled = false;
+        throw error;
+      }
+    }
+
     async function cancelHandTest() {
       document.getElementById("cancelHandTestBtn").disabled = true;
       try {
@@ -1885,6 +2230,50 @@
     document.getElementById("confirmOverlay").addEventListener("click", (event) => {
       if (event.target.id === "confirmOverlay") hideConfirm();
     });
+    document.getElementById("headCameraRecoveryBtn").addEventListener("click", () => {
+      openHeadCameraRecovery().catch((error) => setTaskBanner("fail", "头部相机预览失败", error.message));
+    });
+    document.getElementById("closeHeadCameraRecoveryBtn").addEventListener("click", () => {
+      closeHeadCameraRecovery().catch((error) => setHeadCameraRecoveryStatus("fail", error.message));
+    });
+    document.getElementById("closeHeadCameraRecoveryIconBtn").addEventListener("click", () => {
+      closeHeadCameraRecovery().catch((error) => setHeadCameraRecoveryStatus("fail", error.message));
+    });
+    document.getElementById("startHeadCameraManualBtn").addEventListener("click", () => {
+      startHeadCameraManual().catch((error) => setTaskBanner("fail", "手动调参启动失败", error.message));
+    });
+    document.getElementById("stopHeadCameraManualBtn").addEventListener("click", () => {
+      stopHeadCameraManual().catch((error) => setHeadCameraRecoveryStatus("fail", error.message));
+    });
+    document.getElementById("confirmHeadCameraRecoveryBtn").addEventListener("click", () => confirmHeadCameraRecovery());
+    document.getElementById("headCameraRecoveryOverlay").addEventListener("click", (event) => {
+      if (event.target.id === "headCameraRecoveryOverlay") {
+        closeHeadCameraRecovery().catch((error) => setHeadCameraRecoveryStatus("fail", error.message));
+      }
+    });
+    document.getElementById("headCameraPreview").addEventListener("load", () => {
+      if (!state.cameraRecovery) return;
+      document.getElementById("headCameraPreviewPlaceholder").hidden = true;
+      document.getElementById("confirmHeadCameraRecoveryBtn").disabled = false;
+      if (!state.cameraRecovery.running) setHeadCameraRecoveryStatus("success", "头部相机实时画面已连接，请确认画面后执行调整。");
+    });
+    document.getElementById("headCameraPreview").addEventListener("error", () => {
+      if (!state.cameraRecovery || state.cameraRecovery.manualToken) return;
+      document.getElementById("confirmHeadCameraRecoveryBtn").disabled = true;
+      setHeadCameraRecoveryStatus("fail", "实时画面连接失败，请检查 cos_teleop.service 和头部相机 topic。" );
+    });
+    document.getElementById("headCameraManualFrame").addEventListener("load", () => {
+      if (!state.cameraRecovery?.manualToken) return;
+      setHeadCameraRecoveryStatus("success", "相机手动调整工具已连接。完成后请点击“结束手动调参”。");
+    });
+    window.addEventListener("beforeunload", () => {
+      const token = state.cameraRecovery?.manualToken;
+      if (!token) return;
+      navigator.sendBeacon(
+        "/api/camera/head/manual/stop",
+        new Blob([JSON.stringify({ token, save_parameters: false })], { type: "application/json" })
+      );
+    });
     document.getElementById("closeCameraBindingBtn").addEventListener("click", closeCameraBinding);
     document.getElementById("closeCameraBindingIconBtn").addEventListener("click", closeCameraBinding);
     document.getElementById("cameraBindingOverlay").addEventListener("click", (event) => {
@@ -1926,6 +2315,9 @@
           setTaskBanner("fail", "执行失败", message);
         });
       });
+    });
+    document.getElementById("cancelServiceCheckBtn").addEventListener("click", () => {
+      cancelServiceCheck().catch((error) => setTaskBanner("fail", "取消失败", error.message));
     });
     document.getElementById("cancelHandTestBtn").addEventListener("click", () => {
       cancelHandTest().catch((error) => setTaskBanner("fail", "取消失败", error.message));
@@ -1994,6 +2386,7 @@
           document.getElementById("jobText").textContent = error.message;
         });
       }, 3000);
+      startBusinessStatusPolling();
       if (operationJob.running) {
         startJobPolling("operation");
       } else {

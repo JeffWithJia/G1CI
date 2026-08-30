@@ -1,0 +1,4 @@
+$ bash -c 'export REMOTE_HOST=192.168.90.62 && ./deploy_to_robot.sh unitree@192.168.90.62:/tmp/test'
+cwd=/home/jeff/coscene/code/codex/G1CI/基础环境检查/deploy_eva_robot检测/robot
+
+unitree@192.168.90.62's password: 

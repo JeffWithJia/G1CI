@@ -1,0 +1,82 @@
+$ /usr/bin/ansible-playbook -k -K -T 15 -i '/home/jeff/coscene/code/codex/G1CI/基础环境检查/inventory.ini' -e '{"ansible_ssh_common_args": "-o PreferredAuthentications=password -o PubkeyAuthentication=no -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -o ConnectionAttempts=1"}' '/home/jeff/coscene/code/codex/G1CI/基础环境检查/deploy_eva_robot检测/batch_cos_setup.yml' -e 'cos_setup_report_dir=/home/jeff/coscene/code/codex/G1CI/基础环境检查/reports/raw' --limit g1_robot_062
+cwd=/home/jeff/coscene/code/codex/G1CI/基础环境检查
+
+SSH password: 
+[operator_console] detected SSH password prompt, password sent
+
+BECOME password[defaults to SSH password]: 
+[operator_console] detected BECOME password prompt, sudo password sent
+
+
+PLAY [Run cos_setup.sh on G1 robots] *******************************************
+
+TASK [Record cos_setup start time] *********************************************
+[0;32mok: [g1_robot_062][0m
+
+TASK [Resolve local cos_setup report directory] ********************************
+[0;32mok: [g1_robot_062][0m
+
+TASK [Get controller current time before cos_setup] ****************************
+[0;32mok: [g1_robot_062][0m
+
+TASK [Sync robot time from controller before cos_setup] ************************
+[0;33mchanged: [g1_robot_062][0m
+
+TASK [Stop remote_start.service before cos_setup] ******************************
+[0;32mok: [g1_robot_062][0m
+
+TASK [Check remote cos_setup.sh] ***********************************************
+[0;32mok: [g1_robot_062][0m
+
+TASK [Build cos_setup path facts] **********************************************
+[0;32mok: [g1_robot_062][0m
+
+TASK [Ensure cos_setup log directory is writable by unitree] *******************
+[0;33mchanged: [g1_robot_062][0m
+
+TASK [Detect Debian architecture] **********************************************
+[0;32mok: [g1_robot_062][0m
+
+TASK [Detect and validate Ubuntu release] **************************************
+[0;32mok: [g1_robot_062][0m
+
+TASK [Ensure apt keyring directories exist] ************************************
+[0;32mok: [g1_robot_062] => (item=/usr/share/keyrings)[0m
+[0;32mok: [g1_robot_062] => (item=/etc/apt/trusted.gpg.d)[0m
+[0;32mok: [g1_robot_062] => (item=/etc/apt/keyrings)[0m
+
+TASK [Download ROS apt key from primary mirror] ********************************
+[1;35m[WARNING]: Module remote_tmp /root/.ansible/tmp did not exist and was created[0m
+[1;35mwith a mode of 0700, this may cause issues when running as another user. To[0m
+[1;35mavoid this, create the remote_tmp dir with the correct permissions manually[0m
+[0;33mchanged: [g1_robot_062][0m
+
+TASK [Download ROS apt key from fallback] **************************************
+[0;36mskipping: [g1_robot_062][0m
+
+TASK [Install ROS apt keyrings] ************************************************
+[0;32mok: [g1_robot_062] => (item=/usr/share/keyrings/ros-archive-keyring.gpg)[0m
+[0;32mok: [g1_robot_062] => (item=/usr/share/keyrings/ros2-latest-archive-keyring.gpg)[0m
+[0;32mok: [g1_robot_062] => (item=/etc/apt/trusted.gpg.d/ros-archive-keyring.gpg)[0m
+
+TASK [Configure ROS apt source] ************************************************
+[0;32mok: [g1_robot_062][0m
+
+TASK [Remove stale RealSense apt sources before refresh] ***********************
+[0;32mok: [g1_robot_062] => (item=/etc/apt/sources.list.d/librealsense.list)[0m
+[0;32mok: [g1_robot_062] => (item=/etc/apt/sources.list.d/realsense-public.list)[0m
+
+TASK [Update apt package index before system dependency install] ***************
+[0;33mchanged: [g1_robot_062][0m
+
+TASK [Install cos_setup apt dependencies] **************************************
+[0;32mok: [g1_robot_062][0m
+
+TASK [Download Intel RealSense apt key] ****************************************
+[0;31mfatal: [g1_robot_062]: FAILED! => {"changed": false, "dest": "/tmp/librealsenseai.asc", "elapsed": 1, "msg": "Request failed: <urlopen error [Errno 104] Connection reset by peer>", "url": "https://librealsense.realsenseai.com/Debian/librealsenseai.asc"}[0m
+
+PLAY RECAP *********************************************************************
+[0;31mg1_robot_062[0m               : [0;32mok=17  [0m [0;33mchanged=4   [0m unreachable=0    [0;31mfailed=1   [0m [0;36mskipped=1   [0m rescued=0    ignored=0   
+
+
+returncode=2

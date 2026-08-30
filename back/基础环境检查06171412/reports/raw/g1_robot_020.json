@@ -1,0 +1,248 @@
+{
+    "ansible_host": "192.168.90.20",
+    "card": {
+        "issue_count": "2",
+        "issue_text": "[WARN] Python pyrealsense2 - pyrealsense2 cannot be imported in the tv environment. | [WARN] /dev/cam_wrist_left - Camera device symlink does not exist.",
+        "issues": [
+            {
+                "detail": "Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\nModuleNotFoundError: No module named 'pyrealsense2'",
+                "name": "Python pyrealsense2",
+                "reason": "pyrealsense2 cannot be imported in the tv environment.",
+                "source": "check",
+                "status": "WARN",
+                "suggestion": "pyrealsense2 is optional by default. If this robot requires RealSense, set require_pyrealsense2=true in inventory.",
+                "summary": "[WARN] Python pyrealsense2 - pyrealsense2 cannot be imported in the tv environment."
+            },
+            {
+                "detail": "/dev/cam_wrist_left",
+                "name": "/dev/cam_wrist_left",
+                "reason": "Camera device symlink does not exist.",
+                "source": "check",
+                "status": "WARN",
+                "suggestion": "Check camera connection and udev rules. If wrist cameras are not required for this robot, this warning can be ignored.",
+                "summary": "[WARN] /dev/cam_wrist_left - Camera device symlink does not exist."
+            }
+        ],
+        "status": "WARN",
+        "subtitle": "robot_id=20, end_effector=dex1, mode=check",
+        "title": "g1_robot_020 (192.168.90.20)"
+    },
+    "checks": [
+        {
+            "detail": "/home/unitree/g1_setup",
+            "name": "g1_setup directory",
+            "status": "OK"
+        },
+        {
+            "detail": "/home/unitree/g1_setup/unitree_sdk2",
+            "name": "unitree_sdk2 source",
+            "status": "OK"
+        },
+        {
+            "detail": "/home/unitree/miniconda3/bin/conda",
+            "name": "Conda engine",
+            "status": "OK"
+        },
+        {
+            "detail": "/home/unitree/miniconda3/envs/tv/bin/python",
+            "name": "conda env tv",
+            "status": "OK"
+        },
+        {
+            "detail": "Python 3.10.20",
+            "name": "tv python version",
+            "status": "OK"
+        },
+        {
+            "detail": "import cv2",
+            "name": "Python cv2",
+            "status": "OK"
+        },
+        {
+            "detail": "import zmq",
+            "name": "Python zmq",
+            "status": "OK"
+        },
+        {
+            "detail": "import logging_mp",
+            "name": "Python logging_mp",
+            "status": "OK"
+        },
+        {
+            "detail": "import av",
+            "name": "Python av",
+            "status": "OK"
+        },
+        {
+            "detail": "import numpy",
+            "name": "Python numpy",
+            "status": "OK"
+        },
+        {
+            "detail": "Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\nModuleNotFoundError: No module named 'pyrealsense2'",
+            "name": "Python pyrealsense2",
+            "reason": "pyrealsense2 cannot be imported in the tv environment.",
+            "status": "WARN",
+            "suggestion": "pyrealsense2 is optional by default. If this robot requires RealSense, set require_pyrealsense2=true in inventory."
+        },
+        {
+            "detail": "/usr/local/lib/libunitree_sdk2.a",
+            "name": "unitree_sdk2 library",
+            "status": "OK"
+        },
+        {
+            "detail": "/usr/local/lib/cmake/unitree_sdk2/unitree_sdk2Config.cmake",
+            "name": "unitree_sdk2 cmake config",
+            "status": "OK"
+        },
+        {
+            "detail": "/usr/local/include/unitree/idl/go2/MotorCmds_.hpp",
+            "name": "unitree_sdk2 go2 header",
+            "status": "OK"
+        },
+        {
+            "detail": "build-essential",
+            "name": "apt build-essential",
+            "status": "OK"
+        },
+        {
+            "detail": "cmake",
+            "name": "apt cmake",
+            "status": "OK"
+        },
+        {
+            "detail": "make",
+            "name": "apt make",
+            "status": "OK"
+        },
+        {
+            "detail": "libeigen3-dev",
+            "name": "apt libeigen3-dev",
+            "status": "OK"
+        },
+        {
+            "detail": "libspdlog-dev",
+            "name": "apt libspdlog-dev",
+            "status": "OK"
+        },
+        {
+            "detail": "libfmt-dev",
+            "name": "apt libfmt-dev",
+            "status": "OK"
+        },
+        {
+            "detail": "libboost-all-dev",
+            "name": "apt libboost-all-dev",
+            "status": "OK"
+        },
+        {
+            "detail": "libyaml-cpp-dev",
+            "name": "apt libyaml-cpp-dev",
+            "status": "OK"
+        },
+        {
+            "detail": "/home/unitree/g1_setup/remote",
+            "name": "remote image binary",
+            "status": "OK"
+        },
+        {
+            "detail": "/etc/udev/rules.d/99-usb-cameras.rules",
+            "name": "camera udev rules",
+            "status": "OK"
+        },
+        {
+            "detail": "/dev/cam_head",
+            "name": "/dev/cam_head",
+            "status": "OK"
+        },
+        {
+            "detail": "/dev/cam_wrist_left",
+            "name": "/dev/cam_wrist_left",
+            "reason": "Camera device symlink does not exist.",
+            "status": "WARN",
+            "suggestion": "Check camera connection and udev rules. If wrist cameras are not required for this robot, this warning can be ignored."
+        },
+        {
+            "detail": "/dev/cam_wrist_right",
+            "name": "/dev/cam_wrist_right",
+            "status": "OK"
+        },
+        {
+            "detail": "/home/unitree/g1_setup/dex1_1_service",
+            "name": "dex1 source directory",
+            "status": "OK"
+        },
+        {
+            "detail": "/home/unitree/g1_setup/dex1_1_service/bin",
+            "name": "dex1 bin directory",
+            "status": "OK"
+        },
+        {
+            "detail": "/home/unitree/g1_setup/dex1_1_service/bin/dex1_1_gripper_server",
+            "name": "dex1 server binary",
+            "status": "OK"
+        },
+        {
+            "detail": "/home/unitree/g1_setup/dex1_1_service/bin/test_dex1_1_gripper_server",
+            "name": "dex1 test binary",
+            "status": "OK"
+        },
+        {
+            "detail": "/etc/systemd/system/dex1_gripper.service",
+            "name": "dex1 systemd unit file",
+            "status": "OK"
+        },
+        {
+            "detail": "/home/unitree/g1_setup/dex1_1_service/bin/dex1_1_gripper_server",
+            "name": "dex1 server executable",
+            "status": "OK"
+        },
+        {
+            "detail": "ldd rc=0",
+            "name": "dex1 shared libraries",
+            "status": "OK"
+        },
+        {
+            "detail": "enabled",
+            "name": "dex1 service enabled",
+            "status": "OK"
+        },
+        {
+            "detail": "active",
+            "name": "dex1 service active",
+            "status": "OK"
+        }
+    ],
+    "counts": {
+        "fail": "0",
+        "ok": "34",
+        "skip": "0",
+        "warn": "2"
+    },
+    "end_effector": "dex1",
+    "failed_items": [],
+    "host": "g1_robot_020",
+    "install_failed_items": [],
+    "install_results": [],
+    "mode": "check",
+    "overall_status": "WARN",
+    "robot_id": "20",
+    "skipped_items": [],
+    "warn_items": [
+        {
+            "detail": "Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\nModuleNotFoundError: No module named 'pyrealsense2'",
+            "name": "Python pyrealsense2",
+            "reason": "pyrealsense2 cannot be imported in the tv environment.",
+            "status": "WARN",
+            "suggestion": "pyrealsense2 is optional by default. If this robot requires RealSense, set require_pyrealsense2=true in inventory."
+        },
+        {
+            "detail": "/dev/cam_wrist_left",
+            "name": "/dev/cam_wrist_left",
+            "reason": "Camera device symlink does not exist.",
+            "status": "WARN",
+            "suggestion": "Check camera connection and udev rules. If wrist cameras are not required for this robot, this warning can be ignored."
+        }
+    ],
+    "warnings": []
+}
